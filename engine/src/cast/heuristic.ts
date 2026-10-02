@@ -47,8 +47,9 @@ import {
   carrierAt,
   constellationOf,
   isNewcomer,
+  LevyArithmeticError,
+  previewShares,
   rollByConstellation,
-  weightOf,
   type LevyRule,
 } from '../levy/index.js';
 import {
@@ -4858,20 +4859,36 @@ export class HeuristicCast {
     const mine = subjects.find((s) => s.principal === member.principal);
     if (mine === undefined) return null;
 
-    // Integer comparison of `myWeight / totalWeight` across rules, done by cross
-    // multiplication so no division and no float is involved: a < b iff
-    // myA * totalB < myB * totalA.
+    // ── ★ THE BILL EACH RULE WOULD CUT, NOT THE WEIGHT RATIO (the Levy's max share) ──
+    //
+    // This compared `myWeight / totalWeight` across rules, by cross multiplication. That ratio WAS the
+    // bill while the remainder was divided by weight alone; since §5.2's max share it is not — a member
+    // held at the bound pays less than its ratio says and every member under it pays more — so the cast
+    // would be voting about a docket the engine does not cut. `previewShares` is `allocate`'s own pool
+    // arithmetic (`poolShares`) on the steady-state docket the ratio was a fraction of: the duty per
+    // member, nobody floored or spared. Integers, exact, and the first rule in `LEVY_RULES` order wins a
+    // tie, as it did. Measured on the gate seeds (8 members × 9 Reckonings) and ten seasons (12 members):
+    // 116 of 2,423 ballots chose differently from the ratio, every one with the bound binding in the
+    // voter's preview — mostly an exposed member leaving `INVERSE_EXPOSURE`, under which it now bears part
+    // of a held member's excess — and 0 where it did not bind.
     let best: LevyRule | null = null;
-    let bestMine = 0;
-    let bestTotal = 1;
+    let bestShare = 0;
     for (const rule of LEVY_RULES) {
-      const myWeight = weightOf(rule, mine);
-      const total = subjects.reduce<number>((n, s) => n + weightOf(rule, s), 0);
-      if (total <= 0) continue;
-      if (best === null || myWeight * bestTotal < bestMine * total) {
+      let share: number | undefined;
+      try {
+        share = previewShares(rule, subjects).get(member.principal);
+      } catch (error: unknown) {
+        // A docket the engine could not cut either: `allocate` throws this same error on the same
+        // arithmetic (a remainder times a weight past 2^53) and `assessLevyNow` files it as a fault.
+        // There is no bill to compare, and the ratio this replaced never threw, so `decide` — which
+        // the server's scheduler calls unguarded — must not start to. Narrow: anything else is a bug.
+        if (error instanceof LevyArithmeticError) continue;
+        throw error;
+      }
+      if (share === undefined) continue;
+      if (best === null || share < bestShare) {
         best = rule;
-        bestMine = myWeight;
-        bestTotal = total;
+        bestShare = share;
       }
     }
     if (best === null) return null;

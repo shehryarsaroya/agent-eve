@@ -2540,6 +2540,15 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *     now holds each principal's standing offer (a new one replaces the last, which is the only one the
  *     freshness rule ever read), `EXPIRE` retires it once no freshness read can say yes, and the cap is
  *     one per principal the world can hold.
+ *   - **No member bears the docket** (`levy/assessment.ts:maxShareOf`, `LEVY_MAX_SHARE_MULTIPLE` 3,
+ *     owner call (3)). Under the published default `INVERSE_EXPOSURE` a member at an EXPOSURE peak of 0
+ *     beside exposed constellation-mates was billed 5–9x the duty, and its 30% presence share — which
+ *     §5.2 lets no other hand carry — came up short on a bill nobody could help it pay. Now no line of a
+ *     docket's remainder pool exceeds three times the pool's even share: the excess is water-filled over
+ *     the rest by the same rule's weights (`poolShares`, every pass `largestRemainder`, Σ exact), and
+ *     floored and spared lines are untouched. One home for the bound: `allocate` cuts every docket
+ *     through it, INV-24 halts a pool line above it, and the house cast's ballot compares the bill each
+ *     rule would cut (`previewShares`) instead of the weight ratio, which the bound no longer equals.
  *
  * Still a fresh world at genesis, so there is no divergence to accept. The `say` table's shape is
  * unchanged; a world in which a letter outlives its windows hashes differently from the tick that
@@ -2548,6 +2557,13 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * advertises hashes exactly as before. The season record's key is `seasonEndedClaims` where it was
  * `closedClaims`, so a world that reaches its FINALE hashes differently from the boundary tick on, and
  * one that has not reached it exactly as before.
+ *
+ * The max share adds no captured field and changes no table's shape: a docket the bound does not
+ * reach is cut to the unit as before. So a world hashes exactly as before until the earlier of two
+ * ticks — the phase 0 of the first docket with a line over the bound, or the first cast ballot whose
+ * cheapest bill the bound moved off the weight ratio's rule (the ballot book is captured). Measured,
+ * eight members on the before and after trees: `g03` first differs at tick 578, `g05` at 1,153 and
+ * `g07` at 865 — each the tick of such a ballot — and `g08` at 864, R3's docket.
  *
  * ══════════════════════════════════════════════════════════════════════════
  */

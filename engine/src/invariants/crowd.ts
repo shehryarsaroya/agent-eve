@@ -35,6 +35,11 @@ export interface LevyAssessment {
   readonly constellation: ConstellationId;
   readonly amount: Minor;
   readonly newcomerFloored: boolean;
+  /**
+   * True iff the constellation voted to spare this principal. A spared line, like a floored one, is
+   * outside the remainder pool and so outside the max share's reach.
+   */
+  readonly spared: boolean;
 }
 
 export interface Inv24Inputs {
@@ -47,16 +52,25 @@ export interface Inv24Inputs {
   readonly nominalRate: Minor;
   /** This Reckoning's seizure queue. A floored principal is never in it. */
   readonly seizureQueue: readonly PrincipalId[];
+  /**
+   * ★ The most one line of each constellation's remainder pool may be assessed — SPEC §5.2's max
+   * share, `LEVY_MAX_SHARE_MULTIPLE` times the pool's even share. Computed by the Levy
+   * (`levy/assessment.ts:maxShareOf`, the bound's one home) from the declared total, never from the
+   * amounts being checked, so a line inflated past it cannot raise its own ceiling.
+   */
+  readonly maxShare: ReadonlyMap<ConstellationId, Minor>;
 }
 
 /**
- * INV-24 — Σ Levy assessments equals the constellation total, exactly, and the
- * newcomer floor is applied to every eligible principal.
+ * INV-24 — Σ Levy assessments equals the constellation total, exactly, the
+ * newcomer floor is applied to every eligible principal, and no line of a
+ * remainder pool is assessed above the max share.
  *
  * "Exactly" is the word that matters. The Levy is paid in delivered goods and its
  * shortfall drives a seizure ballot, so an allocation that sums to one minor unit
  * more than the total puts a principal in a seizure queue for a debt the rule never
- * created.
+ * created. A line above the max share is that debt by another road: the docket sums,
+ * and one member is still billed for part of what the rule gives to the others.
  */
 export function checkInv24(inputs: Inv24Inputs, tick: number): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];
@@ -145,6 +159,30 @@ export function checkInv24(inputs: Inv24Inputs, tick: number): readonly Invarian
           `${a.principal} is inside the newcomer floor and is in the seizure queue; SPEC §5.2 says never`,
         ),
       );
+    }
+    // The max share reaches only the remainder pool: a floored or spared line is the nominal rate,
+    // and the clauses above already hold a floored one to it.
+    if (!a.newcomerFloored && !a.spared) {
+      const max = inputs.maxShare.get(a.constellation);
+      if (max === undefined) {
+        out.push(
+          halt(
+            'INV-24',
+            tick,
+            `${a.principal} is in ${a.constellation}'s remainder pool, which declared no max share`,
+          ),
+        );
+      } else if (a.amount > max) {
+        out.push(
+          halt(
+            'INV-24',
+            tick,
+            `${a.principal} is assessed ${a.amount} in ${a.constellation}, above the max share of ${max} ` +
+              '(SPEC §5.2: no member of the pool bears more than LEVY_MAX_SHARE_MULTIPLE times its even ' +
+              'share); the excess is a debt the rule never created',
+          ),
+        );
+      }
     }
   }
 

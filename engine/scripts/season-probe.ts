@@ -11,6 +11,13 @@
  * broken, the four-role BUILDs, the grand venture's verdict, and the Levy shortfall Reckoning by Reckoning.
  *
  * It reads only APIs that predate the change, so the same file run on an older tree is the "before".
+ *
+ * ★ Since the Levy's max share (`LEVY_MAX_SHARE_MULTIPLE`, owner call (3) of the launch fixes) it also
+ * prints the RED tribute lines sampled in the freeze — `balance-gate.ts`'s reading — and
+ * `levy-max-share.ts`'s meter: pool lines the bound held over pool lines read, lines assessed above it,
+ * and the largest line on any docket as a multiple of the duty. The meter reads only the recorded plan,
+ * so on a tree that predates the bound it counts the lines the bound WOULD have held; run it there with
+ * that one import replaced by the multiple (3) and nothing else changed.
  * ══════════════════════════════════════════════════════════════════════════
  *
  * ```
@@ -20,10 +27,11 @@
  */
 
 import { HeuristicCast } from '../src/cast/index.js';
-import { isSettlementTick, setSpeed } from '../src/core/time.js';
+import { isSettlementTick, reckoningIndex, setSpeed } from '../src/core/time.js';
 import { finaleTickOf } from '../src/season/index.js';
 import { Runtime } from '../src/sim/runtime.js';
 import { isTopYield } from '../src/venture/index.js';
+import { byRuleLines, emptyTally, mergeByRule, tallyReckoning, topMultiple, type MaxShareTally } from './levy-max-share.js';
 
 interface Row {
   readonly seed: string;
@@ -38,6 +46,9 @@ interface Row {
   readonly buildsSettled: number;
   readonly grand: string;
   readonly levyShort: readonly number[];
+  /** RED tribute lines sampled in the freeze, summed over the season (`balance-gate.ts`'s reading). */
+  readonly red: number;
+  readonly maxShare: MaxShareTally;
   readonly violations: number;
   readonly halted: boolean;
 }
@@ -49,6 +60,8 @@ function runOne(seed: string, members: number): Row {
   cast.seat(seed);
   const end = finaleTickOf(1) + 48;
   const levyShort: number[] = [];
+  const maxShare = emptyTally();
+  let red = 0;
   let violations = 0;
   let halted = false;
   while (runtime.engine.tick < end) {
@@ -59,7 +72,13 @@ function runOne(seed: string, members: number): Row {
       halted = true;
       break;
     }
-    if (isSettlementTick(report.tick)) levyShort.push(Number(runtime.levySettlement?.levyShort ?? 0));
+    if (report.clock.inFreeze) {
+      for (const line of runtime.tributeLines(report.tick)) if (line.state === 'RED') red += 1;
+    }
+    if (isSettlementTick(report.tick)) {
+      levyShort.push(Number(runtime.levySettlement?.levyShort ?? 0));
+      tallyReckoning(runtime.levy, reckoningIndex(report.tick), maxShare);
+    }
   }
   const all = runtime.ventures.all();
   const builds = all.filter((v) => v.grand === null && isTopYield(v.kind));
@@ -86,6 +105,8 @@ function runOne(seed: string, members: number): Row {
     buildsSettled: builds.filter((v) => v.state === 'SETTLED').length,
     grand,
     levyShort,
+    red,
+    maxShare,
     violations,
     halted,
   };
@@ -142,10 +163,16 @@ for (const seed of args.seeds) {
       `${String(r.abandonedUnfilled).padStart(13)} ${String(r.open).padStart(4)} ${String(r.kept).padStart(5)} ` +
       `${String(r.broken).padStart(6)} ${`${String(r.buildsOpened)}/${String(r.buildsSettled)}`.padStart(6)} ` +
       `${String(short).padStart(10)}  ${r.grand}${r.halted ? '  HALTED' : ''}${r.violations > 0 ? `  ${String(r.violations)} violations` : ''}\n` +
-      `${''.padEnd(14)} levyShort by Reckoning: ${r.levyShort.join(' ')}\n`,
+      `${''.padEnd(14)} levyShort by Reckoning: ${r.levyShort.join(' ')}\n` +
+      `${''.padEnd(14)} red ${String(r.red)} · max share held ${String(r.maxShare.maxed)}/${String(r.maxShare.poolLines)} ` +
+      `pool lines · assessed over it ${String(r.maxShare.assessedOver)} · mismatches ${String(r.maxShare.mismatches)} · ` +
+      `top line ${String(r.maxShare.topAmount)} (${topMultiple(r.maxShare)}x the duty)\n` +
+      byRuleLines(r.maxShare.byRule, `${''.padEnd(14)} `),
   );
 }
 const sum = (f: (r: Row) => number): number => rows.reduce((n, r) => n + f(r), 0);
+const byRule = mergeByRule(rows.map((r) => r.maxShare));
+process.stdout.write(`\nby rule, every seed:\n${byRuleLines(byRule, '  ')}`);
 process.stdout.write(
   `\nRESULT ${JSON.stringify({
     seeds: rows.length,
@@ -158,6 +185,13 @@ process.stdout.write(
     buildsOpened: sum((r) => r.buildsOpened),
     buildsSettled: sum((r) => r.buildsSettled),
     levyShort: sum((r) => r.levyShort.reduce((a, b) => a + b, 0)),
+    red: sum((r) => r.red),
+    poolLines: sum((r) => r.maxShare.poolLines),
+    maxed: sum((r) => r.maxShare.maxed),
+    assessedOver: sum((r) => r.maxShare.assessedOver),
+    mismatches: sum((r) => r.maxShare.mismatches),
+    topAmount: Math.max(0, ...rows.map((r) => r.maxShare.topAmount)),
+    byRule: Object.fromEntries([...byRule.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
     violations: sum((r) => r.violations),
     halted: rows.filter((r) => r.halted).length,
   })}\n`,

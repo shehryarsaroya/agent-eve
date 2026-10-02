@@ -55,6 +55,7 @@ import { isSettlementTick, reckoningIndex, setSpeed, TICKS_PER_RECKONING } from 
 import { holdingOf } from '../src/world/index.js';
 import { Runtime } from '../src/sim/runtime.js';
 import { ENDOWMENT_WINDOW_RECKONINGS } from '../src/levy/params.js';
+import { byRuleLines, emptyTally, mergeByRule, tallyReckoning, topMultiple, type MaxShareTally } from './levy-max-share.js';
 
 interface GateRow {
   readonly seed: string;
@@ -107,6 +108,13 @@ interface GateRow {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly carried: number;
+  /**
+   * ★ §5.2's MAX SHARE, as the meter `levy-max-share.ts` reads it off the book: `MAXED` is the pool
+   * lines the bound held over the pool lines read, `TOP×` the largest line on any docket as a multiple
+   * of `LEVY_DUTY_PER_PRINCIPAL`. Landed with the bound (owner call (3) of the launch fixes) for
+   * `CARRIED`'s reason: a `levyShort` that moved and a bound that never held are different findings.
+   */
+  readonly maxShare: MaxShareTally;
   readonly finalStateHash: string;
 }
 
@@ -138,6 +146,7 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
   // current Reckoning's rows survive `prune(current)` by construction (`reckoning >= current - 3`),
   // so reading here is the whole run whatever its length.
   let carried = 0;
+  const maxShare = emptyTally();
   for (let i = 0; i < ticks; i += 1) {
     const next = runtime.engine.tick + 1;
     for (const action of cast.decide(next, seed)) runtime.engine.submit(action);
@@ -161,6 +170,7 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
           carried += runtime.levy.paymentOf(reckoning, line.principal).paidOther;
         }
       }
+      tallyReckoning(runtime.levy, reckoning, maxShare);
       const settled = runtime.reckonings().at(-1);
       if (settled !== undefined) {
         kept += settled.electiveHonoured;
@@ -218,6 +228,7 @@ function runOne(seed: string, ticks: number, members: number): GateRow {
     rebuilt,
     trapped,
     carried,
+    maxShare,
     finalStateHash,
   };
 }
@@ -276,7 +287,7 @@ process.stdout.write(
     `(${String(Math.floor(args.ticks / TICKS_PER_RECKONING))} Reckonings) x ${String(args.members)} members\n\n`,
 );
 process.stdout.write(
-  'seed        levyShort  red/lines   kept broken  ventures claims     rent hulls battles works RAZED REBUILT TRAPPED   CARRIED\n',
+  'seed        levyShort  red/lines   kept broken  ventures claims     rent hulls battles works RAZED REBUILT TRAPPED   CARRIED     MAXED  TOP×\n',
 );
 const rows: GateRow[] = [];
 for (const seed of args.seeds) {
@@ -290,7 +301,10 @@ for (const seed of args.seeds) {
       `${String(row.rent).padStart(8)} ${String(row.hulls).padStart(5)} ` +
       `${String(row.battles).padStart(7)} ${String(row.works).padStart(5)} ` +
       `${String(row.razed).padStart(5)} ${String(row.rebuilt).padStart(7)} ` +
-      `${String(row.trapped).padStart(7)} ${String(row.carried).padStart(9)}` +
+      `${String(row.trapped).padStart(7)} ${String(row.carried).padStart(9)} ` +
+      `${`${String(row.maxShare.maxed)}/${String(row.maxShare.poolLines)}`.padStart(9)} ${topMultiple(row.maxShare).padStart(5)}` +
+      `${row.maxShare.assessedOver > 0 ? `  ${String(row.maxShare.assessedOver)} OVER` : ''}` +
+      `${row.maxShare.mismatches > 0 ? `  ${String(row.maxShare.mismatches)} MISMATCHED` : ''}` +
       `${row.halted ? '  HALTED' : ''}\n`,
   );
 }
@@ -315,6 +329,11 @@ const total = {
   rebuilt: sum((r) => r.rebuilt),
   trapped: sum((r) => r.trapped),
   carried: sum((r) => r.carried),
+  poolLines: sum((r) => r.maxShare.poolLines),
+  maxed: sum((r) => r.maxShare.maxed),
+  assessedOver: sum((r) => r.maxShare.assessedOver),
+  mismatches: sum((r) => r.maxShare.mismatches),
+  topAmount: Math.max(0, ...rows.map((r) => r.maxShare.topAmount)),
 };
 /**
  * ── THE HORIZON IS PART OF THE RESULT, AND A SHORT SWEEP MAY NOT REPORT GREEN ──
@@ -341,8 +360,12 @@ process.stdout.write(
     `${String(total.rent).padStart(8)} ${String(total.hulls).padStart(5)} ` +
     `${String(total.battles).padStart(7)} ${String(total.works).padStart(5)} ` +
     `${String(total.razed).padStart(5)} ${String(total.rebuilt).padStart(7)} ` +
-    `${String(total.trapped).padStart(7)} ${String(total.carried).padStart(9)}\n`,
+    `${String(total.trapped).padStart(7)} ${String(total.carried).padStart(9)} ` +
+    `${`${String(total.maxed)}/${String(total.poolLines)}`.padStart(9)} ` +
+    `${topMultiple(total).padStart(5)}\n`,
 );
+const byRule = mergeByRule(rows.map((r) => r.maxShare));
+process.stdout.write(`\nthe max share by rule, every seed:\n${byRuleLines(byRule, '  ')}`);
 if (!seesTheEconomy) {
   process.stdout.write(
     `\n⚠ HORIZON ${String(reckoningsRun)} RECKONINGS — AT OR UNDER THE ${String(
@@ -355,5 +378,10 @@ if (!seesTheEconomy) {
   );
 }
 process.stdout.write(
-  `\nRESULT ${JSON.stringify({ ...total, reckonings: reckoningsRun, seesTheEconomy })}\n`,
+  `\nRESULT ${JSON.stringify({
+    ...total,
+    byRule: Object.fromEntries([...byRule.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1))),
+    reckonings: reckoningsRun,
+    seesTheEconomy,
+  })}\n`,
 );

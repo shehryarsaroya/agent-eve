@@ -6,7 +6,8 @@
  *      floor. No agent action changes it. *That is the alarm.*
  *   2. **The allocation is a vote** — the total is then borne according to a weight
  *      rule the constellation chose, with one principal possibly spared. *That is the
- *      drama.*
+ *      drama.* Whatever rule carries, no member of the remainder pool bears more than
+ *      `LEVY_MAX_SHARE_MULTIPLE` even shares ({@link maxShareOf}, {@link poolShares}).
  *
  * ══════════════════════════════════════════════════════════════════════════
  * **INV-24 IS ARITHMETIC, NOT INTENTION: Σ assessments === total, EXACTLY.**
@@ -36,6 +37,7 @@ import {
   LEVY_DUTY_PER_PRINCIPAL,
   LEVY_EXPOSURE_UNIT,
   LEVY_INVERSE_WEIGHT_NUM,
+  LEVY_MAX_SHARE_MULTIPLE,
   LEVY_NEWCOMER_CAPITAL_MINOR,
   LEVY_NEWCOMER_TENURE_TICKS,
   LEVY_NOMINAL_MINOR,
@@ -297,7 +299,14 @@ export interface Allocation {
   readonly freeStores: Minor;
   /** True iff the constellation voted to spare this principal down to the nominal rate. */
   readonly spared: boolean;
-  /** The weight it carried in the remainder pool. Zero for a floored or spared line. */
+  /**
+   * The weight it carried in the remainder pool. Zero for a floored or spared line.
+   *
+   * A line held at §5.2's max share keeps its rule weight: the weight is what the rule said and the
+   * amount is what the docket billed, and {@link poolShares} is the arithmetic between them. So an
+   * auditor recomputes a docket from `(remainder, weights)` through that function — never from the
+   * weights alone, which is the docket the rule would have cut without the bound.
+   */
   readonly weight: number;
 }
 
@@ -336,6 +345,10 @@ export class LevyArithmeticError extends AllocationError {}
  *   - **The remainder is the whole of the rest**, distributed by weight with the
  *     largest-remainder method and a canonical tie-break. Σ is exact by construction
  *     and asserted before returning.
+ *   - **No line of the pool exceeds the max share** — `LEVY_MAX_SHARE_MULTIPLE` times the
+ *     pool's even share ({@link maxShareOf}). What a held line no longer carries goes to
+ *     the rest of the pool by the same rule's weights ({@link poolShares}), so the rule
+ *     still decides who pays more, and Σ is still the remainder exactly.
  *   - **If nobody is left in the pool**, the remainder has nowhere to go that would not
  *     break a protection, so the total is reduced to what the protections allow.
  *     Read {@link relievedTotal} — this is the one place the total moves, it moves
@@ -366,7 +379,7 @@ export function allocate(args: {
   const remainder = minor(total - nominalPart);
 
   const weights = pool.map((s) => weightOf(args.rule, s));
-  const shares = largestRemainder(remainder, weights);
+  const shares = poolShares(remainder, weights);
 
   const byPrincipal = new Map<PrincipalId, Allocation>();
   for (const subject of subjects) {
@@ -445,6 +458,115 @@ export function relievedTotal(
   const pool = subjects.filter((s) => !relieved.has(s.principal));
   if (pool.length === 0) return minor(LEVY_NOMINAL_MINOR * subjects.length);
   return totalFor(subjects);
+}
+
+/**
+ * ★ **§5.2's max share** — the most one line of a remainder pool may be assessed. **The one home of
+ * the bound.**
+ *
+ * `LEVY_MAX_SHARE_MULTIPLE x ceil(remainder / poolSize)`: three times the pool's even share, rounded
+ * up so the bound is never below what an even docket bills. With nobody floored or spared the
+ * remainder is `poolSize x LEVY_DUTY_PER_PRINCIPAL`, so the even share is the duty and the bound is
+ * three duties; a spared member's relief, which the pool funds (`relievedTotal`), raises both.
+ * `params.ts` carries the measurement that asked for it and the argument for three.
+ *
+ * Read by {@link poolShares}, which holds every line to it, and by `settle.ts:inv24InputsFor`, which
+ * hands it to INV-24 so that a line above it halts the tick — it is a debt the rule never created.
+ * A second copy of this formula would be a second bound, and the first tick the two disagreed INV-24
+ * would halt a healthy world.
+ *
+ * Total, never throws: an empty pool or a remainder of nothing bounds every line at nothing, which is
+ * what a pool with nothing to divide must mean — and INV-24 builds its inputs from this on every
+ * tick, where a throw would be a halt about arithmetic rather than about the world.
+ */
+export function maxShareOf(remainder: Minor, poolSize: number): Minor {
+  if (!Number.isSafeInteger(poolSize) || poolSize <= 0 || remainder <= 0) return minor(0);
+  const rest = remainder % poolSize;
+  // Exact: `remainder - rest` is a multiple of `poolSize`, so the quotient is an integer and the
+  // division cannot round.
+  const even = (remainder - rest) / poolSize + (rest === 0 ? 0 : 1);
+  return minor(LEVY_MAX_SHARE_MULTIPLE * even);
+}
+
+/**
+ * The remainder pool's shares: **by weight, exactly, and no line above {@link maxShareOf}.**
+ *
+ * Water-filling in integers, and every pass is {@link largestRemainder} — the allocator INV-24 has
+ * always trusted — so Σ is exact at every step rather than repaired at the end:
+ *
+ *   1. Divide the whole remainder by weight. Whenever no line comes out above the bound, that is the
+ *      answer, unchanged to the unit from the docket the rule cut before the bound existed.
+ *   2. Hold every line above the bound **at** it, and divide what is left over the lines still under
+ *      it by their own weights — the same rule, so it still decides who pays more.
+ *   3. Repeat until nothing is over. A held line stays held: a pass only ever adds to the open lines,
+ *      so nothing held could have fallen back under the bound.
+ *
+ * It never holds every line, which is why there is no branch for that: a line is held only when its
+ * share is at least `bound + 1`, so each pass leaves the open lines a positive remainder, and fewer
+ * than `poolSize / LEVY_MAX_SHARE_MULTIPLE` lines are ever held. The loop is bounded at
+ * `weights.length` passes anyway and the result is asserted rather than assumed: a docket that cannot
+ * be made exactly throws {@link LevyArithmeticError}, which `Runtime.assessLevyNow` reports as a fault
+ * rather than halting on.
+ *
+ * Index order in, index order out: the caller's canonical order is the tie-break here exactly as it is
+ * in `largestRemainder`.
+ */
+export function poolShares(remainder: Minor, weights: readonly number[]): readonly Minor[] {
+  const bound = maxShareOf(remainder, weights.length);
+  const held = new Set<number>();
+  let shares: readonly Minor[] = largestRemainder(remainder, weights);
+  for (let pass = 0; pass < weights.length; pass += 1) {
+    const over = shares.flatMap((share, i) => (!held.has(i) && share > bound ? [i] : []));
+    if (over.length === 0) break;
+    for (const i of over) held.add(i);
+    const open = weights.flatMap((weight, i) => (held.has(i) ? [] : [{ i, weight }]));
+    const rest = largestRemainder(
+      minor(remainder - bound * held.size),
+      open.map((o) => o.weight),
+    );
+    const next: Minor[] = weights.map(() => bound);
+    for (const [k, o] of open.entries()) next[o.i] = rest[k] ?? minor(0);
+    shares = next;
+  }
+
+  const summed = shares.reduce<number>((n, share) => n + share, 0);
+  const above = shares.filter((share) => share > bound).length;
+  if (summed !== remainder || above > 0) {
+    throw new LevyArithmeticError(
+      `the remainder pool divides ${String(remainder)} into ${String(summed)} with ${String(above)} line(s) ` +
+        `above the max share of ${String(bound)}; INV-24 would halt the tick`,
+    );
+  }
+  return shares;
+}
+
+/**
+ * What each subject would be billed under `rule` **on a docket where nobody is floored or spared** —
+ * {@link poolShares} over that rule's weights, so the max share applies exactly as {@link allocate}
+ * applies it.
+ *
+ * For a voter weighing rules before the docket exists: the house cast's `ballotFor`. It used to compare
+ * `weightOf(rule, me) / Σ weightOf(rule, ·)` across rules, which is the docket with no bound, and with
+ * the bound the ratio stops being the bill — a member held at the max share pays less than its ratio
+ * says and every member under it pays more. A cast voting on the ratio would be voting about a docket
+ * the engine does not cut, which is scar #1 with the cast as the reader.
+ *
+ * The two simplifications are the voter's and they are stated rather than hidden: who is floored on
+ * the docket a ballot decides depends on tenure at the NEXT assessment, and who is spared on everybody
+ * else's ballots, so neither is knowable when the vote is cast. The total is the steady state —
+ * `LEVY_DUTY_PER_PRINCIPAL` per subject — and nobody is relieved, which is the docket the old ratio
+ * was a fraction of.
+ */
+export function previewShares(
+  rule: LevyRule,
+  subjects: readonly LevySubject[],
+): ReadonlyMap<PrincipalId, Minor> {
+  const ordered = [...subjects].sort((a, b) => compareIds(a.principal, b.principal));
+  const shares = poolShares(
+    minor(LEVY_DUTY_PER_PRINCIPAL * ordered.length),
+    ordered.map((s) => weightOf(rule, s)),
+  );
+  return new Map(ordered.map((s, i) => [s.principal, shares[i] ?? minor(0)]));
 }
 
 /**

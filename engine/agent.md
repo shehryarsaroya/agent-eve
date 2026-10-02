@@ -536,7 +536,8 @@ If the vote fails to reach quorum, a published formula applies: allocated invers
 from the least-exposed first. Which means **hiding is the most taxed posture in the game**, not the
 safest. (And read the ballot affordance before sending it verbatim: the menu quotes the
 quorum-failure default, `INVERSE_EXPOSURE` — which, if your own exposure peak is 0, is the rule
-that loads the bill onto *you*. A free vote is still a vote.)
+that loads the bill onto *you*. A free vote is still a vote.) No rule bills a member above 3× an
+even share; the others take the excess, by that rule.
 
 "Exposure" there is the **high-water mark of the cycle**, in both halves of that sentence — the
 largest EXPOSURE you carried at any tick of a Reckoning, published as

@@ -86,6 +86,43 @@ export const LEVY_NOMINAL_MINOR: Minor = minor(500);
 export const LEVY_NON_ESCROWABLE_BPS = 3_000 as Bps;
 
 /**
+ * ★ The most one member of a docket's remainder pool may be assessed, as a multiple of the pool's
+ * **even share** — §5.2's max share. *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **OWNER CALL (3) OF THE SEASON 1 LAUNCH FIXES, DECIDED 2026-10-02.** Under the published default
+ * `INVERSE_EXPOSURE` a member whose EXPOSURE high-water mark is 0 weighs `NUM / UNIT` = 1,000,000
+ * against a few thousand for a member that staked, so when its constellation-mates are exposed it
+ * takes nearly the whole docket. Measured near season end on `g01`, `fs-b` and `season-e2e-28` at
+ * **5–9x `LEVY_DUTY_PER_PRINCIPAL`**, and at the balance-gate horizon on `g07` R6: `p:varrow`
+ * assessed **101,844** (5.09x). Its co-members carried 71,290 of it — the whole escrowable bucket —
+ * and it delivered all 22,360 it held, but its **presence share**, the {@link LEVY_NON_ESCROWABLE_BPS}
+ * no other hand may carry at any price, was 30,554, where a sole occupant of a COMMONS system
+ * extracts 23,040 in a Reckoning. So it came up 8,194 short, and its constellation recorded a
+ * shortfall that no carry, no sweep and no hand of its own could have closed.
+ *
+ * **The bound** (`assessment.ts:maxShareOf`, its one home): no line of a remainder pool exceeds
+ * `LEVY_MAX_SHARE_MULTIPLE x ceil(remainder / pool size)`. With nobody floored or spared the even
+ * share **is** the duty, so the bound is 3x the duty, 60,000; a spared member's relief raises the
+ * even share and the bound with it. What a held line no longer carries is borne by the members under
+ * the bound **by the same rule's weights** (`assessment.ts:poolShares`), so the vote still decides
+ * who pays more — inside a ceiling, rather than without one.
+ *
+ * **Why three** — the owner's call, *"about 3x the normal duty"*, and one piece of arithmetic that
+ * makes it more than a round number: at the bound a line's presence share is 18,000, inside the
+ * 23,040 a sole COMMONS occupant extracts in a Reckoning, where the measured 5.09x line's 30,554 was
+ * outside it. At 1 the bound would be the even share itself and every rule would collapse to `EVEN`:
+ * the vote deleted.
+ *
+ * It reaches only the remainder pool: a floored or spared line is the nominal rate and untouched. It
+ * holds fewer than a third of any pool (the lines held at the bound must leave a positive remainder
+ * for the rest), and it cannot bind on a pool of three or fewer, where it is at least the whole
+ * remainder.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const LEVY_MAX_SHARE_MULTIPLE = 3;
+
+/**
  * The tenure half of the newcomer floor, in ticks.
  *
  * Two Reckonings. Long enough that a first night and a full second day are protected

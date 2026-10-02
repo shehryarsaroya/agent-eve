@@ -10,7 +10,23 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
-## ⏱ 2026-10-02 (latest) — the Season 1 launch fixes, branch `season1-launch-fixes` off `season1`
+## ⏱ 2026-10-02 (latest) — §5.2's max share, branch `season1-levy-cap` off `season1-voices`
+
+*Not merged, not deployed. Owner call (3) decided: no line of a docket's remainder pool above
+`LEVY_MAX_SHARE_MULTIPLE` (3) × its even share. `TRACKER.md`'s STATUS carries the account, the per-seed table
+and the `BY_STORES` reading. Still `RULES_VERSION` 41 — verbs 40/40, observe keys 11/11, kinds 8/8.*
+
+| | reading, 2026-10-02 |
+|---|---|
+| `tsc` · lint · audits · vitest (`npm run gate0`) | 0 · 0 · DET-8 and PROP-O3 pass · **373 files, 4,380 passed, 1 skipped, 0 failed** (520 s) |
+| ten seeds, one season each (12 members) | `levyShort` 1,134,354 → **978,896** · red lines 72 → 78 · top line 9.91× → **3.37×** the duty · lines over the bound 30 → **0** (23 held of 1,330 pool lines) · settled 1,839 → 1,817 · kept 3,861 → 3,829 · broken 230 → 222 · grand ventures 8 KEPT, 2 BROKEN → 10 KEPT |
+| balance gate (8 seeds × 9 Reckonings × 8 members) | `levyShort` 8,194 → **0** · red 1/576 → **0/576** · kept 1,213 → 1,219 · broken 67 → 70 · top line 6.00× → 3.58× · `CARRIED` 943,124 → 732,355 |
+| `BY_STORES` alone | gate horizon: no change (0 short either side). Ten seasons: its shortfall 503,686 → 534,754, at most 80,431 of it on lines the bound raised, all on `g04`/`g07`, whose constellations are short of the good every Reckoning from R8–R9 on either side |
+| the house cast's ballot | reads the bill each rule would cut (`previewShares`), not the weight ratio: 16 of 623 ballots moved at the gate horizon, 100 of 1,800 over the seasons, every one with the bound binding |
+
+---
+
+## ⏱ 2026-10-02 — the Season 1 launch fixes, branch `season1-launch-fixes` off `season1`
 
 *Not merged, not deployed. `TRACKER.md`'s STATUS carries the account and the owner calls; this is the
 reading. Still `RULES_VERSION` 41 — verbs 40/40, observe keys 11/11, kinds 8/8.*

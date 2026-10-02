@@ -6,7 +6,101 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-02 (latest) — THE OFFER BOOK STANDS: THE FOURTH LAUNCH BLOCKER (branch `season1-voices`, with the cast's voices and the three fixes below merged in; not deployed)
+> ### 2026-10-02 (latest) — NO MEMBER BEARS THE DOCKET: §5.2's MAX SHARE, OWNER CALL (3) (branch `season1-levy-cap` off `season1-voices` `876dfa6`; not merged, not deployed)
+>
+> Still `RULES_VERSION` 41 (a fifth bullet in its launch-fixes note; Season 1 is a fresh world, so no bump
+> and no divergence), verbs 40/40, observe keys 11/11, kinds 8/8, no new §3 term and no new captured field.
+> `npm run gate0`: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **373 files, 4,380 passed, 1 skipped, 0 failed**
+> (520 s). The owner's decision on owner call (3) of the launch-fixes entry below: **no line of a docket's remainder
+> pool exceeds `LEVY_MAX_SHARE_MULTIPLE` (3, *calibrate*) × the pool's even share** (remainder ÷ pool size,
+> rounded up — the duty when nobody is floored or spared, 71,700 rather than 60,000 when one member of six
+> is spared). The excess is water-filled over the rest by the same rule's weights, every pass
+> `largestRemainder`, so Σ is exact; floored and spared lines are untouched. It applies whatever rule carried.
+>
+> - **One home** (`levy/assessment.ts`): `maxShareOf` is the bound, `poolShares` the water-filling, and
+>   `allocate` cuts every docket through them — the voted plan and the published-default counterfactual
+>   `namedLoser` reads alike. **INV-24 gains a clause**: a pool line above the max share halts the tick
+>   (`settle.ts:inv24InputsFor` derives the bound from the declared total, never from the amounts it
+>   checks). No invariant re-derived a docket from its weights before this — INV-24 checked the sum and
+>   the floor, `checkLevyAttribution` the shortfall arithmetic — so none could halt on the bound; grep
+>   covered `allocate(`, `weightOf`, `largestRemainder`, `relievedTotal`, `line.weight`, the four rule
+>   names, `namedLoser`/`underDefault`, and the frames/recap/tribute and client readers (all read the book).
+> - **The house cast's ballot** was the only Levy share prediction outside the book: it compared
+>   `weightOf(me) / Σ weightOf` across rules, which the bound no longer equals. It now compares the bill
+>   each rule would cut, `previewShares` = `poolShares` on the steady-state docket (the duty a member,
+>   nobody relieved — the docket the ratio was a fraction of). It catches exactly `LevyArithmeticError`
+>   (a docket `allocate` could not cut either) and skips that rule, because the server's scheduler calls
+>   `decide` unguarded and the ratio never threw. The `vote` affordance quotes no per-rule figure (its
+>   prose is qualitative and stays), and `levy.my_assessment` reads the book.
+> - **Surfaces**: `agent.md` §5, one sentence after the `INVERSE_EXPOSURE` warning — *"No rule bills a
+>   member above 3× an even share; the others take the excess, by that rule."* — **+89 on every cast
+>   prompt position** (FLOOR block): analytic 118,307 → 118,396, margin **1,604**; largest reachable
+>   111,537 → 111,626, margin 8,374. SPEC §5.2's canon sentence and §17's Levy row; TESTING.md and the
+>   registry's INV-24 line. Pixel signature (A13): the tribute line — no rope on a docket is more than
+>   three even shares thick.
+> - **`test/levy/no-member-bears-the-docket.spec.ts`**, eleven cases: the finding's docket (free share
+>   103,527, held at 60,000); the excess to the others exactly `largestRemainder(60,000, their weights)`, in
+>   weight order; the cascade (a line pushed over by another's excess); floored/spared untouched and a spare
+>   raising the bound to 71,700; a seeded 2,000-docket sweep; INV-24 passing the cut docket and halting the
+>   same docket unbounded; the preview equal to the bill rule by rule; and `g08` (8 members, 6 Reckonings):
+>   a real line held at the bound, the member's observation printing it, every cast ballot the cheapest
+>   bill, one the bound moved. Mutations run: the bound removed from `allocate` → five cases red and the
+>   `g08` world **halts at tick 864** on INV-24 (`p:sable` 104,059 above 69,750); the cast back on the
+>   ratio → red at tick 1441; INV-24's clause off → two red. `the-constellation-closes-ranks.spec.ts`'s
+>   presence-only census is now **empty** (`g07` R6 `p:varrow` billed 71,700, paid in full, where it was
+>   101,844 and 8,194 short); its carry-reserve mutation still goes red (21,230 escrowable short).
+> - **The hash** moves at the earlier of the first docket with a line over the bound (its phase 0) or the
+>   first cast ballot the bound changed. Measured on both trees at 8 members: `g03` tick 578, `g05` 1,153,
+>   `g07` 865 (ballots), `g08` 864 (R3's docket); identical before each.
+>
+> **Measured** — same scripts on both trees (`scripts/season-probe.ts`, `scripts/balance-gate.ts`, and the new
+> meter `scripts/levy-max-share.ts` they share; on `876dfa6` the meter's one import of the multiple is the
+> literal 3, nothing else differs). Season = 12 members from genesis through the boundary, `instant`:
+>
+> | | settled | dflt | kept | broken | `levyShort` | red | top line | over the bound → held |
+> |---|---|---|---|---|---|---|---|---|
+> | `fs-a` | 176 → 175 | 22 → 18 | 377 → 376 | 30 → 22 | 19,558 → 10,648 | 3 → 3 | 3.67× → 3.33× | 1 → 2 |
+> | `fs-b` | 180 → 183 | 24 → 23 | 380 → 388 | 35 → 34 | 136,300 → 124,520 | 8 → 9 | 8.26× → 3.37× | 5 → 2 |
+> | `g01` | 182 → 180 | 21 → 21 | 387 → 383 | 27 → 29 | 46,456 → 29,580 | 2 → 5 | 9.26× → 3.33× | 6 → 1 |
+> | `g02` | 189 → 180 | 13 → 11 | 396 → 377 | 14 → 13 | 71,914 → 65,537 | 6 → 9 | 9.91× → 3.29× | 3 → 2 |
+> | `g03` | 192 → 192 | 13 → 15 | 402 → 402 | 17 → 20 | 11,429 → 5,992 | 2 → 1 | 8.19× → 3.37× | 2 → 3 |
+> | `g04` | 181 → 179 | 14 → 13 | 377 → 375 | 18 → 15 | 392,195 → 392,269 | 16 → 20 | 8.85× → 3.37× | 5 → 4 |
+> | `g05` | 180 → 177 | 13 → 13 | 381 → 373 | 14 → 15 | 0 → 0 | 0 → 0 | 8.97× → 3.33× | 1 → 2 |
+> | `g06` | 185 → 184 | 18 → 17 | 385 → 382 | 22 → 21 | 33,222 → 151 | 1 → 1 | 8.78× → 3.33× | 3 → 2 |
+> | `g07` | 188 → 185 | 17 → 18 | 388 → 387 | 24 → 23 | 384,851 → 346,922 | 33 → 27 | 6.69× → 3.37× | 2 → 3 |
+> | `season-e2e-28` | 186 → 182 | 19 → 22 | 388 → 386 | 29 → 30 | 38,429 → 3,277 | 1 → 3 | 9.20× → 3.33× | 2 → 2 |
+> | **ten seeds** | 1,839 → 1,817 | 174 → 171 | 3,861 → 3,829 | 230 → 222 | **1,134,354 → 978,896** | **72 → 78** | 9.91× → 3.37× | 30 over → 23 held of 1,330 pool lines; 0 over after |
+>
+> 0 violations and 0 halts on every run either side; grand ventures 8 KEPT · 2 BROKEN → 10 KEPT. At the
+> balance-gate horizon (`g01`–`g08` × 9 Reckonings × 8 members): `levyShort` **8,194 → 0**, red **1/576 →
+> 0/576**, kept 1,213 → 1,219, broken 67 → 70, ventures 656 → 663, `CARRIED` 943,124 → 732,355, top line
+> 6.00× → 3.58×, 11 lines over the bound → 9 held of 400, 0 over.
+>
+> **`BY_STORES`, measured separately as asked.** At the gate horizon it changes nothing: 14 → 12 dockets,
+> nothing over the bound or held, 0 short either side. Over the ten seasons it does create shortfall:
+> `BY_STORES` dockets 41 → 46, its shortfall **503,686 → 534,754 (+31,068)** on 27 → 29 lines, and the bound
+> raised 88 lines by 371,948 in all, of which the raised lines ended at most **80,431** short that the raise
+> could account for (Σ min(owed, raise)) — **41,350 on `g04` and 39,081 on `g07`**, the two seeds whose
+> constellation is short of the levy good every Reckoning from R8–R9 on before and after (their season
+> totals moved +74 and −37,929). On the other eight seeds every raised `BY_STORES` line was paid in full.
+> The same measure under `INVERSE_EXPOSURE`: at most 27,456 (`fs-a` 10,648, `fs-b` 16,808, FINALE-time
+> insolvency). Not exempted — the owner decides.
+>
+> **What else moved, and why.** (1) **The vote moved before any docket did.** With a zero-exposure member
+> held, a moderately exposed member now bears part of the excess under `INVERSE_EXPOSURE` and its cheapest
+> bill is often `BY_EXPOSURE`: 16 of 623 cast ballots changed at the gate horizon and **100 of 1,800** over
+> the ten seasons (63 `INVERSE_EXPOSURE` → `BY_EXPOSURE`, 31 → `BY_STORES`, 6 off `BY_STORES`); every change had
+> the bound binding in the voter's preview and none came from rounding. `INVERSE_EXPOSURE` dockets fell 89 →
+> 54 over the seasons. (2) **Red lines rose 72 → 78 while `levyShort` fell 13.7%**: late-season insolvency
+> is spread over more, thinner lines. (3) `CARRIED` fell 22% at the gate horizon — the held member's
+> escrowable share no longer needs carrying.
+>
+> **For the owner:** (1) `BY_STORES` above — exempt it, keep it, or tune the multiple. (2) More red lines,
+> thinner, at season end: the bound changes who is short, not whether an insolvent constellation is.
+> (3) The bound with a spare in effect exceeds 3× the duty (71,700 = 3.585×), as the even-share formula
+> implies; "about 3×" was taken to allow it.
+
+> ### 2026-10-02 — THE OFFER BOOK STANDS: THE FOURTH LAUNCH BLOCKER (branch `season1-voices`, with the cast's voices and the three fixes below merged in; not deployed)
 >
 > Still `RULES_VERSION` 41, a fourth bullet in its launch-fixes note. Owner call (3) of the entry below:
 > `MAX_OFFER_ENTRIES` was a 256-row ring **for the whole world** that evicted its oldest row, and it was

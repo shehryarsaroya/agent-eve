@@ -325,7 +325,8 @@ export const INVARIANTS: readonly InvariantEntry[] = [
     'INV-24',
     'CROWD',
     60,
-    'Levy assessments sum to the constellation total exactly; the newcomer floor applies to every eligible principal',
+    'Levy assessments sum to the constellation total exactly; the newcomer floor applies to every eligible principal; ' +
+      'no line of a remainder pool exceeds the max share',
     'src/invariants/crowd.ts:checkInv24',
     null,
     'PARTIAL',

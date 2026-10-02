@@ -1008,8 +1008,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
     // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
-    // ★ Then the launch fixes — see the cell below.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_307);
+    // ★ Then the launch fixes, and then §5.2's max share (+89) — see the cell below.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_396);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1129,7 +1129,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Then +30 for the offer book standing (`say/offer.ts` §2): §4's `publish_offer` sentence now says a
     // new offer replaces your last. Analytic margin **1,693** — thin, and the reason the clause was folded
     // into an existing sentence instead of the +90 line it was first written as.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_307);
+    //
+    // Then +89 for §5.2's max share (`LEVY_MAX_SHARE_MULTIPLE`, owner call (3)): §5's Levy block, which is
+    // FLOOR, says after the `INVERSE_EXPOSURE` warning that no rule bills a member above 3x an even share
+    // and the others take the excess by that rule. Every position pays it, because a member reading that
+    // the default "loads the bill onto you" and not that the bill has a ceiling would vote — and budget
+    // its presence share — against a docket the engine no longer cuts. One sentence, the shortest that
+    // still names both halves. Analytic margin **1,604**.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_396);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1216,7 +1223,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ending's rename (the FLOOR season statement): 111,507, margin **8,493** against a required 4,000.
     // ★ Then +30 for §4's `publish_offer` sentence — a new offer replaces your last (`say/offer.ts` §2):
     // 111,537, margin **8,463** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_537);
+    // ★ Then +89 for §5's max-share sentence (FLOOR, every position): 111,626, margin **8,374** against a
+    // required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_626);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2949,13 +2958,17 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // second offer takes the first one down, and a member that published two expecting both to stand
       // would be planning against a book that no longer exists. Folded into the sentence that was there
       // rather than given its own line, which measured +90. MEASURED.
-      54_783, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer)
-      65_294, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer)
-      74_989, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer)
-      80_075, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30)
-      110_295, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30)
-      91_922, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30)
-      111_537, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30)
+      // Then +89 on every row: §5.2's max share (`LEVY_MAX_SHARE_MULTIPLE`, owner call (3)). §5's Levy
+      // block is FLOOR, and it now says, after the warning that `INVERSE_EXPOSURE` loads the bill onto a
+      // member at an exposure peak of 0, that no rule bills a member above 3x an even share and the
+      // others take the excess by that rule. MEASURED.
+      54_872, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share)
+      65_383, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share)
+      75_078, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share)
+      80_164, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89)
+      110_384, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30, +89)
+      92_011, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89)
+      111_626, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30, +89)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3130,7 +3143,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      118_307, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer)
+      118_396, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer, +89 share)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
