@@ -89,8 +89,8 @@ export function checkSsn1(input: SeasonInvariantInputs): readonly InvariantViola
 
 /**
  * **SSN-2 — no live Frontier claim predates the current season.** A10's reset, asserted rather than
- * hoped: the boundary closes every Frontier claim at the FINALE, so one raised before this season's
- * first tick and still standing is a season that did not close.
+ * hoped: the boundary ends every Frontier claim at the FINALE (`SEASON_ENDED`), so one raised before
+ * this season's first tick and still standing is a season that did not close.
  */
 export function checkSsn2(input: SeasonInvariantInputs): readonly InvariantViolation[] {
   const out: InvariantViolation[] = [];

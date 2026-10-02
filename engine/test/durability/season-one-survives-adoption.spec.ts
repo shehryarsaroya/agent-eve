@@ -13,7 +13,7 @@
  * So this is one world that holds all four at once, through the real journal and the real boot:
  *
  *   - a whole SEASON played from genesis by the house cast, so the checkpoint the boot adopts is the
- *     FINALE's own settlement — the season record written, every Frontier claim CLOSED, the grand
+ *     FINALE's own settlement — the season record written, every Frontier claim SEASON_ENDED, the grand
  *     venture's verdict on the book — and the replayed tail is Season 2's first ticks;
  *   - a grown region: `growthPerSystem` 0 opens a constellation at every settlement, so the adopted
  *     map is the launch map plus one per Reckoning (the knob production never passes; `world/growth.ts`);

@@ -76,7 +76,7 @@ version and re-read these figures after the merge.*
 
 | | reading, 2026-10-01 (branch) |
 |---|---|
-| `RULES_VERSION` | **41** (the season table, `ClaimState.CLOSED`, grand ventures) |
+| `RULES_VERSION` | **41** (the season table, `ClaimState.SEASON_ENDED` — spelled `CLOSED` until the launch fixes, HARD RULE 4 —, grand ventures) |
 | `tsc` · lint | 0 · 0 |
 | vitest | **344 files, 4,205 passed, 1 skipped** (`npm ci && npm run gate0`, 3,745 s) |
 | budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent |

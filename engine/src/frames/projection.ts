@@ -447,7 +447,7 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   //
   // A re-read of the `season.closed` row, `PUBLIC` at birth. Every figure on it is a settled venture's
   // payout (`venture.settled`, `PUBLIC`), a difference of two public standing vectors (`standings` is
-  // admitted above), or a closed claim (`claimLines`' own clause). Nothing here was ever `PARTIES`.
+  // admitted above), or a claim the season ended (`claimLines`' own clause). Nothing here was ever `PARTIES`.
   'seasonRecords',
   // ── ★ THE DEALING MARK (41), AND EVERY FIELD IS A PUBLIC FACT ALREADY ON THIS LIST ──
   //

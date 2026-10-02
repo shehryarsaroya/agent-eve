@@ -96,7 +96,7 @@ const CLAIM_STATES: readonly ClaimState[] = Object.freeze([
   'CONTESTED',
   'LAPSED',
   'CEDED',
-  'CLOSED',
+  'SEASON_ENDED',
 ]);
 
 export function isClaimState(s: string): s is ClaimState {
@@ -370,7 +370,7 @@ export class Book {
   /** End a claim. Terminal, and the state says which ending it was. */
   end(
     system: SystemId,
-    state: Extract<ClaimState, 'LAPSED' | 'CEDED' | 'CLOSED'>,
+    state: Extract<ClaimState, 'LAPSED' | 'CEDED' | 'SEASON_ENDED'>,
     reckoning: number,
     to: PrincipalId | null,
   ): void {
@@ -1065,7 +1065,7 @@ export class Book {
 
 /** Terminal states end a claim. A terminal claim is not on the roll and owes nothing. */
 export function isTerminal(state: ClaimState): boolean {
-  return state === 'LAPSED' || state === 'CEDED' || state === 'CLOSED';
+  return state === 'LAPSED' || state === 'CEDED' || state === 'SEASON_ENDED';
 }
 
 function pairKey(reckoning: number, id: string): string {

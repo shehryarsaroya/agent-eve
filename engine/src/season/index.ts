@@ -79,7 +79,7 @@ export {
   SeasonBook,
   SeasonBookError,
   seasonStateTable,
-  type ClosedClaim,
+  type SeasonEndedClaim,
   type CrewLine,
   type ElectedByRow,
   type GrandOutcome,

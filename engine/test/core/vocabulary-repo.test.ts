@@ -235,6 +235,104 @@ function allUnions(): readonly Union[] {
   return found;
 }
 
+/**
+ * ★ **Every array-declared enum in `src/`** — `const NAME = ['A', 'B'] as const`, or the same list inside
+ * `Object.freeze([...])` — whose body is nothing but upper-case string literals.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE BLIND SPOT A SHIPPED COLLISION LIVED IN.** `allUnions` reads `'A' | 'B'` declarations, so a
+ * vocabulary declared as an ARRAY — `syndicate/charter.ts:ADMISSION_RULES = ['OPEN', 'INVITE', 'CLOSED']`
+ * — was invisible to every check in this file. Season 1 then gave `ClaimState` a sixth member, `CLOSED`,
+ * for a Frontier claim the season ended, and one word named a claim's ending and who may join a house.
+ * Nothing went red: the merge found it by reading. The claim's ending is `SEASON_ENDED` now, and this is
+ * the half of the guard that would have seen it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function arrayEnums(): readonly Union[] {
+  const found: Union[] = [];
+  const decl = /const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=\n]+)?=\s*(?:Object\.freeze\()?\s*\[([^\]]*)\]/g;
+  for (const file of srcFiles()) {
+    const rel = file.slice(file.indexOf('/src/') + 1);
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(decl)) {
+      const body = m[2] ?? '';
+      const members = [...body.matchAll(/'([A-Z][A-Z_]*)'/g)].map((x) => x[1] ?? '');
+      // Only a list made of nothing but literals is a vocabulary; `[a, b]` of identifiers is data.
+      if (members.length === 0 || body.replace(/'[A-Z][A-Z_]*'|[\s,]|\/\/[^\n]*/g, '') !== '') continue;
+      const line = text.slice(0, m.index).split('\n').length;
+      found.push({ file: rel, line, name: m[1] ?? '?', members });
+    }
+  }
+  return found;
+}
+
+/**
+ * Where an array-declared vocabulary shares a word with a declared union, **today**. A census, not a
+ * sanction — the shape `vocabulary.test.ts`'s cross-enum census already uses: each line is a pair this
+ * file can now see and nobody has yet adjudicated, and a NEW line fails the test, so the next collision
+ * is argued before it ships. An array that is wholly a union's own runtime list (`CLAIM_STATES`,
+ * `VENTURE_KINDS`, `HAND_STATES` …) is that union by construction and is not counted.
+ *
+ * `ClaimState+ADMISSION_RULES.CLOSED` was on this list until the launch fixes; it must never return.
+ */
+const ARRAY_UNION_CENSUS: readonly string[] = [
+  'EngagementState~RANGE_CELLS.CONTACT',
+  'HullState~MODULE_FAMILIES.FITTING',
+  'IndemnityState~ADMISSION_RULES.OPEN',
+  'OrderState~ADMISSION_RULES.OPEN',
+  'PlanStepKind~POSTURES.HOLD',
+  'ReachWhy~PEACEFUL_BALLOTS.SYNDICATE',
+  'VentureKind~PEACEFUL_BALLOTS.LEVY',
+  'WeaponFamily~STARTER_FIT.SMALL_GUN',
+  'WeaponFamily~WORLD_FLEET_FIT.SMALL_GUN',
+];
+
+describe('★ array-declared enums are read too — the blind spot the CLOSED collision lived in', () => {
+  const unions = allUnions().filter((u) => /^[A-Z]/.test(u.name));
+  const arrays = arrayEnums();
+  const membersOf = (name: string): ReadonlySet<string> =>
+    new Set(unions.filter((u) => u.name === name).flatMap((u) => u.members));
+
+  it('finds the array vocabularies, the charter\'s admission rules among them', () => {
+    expect(arrays.length, 'the walk found almost nothing — the regex has rotted').toBeGreaterThan(20);
+    expect(arrays.map((a) => a.name)).toContain('ADMISSION_RULES');
+    expect(arrays.map((a) => a.name)).toContain('CLAIM_STATES');
+  });
+
+  it('a claim\'s states share no word with any array vocabulary but the claim book\'s own list', () => {
+    // MUTATION: put `'CLOSED'` back in `ClaimState` (and `CLAIM_STATES`) — RED, naming ADMISSION_RULES.
+    const claim = membersOf('ClaimState');
+    expect(claim.size, 'ClaimState was not found').toBe(6);
+    const clashes = arrays
+      .filter((a) => !a.members.every((m) => claim.has(m)))
+      .flatMap((a) => a.members.filter((m) => claim.has(m)).map((m) => `${a.name}.${m}`));
+    expect(clashes, 'one word naming a claim\'s ending and something else (HARD RULE 4)').toEqual([]);
+    expect([...claim], 'the season\'s ending is SEASON_ENDED, never a charter\'s CLOSED').toContain('SEASON_ENDED');
+    expect([...claim]).not.toContain('CLOSED');
+  });
+
+  it('no NEW word is shared between an array vocabulary and a declared union', () => {
+    const byName = new Map<string, Set<string>>();
+    for (const u of unions) {
+      const set = byName.get(u.name) ?? new Set<string>();
+      for (const m of u.members) set.add(m);
+      byName.set(u.name, set);
+    }
+    const census: string[] = [];
+    for (const a of arrays) {
+      // A union's own runtime list is that union; it shares its members by construction.
+      if ([...byName.values()].some((members) => a.members.every((m) => members.has(m)))) continue;
+      for (const [name, members] of byName) {
+        for (const m of new Set(a.members)) if (members.has(m)) census.push(`${name}~${a.name}.${m}`);
+      }
+    }
+    const byKey = (x: string, y: string): number => (x < y ? -1 : x > y ? 1 : 0);
+    expect([...new Set(census)].sort(byKey), 'a new shared word: argue it, or give one of the words up').toEqual(
+      [...ARRAY_UNION_CENSUS].sort(byKey),
+    );
+  });
+});
+
 describe('SPEC §3 is a rules surface — repo-wide', () => {
   it('the canon parsed out of SPEC §3 is non-trivial, so a silent parse failure cannot pass this suite', () => {
     // A guard that quietly finds zero canon terms would pass everything. This is

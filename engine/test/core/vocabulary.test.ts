@@ -87,15 +87,17 @@ const PULSE_OUTCOME = ['BREACH', 'REBUFF', 'STARVED'] as const;
 /**
  * Sovereignty's six (SPEC §6.3, A10). Listed here for `RaidState`'s reason: `ClaimState` lives in
  * `core/types.ts` because the claim book AND the frame's claim line both need the same six
- * words, and one pixel signature may not have two homes. The sixth, `CLOSED`, is the season's
- * ending (A10): neither the world's verdict (`LAPSED`) nor the holder's choice (`CEDED`).
+ * words, and one pixel signature may not have two homes. The sixth, `SEASON_ENDED`, is the season's
+ * ending (A10): neither the world's verdict (`LAPSED`) nor the holder's choice (`CEDED`). It was
+ * `CLOSED`, which a syndicate charter's admission rule also spells — HARD RULE 4, and the repo guard
+ * (`vocabulary-repo.test.ts`) now reads the array-declared enum that collision lived in.
  *
  * This union IS the pixel signature, and it is the one that replaced a §11.2 leak: the
  * rejected design published "Reckonings of Charge remaining", a public recipe divided by a
  * private stockpile. These five carry no such quantity — they are the world's own published
  * verdict about how many Charges a claim has already missed.
  */
-const CLAIM_STATE = ['SUPPLIED', 'STRAINED', 'CONTESTED', 'LAPSED', 'CEDED', 'CLOSED'] as const;
+const CLAIM_STATE = ['SUPPLIED', 'STRAINED', 'CONTESTED', 'LAPSED', 'CEDED', 'SEASON_ENDED'] as const;
 /**
  * Combat's five (SPEC §9A). Listed here for `RaidState`'s reason: `EngagementState` lives in
  * `core/types.ts` because the engagement book AND the frame's battle line both need the same five

@@ -113,7 +113,7 @@ function recordLine(record: SeasonRecord, handles: ReadonlyMap<PrincipalId, Hand
       value: t.value,
       clause: t.clause,
     })),
-    closedClaims: record.closedClaims.length,
+    seasonEndedClaims: record.seasonEndedClaims.length,
     legend,
   };
 }

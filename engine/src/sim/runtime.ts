@@ -2428,11 +2428,12 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *     present: every ordinary venture captures and hashes the bytes it always did.
  *   - **`election` rows MAY carry the delegate that stated them** (`electionActors`). Written only
  *     when a delegate elected: a world with no delegated election captures what it always did.
- *   - **`ClaimState` gains `CLOSED`** — the season's ending, neither the world's verdict (`LAPSED`)
- *     nor the holder's choice (`CEDED`). At the FINALE's settlement every FRONTIER claim closes; the
- *     bond is untouched; campaigns aimed at a closed claim end `MOOT` with the bond returned.
+ *   - **`ClaimState` gains `SEASON_ENDED`** — the season's ending, neither the world's verdict
+ *     (`LAPSED`) nor the holder's choice (`CEDED`). At the FINALE's settlement every FRONTIER claim
+ *     ends `SEASON_ENDED`; the bond is untouched; campaigns aimed at such a claim end `MOOT` with the
+ *     bond returned. (Spelled `CLOSED` until the launch fixes — see below.)
  *   - **Three new PUBLIC event kinds** — `grand.verdict` (at the delivery tick the crews share), and
- *     `claim.closed` and `season.closed` (the boundary).
+ *     `claim.season_ended` and `season.closed` (the boundary).
  *   - **`create` takes `grand: true`**, `fill_role` on a grand candidate requires presence at the stage
  *     and a stake of earned capital, and a grand candidate delivers the season's yield or nothing.
  *   - **`observe.header.season`** — the clock, the grand venture and the last season. No twelfth key.
@@ -2521,10 +2522,17 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *     answer window, the map's thread), the cap is a population book (`PARLEYS_RETAINED_PER_PRINCIPAL` ×
  *     `MAX_PRINCIPALS`, a tripwire that cannot fire below the ceiling), and every count reads one
  *     principal's mail, never the world's. Every per-Reckoning limit binds exactly as before.
+ *   - **A claim the season ends is `SEASON_ENDED`, never `CLOSED`.** A syndicate charter's admission
+ *     rule is spelled `CLOSED` (`syndicate/charter.ts:ADMISSION_RULES`), and HARD RULE 4 forbids one
+ *     word for two concepts. The rename reaches the claim book, the event (`claim.season_ended`), the
+ *     season record (`seasonEndedClaims`), the frames, the client, `agent.md` and SPEC §3; the repo
+ *     vocabulary guard now reads array-declared enums, which is where the collision hid.
  *
  * Still a fresh world at genesis, so there is no divergence to accept. The `say` table's shape is
  * unchanged; a world in which a letter outlives its windows hashes differently from the tick that
- * letter is retired, and a world in which nobody writes one hashes exactly as before.
+ * letter is retired, and a world in which nobody writes one hashes exactly as before. The season
+ * record's key is `seasonEndedClaims` where it was `closedClaims`, so a world that reaches its FINALE
+ * hashes differently from the boundary tick on, and one that has not reached it exactly as before.
  *
  * ══════════════════════════════════════════════════════════════════════════
  */
@@ -2670,10 +2678,10 @@ import {
   seasonOf,
   seasonStateTable,
   seasonTitlesFrom,
-  type ClosedClaim,
   type GrandVerdict,
   type GrandWindow,
   type SeasonBlock,
+  type SeasonEndedClaim,
   type SeasonRecord,
   type SeasonViewPort,
   type VerdictTally,
@@ -8189,13 +8197,13 @@ export class Runtime {
    * Frontier claims and a named slice of Frontier-deployed capital settle and re-open."* So this
    * method touches exactly two things and names the slice:
    *
-   *   1. **Every live FRONTIER CLAIM closes** — state `CLOSED`, its system open to the next season's
+   *   1. **Every live FRONTIER CLAIM ends** — state `SEASON_ENDED`, its system open to the next season's
    *      anchor. The named slice of Frontier-deployed capital is the **ANCHOR**: the goods destroyed to
    *      raise the claim bought sovereignty for the rest of its season and no longer. Nothing is
    *      slashed and no money moves: the claimant's BOND is its continuous credit rating (§6.4) and
    *      stays posted, its arrears are cleared with the claim, and RENT and FUEL stop because there is
    *      no live claim to collect or burn for. MARCHES claims are untouched, as A10 says.
-   *   2. **Every campaign aimed at a closed claim ends MOOT**, bond returned in full — the war's
+   *   2. **Every campaign aimed at a claim the season ended ends MOOT**, bond returned in full — the war's
    *      objective is gone and nobody failed at anything (`campaign/pulse.ts`'s own MOOT rule, run now
    *      rather than lazily at the next pulse, so a war cannot outlive the season that held its prize).
    *
@@ -8214,18 +8222,18 @@ export class Runtime {
     ctx.step();
     const reckoning = reckoningOf(ctx.tick);
 
-    // ── 1. FRONTIER CLAIMS CLOSE ─────────────────────────────────────────────
-    const closed: ClosedClaim[] = [];
+    // ── 1. FRONTIER CLAIMS END: `SEASON_ENDED` ───────────────────────────────
+    const ended: SeasonEndedClaim[] = [];
     for (const claim of this.sovereignty.liveClaims()) {
       ctx.step();
       if (tierOf(this.world.map, claim.system) !== 'FRONTIER') continue;
       const claimant = claim.claimant;
-      this.sovereignty.end(claim.system, 'CLOSED', reckoning, null);
+      this.sovereignty.end(claim.system, 'SEASON_ENDED', reckoning, null);
       this.sovereignty.clearMisses(claim.system);
-      closed.push({ system: claim.system, claimant });
+      ended.push({ system: claim.system, claimant });
       this.appendPublic({
         tick: ctx.tick,
-        kind: 'claim.closed',
+        kind: 'claim.season_ended',
         actor: null,
         family: `claim::${claim.id}`,
         payload: {
@@ -8240,21 +8248,21 @@ export class Runtime {
           standingTaken: false,
           handsTaken: false,
           why:
-            `season ${String(season)} ended: every Frontier claim closes and its system re-opens (A10). The ` +
+            `season ${String(season)} ended: every Frontier claim ends SEASON_ENDED and its system re-opens (A10). The ` +
             'anchor bought one season; the bond is untouched.',
         },
         actedOnStateVersion: ctx.frozenStateVersion,
       });
       this.raidTicker.push(
-        claimTickerLine({ kind: 'CLOSED', system: claim.system, claimant, other: null, amount: 0 }),
+        claimTickerLine({ kind: 'SEASON_ENDED', system: claim.system, claimant, other: null, amount: 0 }),
       );
     }
 
-    // ── 2. A WAR WHOSE OBJECTIVE THE SEASON CLOSED ENDS MOOT ─────────────────
-    const closedSystems = new Set<string>(closed.map((c) => c.system));
+    // ── 2. A WAR WHOSE OBJECTIVE THE SEASON ENDED ENDS MOOT ──────────────────
+    const endedSystems = new Set<string>(ended.map((c) => c.system));
     const mooted: string[] = [];
     for (const campaign of this.campaigns.live()) {
-      if (!closedSystems.has(campaign.objective)) continue;
+      if (!endedSystems.has(campaign.objective)) continue;
       ctx.step();
       this.settleCampaign(
         ctx.tick,
@@ -8266,7 +8274,7 @@ export class Runtime {
           returned: campaign.bond,
           lapseObjective: false,
           why:
-            `season ${String(season)} closed the claim on ${campaign.objective}, so the campaign's objective is ` +
+            `season ${String(season)} ended the claim on ${campaign.objective}, so the campaign's objective is ` +
             'gone and its bond returns in full — the season ended the war, nobody lost it',
         },
         ctx.frozenStateVersion,
@@ -8309,7 +8317,7 @@ export class Runtime {
       baseYieldMinor: grandMarkerFor(season).baseYieldMinor,
       grand,
       titles,
-      closedClaims: closed,
+      seasonEndedClaims: ended,
       mootedCampaigns: mooted,
     };
     this.seasonBookRef.closeSeason(record, baselineFrom(rows));
@@ -8343,7 +8351,7 @@ export class Runtime {
           })),
         },
         titles: titles.map((t) => ({ title: t.title, principal: t.principal, value: t.value, clause: t.clause })),
-        closedClaims: closed.map((c) => ({ system: c.system, claimant: c.claimant })),
+        seasonEndedClaims: ended.map((c) => ({ system: c.system, claimant: c.claimant })),
         mootedCampaigns: mooted,
       },
       actedOnStateVersion: ctx.frozenStateVersion,

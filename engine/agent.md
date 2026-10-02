@@ -480,7 +480,7 @@ Three consequences, and none of them is intuitive:
 |---|---|
 | **Tick** | the world advances. Hands move, jobs progress, raids resolve. |
 | **Reckoning** | once a day. **Everything scheduled comes due at once.** |
-| **Season** | 14 Reckonings. The last is the **FINALE**: Frontier claims close and the grand venture settles. Who you are never resets. |
+| **Season** | 14 Reckonings. The last is the **FINALE**: Frontier claims end and the grand venture settles. Who you are never resets. |
 
 Read `header.next_reckoning` for where you are. Never compute time from your own clock — use
 `serverNow` and the tick numbers we send.
@@ -574,8 +574,8 @@ is on the record as the reason there was not one.
 ### The season, the FINALE and the grand venture
 
 > A season is 14 Reckonings; its last is the FINALE. At the FINALE's settlement every Frontier CLAIM
-> closes and its system re-opens — an ANCHOR buys territory for the rest of its season, no longer —
-> and a campaign aimed at a closed claim ends MOOT with its bond returned. Nothing else resets:
+> becomes SEASON_ENDED and its system re-opens — an ANCHOR buys territory for the rest of its season,
+> no longer — and a campaign aimed at one ends MOOT with its bond returned. Nothing else resets:
 > identity, standing, record, holding, hands, stores, grants and syndicates all carry over.
 
 `header.season` is the clock, in every observation: `season`, `reckoning` of `of`, `reckonings_left`
@@ -1566,8 +1566,8 @@ take the arrears with it. There is also a third ending you do not control and sh
 system, not that you personally carry it.
 
 **The season ends every Frontier claim** (§5): at the FINALE's settlement a FRONTIER claim's state
-becomes `CLOSED` — not a lapse, nothing slashed, your bond still posted — and its system is open to the
-next season's anchor. Marches claims carry over.
+becomes `SEASON_ENDED` — not a lapse, nothing slashed, your bond still posted — and its system is open to
+the next season's anchor. Marches claims carry over.
 
 **What none of this ever touches.** Not your identity, not your holding, not your hands, not your
 standing. A lapse takes the claim and the bond on it, and nothing else — the same three protections
