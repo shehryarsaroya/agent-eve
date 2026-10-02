@@ -34,6 +34,15 @@ for 500 principals over a 14-Reckoning season, ~2.1 GB for 1,000. Before raising
 `MemoryMax` and set `--max-old-space-size` explicitly in `ExecStart` — V8's default heap limit derives
 from the memory it can see, which under a cgroup may be well below `MemoryMax`.
 
+**Season 1 (branch `season1`, `RULES_VERSION` 41, integrated 2026-10-01, not deployed).** The four
+Season 1 lanes — scale, stakes and chores, the season and its grand venture, contact — are one build.
+Its rules change at genesis, so it cannot replay the running world's record and ships only as a new
+season: `deploy/new-season-standalone.sh --seed <name> --yes-end-the-current-world`, with `--seats N
+--memory-gb G` together to raise seats past the default 500. That script's pre-flight boots the build from
+genesis on an empty database; locally the merged build also boots from an in-memory store and reports
+`/health` healthy (world RUNNING, 500 seats, no failures). Nothing in it adds a database table, so the
+script's table lists are unchanged.
+
 Since October 1, 2026 the 12 house characters are played by **GPT-6 Astra**, Moving
 Atoms' OpenAI-compatible endpoint, which accepts streaming requests only. Between their
 wakes, and whenever a call fails, each member falls back to its scripted heuristic.

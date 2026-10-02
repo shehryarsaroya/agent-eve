@@ -6,6 +6,93 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 (latest) — SEASON 1 INTEGRATED: FOUR LANES, ONE `RULES_VERSION` 41, ON BRANCH `season1` (not merged to master, not deployed)
+>
+> **The four Season 1 lanes are one branch.** Merged in this order — scale first, because it reshapes
+> how an observation is built and dimensions every book the others add to — `season1-scale` →
+> `season1-stakes-and-chores` → master (`16ef379`, seats and memory set together at cutover) →
+> `season1-season-and-grand-venture` → `season1-contact`, then each cross-lane fix as its own commit.
+> ONE rules bump (41: one block in `runtime.ts`, a section per lane and one for the merge), ONE asset
+> version (`?v=41` on every asset; INFRA.md keeps master's wording), verbs 40/40, axioms 15/15, observe
+> keys 11/11, kinds 8/8. master's deploy tooling, off-server backups and uptime workflow are untouched.
+>
+> **What Season 1 is, merged.** A world dimensioned for 10,000 principals with 500 host seats
+> (`COMPACT_SEATS`), observations built from shared views and spliced fragments, and a region that grows
+> by qualified population (scale); DORMANT WORKS, the creator's `create` as its countersignature,
+> standing intents that end and read satisfied, `fill_role` legality in one home, every menu question
+> asked at the tick the act lands (stakes); a 14-Reckoning season with `header.season`, a grand venture
+> formed only in the FINALE, Frontier claims CLOSED at the boundary and a `season.closed` record
+> (season); reach read off every situation two principals stood in, free answers, the DIRECTORY, letters
+> and offers as captured world state, the cast building with four, SIEGE offered outside the Commons
+> (contact).
+>
+> **Where two lanes met on one rule, and what the merge chose** (each its own commit):
+>
+> - **The grand venture is never one of the cast's four-role BUILDs.** Contact's slot filling,
+>   one-per-tier check and IN_FULL rule all matched it by kind; they skip `grand`, so a KEEP creed
+>   answers its shares. `the-four-role-cast-leaves-the-grand-venture-alone.spec.ts`, three cases, each
+>   red when its skip is removed.
+> - **The grand create is asked at the tick it lands, behind create's gates** (stakes' rule on the
+>   season's offer): offered from the tick before the window, never on its last tick, never to a
+>   principal owing a seal. The menu/engine sweep now covers it and contact's SIEGE; on the old code a
+>   cast-played FINALE drew 2 offered grand creates the engine refused.
+> - **The grand stage reads the launch map's graph**, so growth cannot move the stage the season
+>   announced or trip SSN-1 (today's generator never did — 12 seeds × 8 openings — now it cannot).
+> - **OBLIGE closes the season, then grows the region**; growth is last of all.
+> - **`header.season` carries one-line summaries** of its two statements, scale's `header.growth`
+>   precedent: in the house cast's 24,000-character projection the merged world kept 15.4 of 29.0
+>   affordances a wake against 17.3 of 26.5 on the scale lane, 0.6 of it the statements. `agent.md` §5
+>   keeps them verbatim (FLOOR in the cast's contract).
+> - **One stationed list** (`stationedAt`) for the aimless walk, the alloy errand and the crew walk —
+>   the pledged-hand fix stakes and contact each made, kept once — and **the aimless walk never sends a
+>   second hand into a standoff its member is already marching to** (`doubleMarches` 5 → 0, seed g06).
+> - **A WORKS line reads SPINNING UP, DORMANT, EXTRACTING or CROWDED OUT**, in that order.
+> - **The contact and season reads share the read epoch** — reach, the parley block, the directory's
+>   ranking, the season block, the grand index, the probe venture, the venture-tie and seal-gate walks.
+>   The merge had put an O(P) term back into every observation (1,000 principals: 1.94 → 3.23 ms, the
+>   burst 1.9 → 3.2 s); profiled and removed, the merged observation costs ~20% more than the scale
+>   lane's at 300 and at 1,000 alike — it is ~11% larger — and the burst is O(P) again.
+> - Every new cap classified in `capacity.spec.ts` (season 5, contact 9); `MAX_PARLEY_ENTRIES` stays
+>   FLAGGED, now with the reason its lifetime refusal is load-bearing for A15. SPEC §3 carries FINALE,
+>   GRAND VENTURE, DORMANT, DIRECTORY and the CLAIM row's three endings (LAPSED · CEDED · CLOSED); §7.3
+>   the create-as-countersignature sentence; §12.1 the new sub-keys; `agent.md` §6 names
+>   `header.growth`. The cast contract is 67 units: analytic 118,219 of 120,000 (nothing dropped),
+>   largest reachable 111,455 (margin 8,545 against 4,000) — the three rule-writing lanes composed exactly.
+> - Two fixtures widened or updated as their own guards instruct: the forked-record fixture seats 8
+>   (one creator left after the fork at 6), and the season fixture stops having a creator sign its own
+>   candidate.
+>
+> **Measured on the merged tree.** `npm ci && npm run gate0`: GATE0_PLACEHOLDER. A 12-member heuristic
+> world from genesis through the boundary (seed `fs-a`, `instant`, 4,080 ticks): **0 invariant
+> violations**; 1,465 ventures opened — 174 settled, 22 defaulted, 1,252 abandoned unfilled, 17 still
+> open; elective promises honoured 370, defaults 31; **11 four-role BUILDs, 10 settled**; the grand
+> venture formed once (p:corvid, MERCENARY), delivered 322,016 and its creed kept the yield — `BROKEN`,
+> three shares unpaid; DORMANT 0 (a cast that acts every tick never sleeps); letters 0 (the heuristic
+> cast writes none); growth 0 (expected at 12); `levyShort` 0 in every Reckoning but the FINALE's,
+> 14,767 (the whole constellation ran out of the good; the common base reads 20,528 there on this
+> seed). Season-one adoption round trip (`season-one-survives-adoption.spec.ts`): a boot adopts the
+> FINALE's checkpoint across a closed season, a grown region, a DORMANT WORKS and a letter answered
+> after it, replays Season 2's first 30 ticks and reaches the live head hash. At 300 principals (CPU clock, paired with the scale lane's tip): tick 15.2 ms mean against 18.4, the Reckoning 38 ms against 38, one observation 1.48 ms against 1.28 and the burst after the Reckoning 0.4 s against 0.4; at 1,000, 1.90 against 1.63 ms and 1.9 against 1.6 s — scale's gains kept (`SCALE-2026-10-01.md` §10).
+>
+> **Still open, for the owner:** (1) `MAX_PARLEY_ENTRIES` refuses the 513th parley of the world's life
+> (both scale and contact flagged it; the refusal keeps the A15 counts honest, so the fix is a
+> per-principal count or a population-sized book, not deletion). (2) `ClaimState.CLOSED` shares its
+> spelling with a syndicate charter's `CLOSED` admission — an array-declared enum the repo vocabulary
+> guard cannot see; SPEC §3 now says which is which, a rename (`EXPIRED` is the sanctioned "term ran
+> out" word) is the alternative. (3) `INVERSE_EXPOSURE` billed one member 5.54× the flat duty on an
+> intermediate merged trajectory of g07, and its 30% presence share is uncarryable by §5.2, so the
+> world recorded a presence-only shortfall of 11,051; the final trajectory is clean and the
+> closes-ranks pins pass, but a cap on one member's share is a balance call. (4) The house cast's prompt
+> projection: merged observations are ~11% larger and the cast sees ~53% of its affordances at the
+> 24,000-character budget (65% on the scale lane) — raise `COMPACT_CAST_MAX_PROMPT_CHARS` or trim
+> per-observation prose. (5) The cast contract's analytic margin is 1,781 characters: the next rules
+> addition drops CONTEXT at the analytic ceiling (still legal) — trim duplicated prose first. (6) The
+> lanes' own owner calls stand unchanged: 14 Reckonings against A10's 4–8 weeks and "largest stake
+> carries it" (season); the creator's veto is `abandon`, not a withheld signature, and what counts as
+> play for DORMANT (stakes); `distinct_counterparties` counts identities, and the house heuristic writes
+> no letters (contact); paging the journal, lot consolidation, per-constellation drama budgets and D7's
+> wage route for growth (scale).
+
 > ### 2026-10-01 — SEASON 1 · CONTACT (branch `season1-contact`, `RULES_VERSION` 41, fresh world)
 >
 > **Who may write to whom is read off every situation two principals stood in, answering is free,

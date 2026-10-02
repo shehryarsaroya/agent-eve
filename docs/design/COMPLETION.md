@@ -10,6 +10,26 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
+## ⏱ 2026-10-01 (latest) — Season 1 integrated on branch `season1`: one `RULES_VERSION` 41 for four lanes
+
+*Merged, measured, not deployed. `TRACKER.md`'s STATUS carries the account — the merge order, every
+place two lanes met on one rule and what was chosen, and the owner calls. The four lane readings below
+this one are each lane alone; read this block wherever they disagree.*
+
+| | reading, 2026-10-01 (branch `season1`) |
+|---|---|
+| `RULES_VERSION` | **41** — one bump for scale, stakes and chores, the season, contact |
+| `tsc` · lint · audits | 0 · 0 · DET-8 and PROP-O3 pass |
+| vitest (`npm ci && npm run gate0`) | GATE0_ROW |
+| budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent by the merge |
+| client | one asset version, `?v=41`; every screen renders headless against a season of frames with no script error |
+| a whole season, played (fs-a, 12 members, `instant`) | **0 violations**; 1,465 ventures · 174 settled · 22 defaulted · 1,252 abandoned; **11 four-role BUILDs** (10 settled); one grand venture, `BROKEN` by a MERCENARY creed (322,016 delivered, three shares kept); DORMANT 0 · letters 0 · growth 0; `levyShort` 0 every Reckoning but the FINALE (14,767; the base reads 20,528 on this seed) |
+| adoption | `season-one-survives-adoption.spec.ts`: the FINALE checkpoint adopted across a closed season, a grown region, a DORMANT WORKS and a letter; the head hash reproduced |
+| scale (CPU clock, paired with the scale lane) | 300 principals: tick **15.2** ms (lane 18.4) · Reckoning **38** (38) · one observation **1.48** ms (1.28) · burst **0.4 s** (0.4); 1,000: **1.90** ms (1.63) · burst **1.9 s** (1.6) — a constant ~16% for a ~11% larger observation, scale's O(P) burst kept |
+| cast contract | 67 units · analytic **118,219** of 120,000 · largest reachable **111,455** (margin 8,545) |
+
+---
+
 ## ⏱ 2026-10-01 — branch `season1-stakes-and-chores`, `RULES_VERSION` 41 (unmerged, nothing deployed)
 
 *A Season 1 lane, cut for a fresh world. `TRACKER.md`'s STATUS carries the account; this is the reading.*
