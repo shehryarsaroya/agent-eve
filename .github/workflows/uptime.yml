@@ -1,4 +1,9 @@
-# Uptime alert for https://agenteve.io (docs/background/INFRA.md).
+# Uptime alert for https://agenteve.io (docs/background/INFRA.md) — MANUAL ONLY since 2026-10-02.
+#
+# GitHub's scheduler ran this every-10-minutes schedule twice in about seven hours, so the live
+# monitor is now the Cloudflare Worker `agenteve-uptime` (deploy/uptime-worker.js, every 5 minutes).
+# This workflow stays as a manual check and test-mail button, and has no schedule so the two can
+# never both alert on one outage.
 #
 # Every 10 minutes: probe /health up to three times about 20 s apart, so a deploy's ~25 s restart
 # never trips it. The last known state is kept as a commit status (context uptime/agenteve.io) on
@@ -12,8 +17,6 @@
 name: uptime
 
 on:
-  schedule:
-    - cron: '*/10 * * * *'
   workflow_dispatch:
     inputs:
       test_alert:

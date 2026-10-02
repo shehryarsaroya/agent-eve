@@ -113,15 +113,17 @@ Spectator assets carry `?v=34`; bump that version when changing client scripts o
 styles so browsers fetch the new files. The engine and MCP checks are run locally
 before publishing; there is no CI workflow.
 
-**Uptime alerts (since October 1, 2026).** `.github/workflows/uptime.yml` runs every
-10 minutes on GitHub, independent of both servers. It probes `/health` up to three
-times about 20 seconds apart, so a deploy's restart does not trip it, and emails
-only on a change: one "Agent Eve is DOWN" and one "Agent Eve recovered". The last
-state is a commit status, `uptime/agenteve.io`, on the default branch. Secrets, by
-name: `AGENTEVE_ALERTS_RESEND_KEY` (Resend key `agenteve-alerts`, sending only,
-`agenteve.io` only; vault `AGENTEVE_RESEND_ALERTS_KEY`) and `AGENTEVE_ALERT_TO`.
-Run it by hand with `test_alert` to send a test email. GitHub disables schedules in
-a public repository after 60 days without activity; any push re-enables them.
+**Uptime alerts (since October 2, 2026).** The Cloudflare Worker `agenteve-uptime`
+(`deploy/uptime-worker.js`) runs on a 5-minute Cron Trigger, independent of both
+servers. It mails "Agent Eve is DOWN" after two consecutive failed checks, so a
+deploy restart never trips it, and "Agent Eve recovered" once afterwards. State is in
+the KV namespace `agenteve-uptime`; the `last_run` key shows the latest check.
+Deploy or update it with `python3 deploy/deploy-uptime-worker.py --alert-to <address>`
+(add `--test-alert` for one test mail, then deploy again without it). Its secrets are
+Worker bindings: the Resend key `agenteve-alerts` (sending only, `agenteve.io` only;
+vault `AGENTEVE_RESEND_ALERTS_KEY`) and the address. The first version was a GitHub
+Actions schedule; GitHub ran it twice in about seven hours, so
+`.github/workflows/uptime.yml` is now a manual check and test button with no schedule.
 
 The old AgentThread workspace is historical and is not a dependency of this service.
 The old season's archive was not present locally; the new season has its own seed
