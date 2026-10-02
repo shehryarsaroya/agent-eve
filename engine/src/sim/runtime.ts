@@ -217,7 +217,9 @@ import {
 } from '../say/parley.js';
 import { PARLEY_TIE_TICKS, reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
 import {
+  dealingIn,
   directoryFor as buildDirectory,
+  directoryOf,
   freshOfferOf,
   MAX_DIRECTORY_ROWS,
   type Directory,
@@ -8014,11 +8016,31 @@ export class Runtime {
 
   /** Every grand venture of `season` still in the venture book, in id order. Any state. */
   grandVenturesOf(season: number): readonly VentureRecord[] {
-    return this.ventures
-      .all()
-      .filter((v) => v.grand !== null && v.grand.season === season)
-      .sort((a, b) => compareIds(a.id, b.id));
+    // ★ Indexed off the venture book's own cached id order (Season 1 merge). This filtered EVERY venture
+    // the world had ever minted on every call — three times per observation and twice per tick (SSN-1's
+    // inputs) — which is a term that grows with the world's age, the class the scale lane removed from
+    // the tick. `VentureBook.all()` returns a new frozen array exactly when the id set changes, and a
+    // venture's `grand` marker is fixed at creation, so the index is rebuilt precisely when it can move.
+    const all = this.ventures.all();
+    if (this.grandIndex === null || this.grandIndex.all !== all) {
+      const bySeason = new Map<number, VentureRecord[]>();
+      for (const v of all) {
+        if (v.grand === null) continue;
+        const list = bySeason.get(v.grand.season) ?? [];
+        list.push(v);
+        bySeason.set(v.grand.season, list);
+      }
+      for (const list of bySeason.values()) Object.freeze(list);
+      this.grandIndex = { all, bySeason };
+    }
+    return this.grandIndex.bySeason.get(season) ?? NO_GRAND_VENTURES;
   }
+
+  /** The grand ventures by season, keyed on the identity of the venture book's id order it was built from. */
+  private grandIndex: {
+    readonly all: readonly VentureRecord[];
+    readonly bySeason: ReadonlyMap<number, readonly VentureRecord[]>;
+  } | null = null;
 
   /** The stake one role locked at fill, read off the ledger's lock. Zero when it staked nothing. */
   roleStakeOf(role: { readonly stakeEncumbranceId: string | null }): Minor {
@@ -8299,6 +8321,12 @@ export class Runtime {
    * own crew's sealed stake. The ONE reader of the season for both readerships.
    */
   seasonBlock(tick: number, viewer: PrincipalId | null): SeasonBlock {
+    // Once per read epoch per reader: an observation reads it three times (the header, the grand create,
+    // the briefing) and the cast once per member per tick. Every input is hashed state.
+    return this.perEpoch(`seasonBlock:${String(viewer)}:${String(tick)}`, () => this.seasonBlockNow(tick, viewer));
+  }
+
+  private seasonBlockNow(tick: number, viewer: PrincipalId | null): SeasonBlock {
     const season = tick < 0 ? 1 : seasonOf(tick);
     const port: SeasonViewPort = {
       tick,
@@ -10798,18 +10826,10 @@ export class Runtime {
         })),
       // Every seated principal whose holding stands in the constellation containing `system`.
       // Holdings are `PUBLIC` (§11.2) and `principalOrder` is the canonical iteration order, so
-      // this is deterministic without a sort and identical for every reader.
-      seatedNear: (system) => {
-        const target = systemOf(this.world.map, system).constellation;
-        const near: PrincipalId[] = [];
-        for (const principal of this.world.principalOrder) {
-          const id = this.world.holdingByPrincipal.get(principal);
-          const holding = id === undefined ? undefined : this.world.holdings.get(id);
-          if (holding === undefined) continue;
-          if (systemOf(this.world.map, holding.system).constellation === target) near.push(principal);
-        }
-        return near;
-      },
+      // this is deterministic without a sort and identical for every reader — read off the one
+      // per-epoch index ({@link seatedByConstellation}) rather than a walk of every principal.
+      seatedNear: (system) =>
+        (this.seatedByConstellation().get(systemOf(this.world.map, system).constellation) ?? []).map((s) => s.principal),
       constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
       approachedBy: (principal) => this.approachesTo(principal, tick).senders,
       liveGrants: (principal) => {
@@ -10899,14 +10919,12 @@ export class Runtime {
       // freshness rule is `say/directory.ts:freshOfferOf`, the same one the directory lists by.
       advertisersNear: (system) => {
         const target = systemOf(this.world.map, system).constellation;
-        const offers = this.offers.all;
+        const byAuthor = this.offersByAuthor();
         const out: { readonly principal: PrincipalId; readonly tick: number }[] = [];
-        for (const principal of this.world.principalOrder) {
-          const id = this.world.holdingByPrincipal.get(principal);
-          const holding = id === undefined ? undefined : this.world.holdings.get(id);
-          if (holding === undefined) continue;
-          if (systemOf(this.world.map, holding.system).constellation !== target) continue;
-          const fresh = freshOfferOf(offers, principal, tick);
+        for (const { principal } of this.seatedByConstellation().get(target) ?? []) {
+          const own = byAuthor.get(principal);
+          if (own === undefined) continue;
+          const fresh = freshOfferOf(own, principal, tick);
           if (fresh !== null) out.push({ principal, tick: fresh.tick });
         }
         return out;
@@ -10915,9 +10933,62 @@ export class Runtime {
     };
   }
 
-  /** Every principal this one may address, with the public situation that makes each one legal. */
+  /**
+   * ★ **Every seated principal by the constellation its HOLDING stands in**, in `principalOrder` — the
+   * world-wide walk the reach rungs (`seatedNear`, `advertisersNear`) start from, taken once per read
+   * epoch (Season 1 merge).
+   *
+   * The contact lane's rungs each walked every principal in the world from inside one principal's
+   * observation, and the observation reads reach three times — the O(P²) burst the scale lane had just
+   * removed, back by another door: measured at 1,000 principals, one observation 1.9 → 3.2 ms. Holdings
+   * are `PUBLIC` state inside the hash, so this is a pure function of hashed state and `perEpoch`'s rule
+   * admits it; inside a tick it is recomputed per call, exactly as before.
+   */
+  private seatedByConstellation(): ReadonlyMap<ConstellationId, readonly { readonly principal: PrincipalId; readonly system: SystemId }[]> {
+    return this.perEpoch('seatedByConstellation', () => {
+      const out = new Map<ConstellationId, { readonly principal: PrincipalId; readonly system: SystemId }[]>();
+      for (const principal of this.world.principalOrder) {
+        const id = this.world.holdingByPrincipal.get(principal);
+        const holding = id === undefined ? undefined : this.world.holdings.get(id);
+        if (holding === undefined) continue;
+        const constellation = systemOf(this.world.map, holding.system).constellation;
+        const list = out.get(constellation) ?? [];
+        list.push({ principal, system: holding.system });
+        out.set(constellation, list);
+      }
+      return out;
+    });
+  }
+
+  /**
+   * The prose offer book grouped by author, oldest first within each — once per read epoch, so
+   * `freshOfferOf` (the one home for the freshness rule) reads each principal's own rows instead of the
+   * whole book once per principal. The book is the captured `say` table, inside the hash.
+   */
+  private offersByAuthor(): ReadonlyMap<PrincipalId, readonly OfferEntry[]> {
+    return this.perEpoch('offersByAuthor', () => {
+      const out = new Map<PrincipalId, OfferEntry[]>();
+      for (const offer of this.offers.all) {
+        const list = out.get(offer.by) ?? [];
+        list.push(offer);
+        out.set(offer.by, list);
+      }
+      return out;
+    });
+  }
+
+  /**
+   * Every principal this one may address, with the public situation that makes each one legal.
+   *
+   * Once per read epoch per principal: an observation asks three times (the parley block, the parley
+   * affordances, the directory's rung column) and every answer is a function of hashed state — the
+   * parley and offer books are the `say` table since 41. Inside a tick (a `message {to}` being judged)
+   * it is computed fresh, as `perEpoch` does for everything.
+   */
   reachFor(principal: PrincipalId, tick: number): readonly ReachRow[] {
-    return reachableFor(this.reachPort(tick), principal);
+    return this.perEpoch(`reachFor:${String(principal)}:${String(tick)}`, () =>
+      reachableFor(this.reachPort(tick), principal),
+    );
   }
 
   /**
@@ -11060,11 +11131,14 @@ export class Runtime {
    * mail waiting alike. Built in `say/parley.ts` so the block, the gate and the note share one count.
    */
   parleysFor(principal: PrincipalId, tick: number): ParleyCapacity {
-    const home = this.world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(this.world, principal).system;
-    return parleyCapacityFor(this.parleyPort(tick), principal, tick, {
-      ticksPerReckoning: TICKS_PER_RECKONING,
-      auditLagTicks: AUDIT_LAG_TICKS,
-      constellation: home === null ? null : String(systemOf(this.world.map, home).constellation),
+    // Once per read epoch per principal, for {@link reachFor}'s reason: an observation asks twice.
+    return this.perEpoch(`parleysFor:${String(principal)}:${String(tick)}`, () => {
+      const home = this.world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(this.world, principal).system;
+      return parleyCapacityFor(this.parleyPort(tick), principal, tick, {
+        ticksPerReckoning: TICKS_PER_RECKONING,
+        auditLagTicks: AUDIT_LAG_TICKS,
+        constellation: home === null ? null : String(systemOf(this.world.map, home).constellation),
+      });
     });
   }
 
@@ -11150,7 +11224,14 @@ export class Runtime {
     if (this.world.holdingByPrincipal.get(principal) === undefined) return null;
     const home = holdingOf(this.world, principal).system;
     const constellation = String(systemOf(this.world.map, home).constellation);
-    return buildDirectory(this.directoryPort(), constellation, tick, limit, principal);
+    // ★ The constellation is RANKED once per read epoch and every reader in it is served from that one
+    // list (`say/directory.ts:directoryOf` — the same answer `buildDirectory` gives, by construction).
+    // Ranking it per observation walked every principal and the whole offer book per reader — the
+    // O(P²) burst at a few hundred seats. Every input is `PUBLIC` hashed state, so `perEpoch` admits it.
+    const dealing = this.perEpoch(`dealingIn:${constellation}:${String(tick)}`, () =>
+      dealingIn(this.directoryPort(), constellation, tick),
+    );
+    return directoryOf(dealing, constellation, limit, principal);
   }
 
   /**
@@ -18673,6 +18754,9 @@ export function assertSealSchedule(
 export const GRAND_SLACK_TICKS = FORMATION_WINDOW_TICKS + DELIVERY_LEAD_TICKS;
 
 /** The grand window for `season`, with this runtime's own slack. One home for both callers. */
+/** The empty answer of {@link Runtime.grandVenturesOf}, shared and frozen like every list it returns. */
+const NO_GRAND_VENTURES: readonly VentureRecord[] = Object.freeze([]);
+
 export function grandWindowAt(season: number): GrandWindow {
   return grandWindowOf(season, GRAND_SLACK_TICKS);
 }

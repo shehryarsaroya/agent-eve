@@ -268,9 +268,27 @@ export function directoryFor(
   limit: number = MAX_DIRECTORY_ROWS,
   exclude: PrincipalId | null = null,
 ): Directory {
-  const { rows, seated } = dealingIn(port, constellation, tick, exclude);
+  return directoryOf(dealingIn(port, constellation, tick), constellation, limit, exclude);
+}
+
+/**
+ * ★ The cap and the reader's own exclusion, applied to a constellation's whole ranked list — so a caller
+ * can rank a constellation ONCE and serve every reader in it (Season 1 merge: `Runtime.directoryFor`
+ * ranks each constellation once per read epoch instead of once per observation).
+ *
+ * Exactly {@link directoryFor}'s answer: `dealingIn` counts the excluded reader in `seated` and skips
+ * only its row, and {@link compareDirectoryRows} is a total order, so removing one row from the ranked
+ * list leaves every other row where it was.
+ */
+export function directoryOf(
+  dealing: { readonly rows: readonly DirectoryRow[]; readonly seated: number },
+  constellation: string,
+  limit: number = MAX_DIRECTORY_ROWS,
+  exclude: PrincipalId | null = null,
+): Directory {
+  const rows = exclude === null ? dealing.rows : dealing.rows.filter((row) => row.principal !== exclude);
   const kept = rows.slice(0, Math.max(0, limit));
-  return { constellation, rows: kept, unlisted: rows.length - kept.length, seated };
+  return { constellation, rows: kept, unlisted: rows.length - kept.length, seated: dealing.seated };
 }
 
 /**
