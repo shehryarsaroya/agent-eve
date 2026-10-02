@@ -60,6 +60,88 @@ var Screens = (function () {
       U.n(M.brokenRecent) + ' broken. The rows above are all time.');
   }
 
+  // ★ THE GRAND VENTURE, in words a stranger reads in three seconds (SPEC §7.6, A13).
+  //
+  // Every figure here is off `season` — the frame's own season line, built by the engine from the
+  // same block every agent's `header.season` is — so the client decides nothing: not who carries the
+  // yield, not what a stake is, not whether a share was paid.
+  function grandSummary(D, season) {
+    var g = season.grand || {};
+    var where = g.stage ? (g.stageName ? g.stageName + ' (' + g.stage + ')' : g.stage) : 'nowhere';
+    var when = season.inFinale ? 'the FINALE is tonight' : 'FINALE in ' + season.reckoningsLeft + ' Reckonings';
+    if (g.winner) {
+      var w = (g.candidates || []).filter(function (c) { return c.venture === g.winner; })[0];
+      return { val: where, note: 'carried by ' + (w ? w.creatorHandle : g.winner) + ' · yields ' + U.n(g.baseYield) };
+    }
+    if (season.inFinale) {
+      // Counted by the candidate's own state: a signed crew is LIVE, not "forming".
+      var cs = g.candidates || [];
+      var live = cs.filter(function (c) { return c.state === 'LIVE'; }).length;
+      var forming = cs.length - live;
+      var crews = [];
+      if (live) crews.push(live + (live === 1 ? ' crew live' : ' crews live'));
+      if (forming) crews.push(forming + (forming === 1 ? ' crew forming' : ' crews forming'));
+      return { val: where, note: (crews.length ? crews.join(' · ') : 'no crew yet') + ' · ' + when };
+    }
+    return { val: where, note: 'yields ' + U.n(g.baseYield) + ' · ' + when };
+  }
+
+  function grandPanel(D, season) {
+    var g = season.grand || {};
+    var head = 'SEASON ' + season.season + ' · ' + (season.inFinale ? 'THE FINALE' : 'THE GRAND VENTURE');
+    var lines = [
+      U.kv('STAGE', g.stage ? (g.stageName || g.stage) + ' · ' + g.stage : '—'),
+      U.kv('YIELDS', U.n(g.baseYield) + ' at a full fill'),
+      U.kv('FINALE', season.inFinale ? 'TONIGHT · tick ' + season.finaleTick : 'in ' + season.reckoningsLeft + ' Reckonings · tick ' + season.finaleTick),
+      U.kv('STAKE / ROLE', U.n(g.stakePerRole) + ' of earned cash'),
+    ];
+    var crews = (g.candidates || []).map(function (c) {
+      var mark = g.winner === c.venture ? '♛ ' : '';
+      return el('div', { class: 'grand-crew' + (g.winner === c.venture ? ' won' : '') }, [
+        el('div', { class: 'gc-h' }, [
+          el('b', { text: mark + c.creatorHandle }),
+          c.formedByHandle ? el('span', { class: 'dim', text: ' · formed by ' + c.formedByHandle }) : null,
+          el('span', { class: 'right', text: c.rolesFilled + '/' + c.rolesTotal + ' · ' + U.n(c.staked) + ' staked' +
+            (c.sealedFills ? ' + ' + c.sealedFills + ' sealed' : '') }),
+        ]),
+        el('div', { class: 'gc-slots' }, (c.slots || []).map(function (s) {
+          return el('span', { class: 'gc-slot' + (s.holder ? ' on' : ''), title: s.label + ' · ' + U.bps(s.shareBps) },
+            s.holderHandle || s.label);
+        })),
+      ]);
+    });
+    return panel(head, {
+      sub: season.inFinale ? 'the largest stake carries it · every share is elective' : 'announced from the season\'s first tick',
+      cls: 'grand',
+      style: 'flex:0 0 auto',
+    }, el('div', null, lines.concat(crews.length ? crews : [
+      el('div', { class: 'note-line', text: season.inFinale
+        ? 'No crew has formed yet. Every role is a hand standing at the stage.'
+        : 'Crews form during the FINALE, at the stage, four principals to a crew.' }),
+    ])));
+  }
+
+  // ★ THE SEASONS — each closed season's FINALE and its champions (A10, §16 Remembered).
+  function seasonsPanel(D) {
+    var recs = D.seasonRecords || [];
+    return panel('THE SEASONS', { sub: 'each FINALE, and who the season named', cls: 'seasons' },
+      recs.length ? el('div', null, recs.map(function (r) {
+        var bad = r.outcome === 'BROKEN';
+        return el('div', { class: 'season-rec' }, [
+          el('div', { class: 'ti', style: 'color:' + (bad ? 'var(--red-text)' : r.outcome === 'KEPT' ? 'var(--gold)' : 'var(--dim)'),
+            text: 'SEASON ' + r.season + ' · ' + r.outcome }),
+          el('div', { class: 'cl', text: r.legend }),
+          el('div', { class: 'champs' }, (r.titles || []).map(function (t) {
+            return el('div', { class: 'champ', title: t.title + ' · ' + t.handle + ' — ' + t.clause }, [
+              el('span', { class: 'dim', text: t.title + ' ' }),
+              el('b', { style: 'color:var(--text)', text: t.handle }),
+            ]);
+          })),
+        ]);
+      }))
+        : empty('no season has closed yet', 'A season closes at its FINALE; its grand venture and its champions are written here.'));
+  }
+
   // Standings are cumulative and survive replay. Meter summaries are bounded
   // and can cover a shorter window after a checkpoint has been adopted.
   function promiseTotals(R) {
@@ -239,6 +321,22 @@ var Screens = (function () {
     (R.battleLines || []).forEach(function (b) {
       push('BATTLE', b.engagement, b.stage, b.state, b.ticksLeft, null, null, 'amber', 'battle');
     });
+    // ★ 41 — THE DEALING MARK. Who is offering or recruiting near each stage, with the offer's words or
+    // the roles still open as the state, and the record on hover in the dossier. Never red: dealing is
+    // an invitation, not a risk.
+    (D.directory || []).forEach(function (d) {
+      var seeking = (d.seeking || [])[0];
+      push('DEALING', U.handleOf(d.principal), d.at,
+        seeking ? 'SEEKS ' + seeking.open + ' OF ' + seeking.roles + ' · ' + seeking.kind
+          : (d.offering ? 'OFFERS · ' + d.offering.slice(0, 40) : 'AT WORK · ' + d.liveRoles),
+        null, null, d.principal, null, 'dealing');
+    });
+    // ★ 41 — THE PARLEY THREAD. A letter, from the tick it declassified: sender to recipient, the act,
+    // and whether it answered one.
+    (D.parleys || []).forEach(function (t) {
+      push('PARLEY', U.handleOf(t.from) + ' → ' + U.handleOf(t.to), t.fromAt,
+        (t.answering ? 'ANSWER · ' : '') + String(t.act).toUpperCase(), null, null, t.from, null, 'parley');
+    });
     return out;
   }
 
@@ -247,6 +345,7 @@ var Screens = (function () {
   var KIND_SW = {
     venture: 'cy', raid: 'am', convoy: 'cyd', claim: 'cy', works: 'gy',
     sap: 'am', front: 'am', grant: 'cyd', tribute: 'cy', battle: 'am',
+    dealing: 'cy', parley: 'cyd',
   };
 
   // ═══════════════════════════════════════════════════════════ OVERVIEW ══
@@ -281,6 +380,10 @@ var Screens = (function () {
         { warn: (M.levyShort || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · nobody lowers this alone' : 'awaiting the first settlement') }),
       tile('UNREFINED', U.n(M.unrefined),
         { note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · not yet payable' : 'awaiting the first settlement'), neutral: true }),
+      D.season ? (function () {
+        var gs = grandSummary(D, D.season);
+        return tile('GRAND VENTURE', gs.val, { note: gs.note, sm: true, warn: D.season.inFinale });
+      })() : null,
     ]));
 
     /* ── THE MAP, ON THE FIRST SCREEN (owner direction, 2026-08-02) ──────
@@ -328,7 +431,7 @@ var Screens = (function () {
     var SLICES = [
       ['ALL', null], ['VENTURES', 'venture'], ['STANDOFFS', 'raid'], ['CONVOYS', 'convoy'],
       ['HOLDINGS', 'claim'], ['WORKS', 'works'], ['GRANTS', 'grant'], ['TRIBUTE', 'tribute'],
-      ['WEATHER', 'front'],
+      ['WEATHER', 'front'], ['DEALING', 'dealing'], ['PARLEYS', 'parley'],
     ];
     var slice = D.slice || 'ALL';
     var sliceBar = el('div', { class: 'slices' }, SLICES.map(function (sl) {
@@ -557,7 +660,14 @@ var Screens = (function () {
     var claims = (R.claimLines || []).filter(function (c) { return c.claimant === pid; });
     var sway = (R.swayLines || []).filter(function (s) { return s.principal === pid; });
     var hold = [];
-    works.forEach(function (w) { hold.push({ k: 'WORKS', at: w.system, d: w.legend + ' · ' + w.yieldPerTick + '/tick', bad: false }); });
+    works.forEach(function (w) {
+      var asleep = w.legend === 'DORMANT';
+      hold.push({
+        k: 'WORKS', at: w.system,
+        d: w.legend + (asleep && w.dormantSinceTick != null ? ' since t' + w.dormantSinceTick : '') + ' · ' + w.yieldPerTick + '/tick',
+        bad: asleep,
+      });
+    });
     claims.forEach(function (c) { hold.push({ k: 'CLAIM', at: c.system, d: c.legend || c.state, bad: c.arrears > 0 }); });
     sway.forEach(function (s) { hold.push({ k: 'SWAY', at: s.system, d: 'sway ' + s.sway + (s.gate ? ' · strait gate' : ''), bad: false }); });
     places.forEach(function (p) { hold.push({ k: 'PLACE', at: p.system, d: 'named for ' + p.handle + ' since t' + p.sinceTick, bad: false }); });
@@ -666,6 +776,44 @@ var Screens = (function () {
         'authorityLines[] is capped at 12 for broadcast and sorted by size, so a small or an expired ' +
         'grant does not appear. Authority is drawn on far more often than a nightly frame can show.')));
 
+    // ★ 41 — DEALING and LETTERS, on the page of the principal they belong to. The directory row says
+    // what it is offering or recruiting for, with the record a stranger prices it by; the letters are
+    // every declassified parley that names it, sender to recipient. Both off the frame, nothing derived.
+    var g4 = el('div', { class: 'grid g-2' });
+    var dealing = (D.directory || []).filter(function (d) { return d.principal === pid; })[0];
+    g4.appendChild(panel('DEALING', {
+      sub: dealing ? 'listed in ' + dealing.constellation : 'not listed on this frame',
+      foot: 'Being listed reaches nobody: an agent still needs a parley rung to write to it.',
+    }, dealing ? el('div', null, [
+      dealing.offering ? U.kv('OFFERING', dealing.offering) : null,
+      (dealing.seeking || []).length
+        ? table('dos-d', [
+          { k: 'kind', t: 'recruiting for', w: '120px', cell: function (v) { return el('span', { class: 'k', text: v.kind }); } },
+          { k: 'open', t: 'open', w: '64px', num: true, cell: function (v) { return v.open + ' of ' + v.roles; } },
+          { k: 'venture', t: 'venture', cell: function (v) { return el('span', { class: 'dim', text: v.venture }); } },
+        ], dealing.seeking, { rerender: D.rerender })
+        : null,
+      U.kv('LIVE ROLES', String(dealing.liveRoles)),
+      U.kv('RECORD', dealing.kept + ' kept · ' + dealing.broke + ' broken · ' + dealing.counterparties + ' counterparties'),
+    ]) : empty('not dealing on this frame',
+      'A principal is listed when it has an offer out, a venture still recruiting, or a live role. ' +
+      'The frame lists at most four per constellation, strongest record first.')));
+    var letters = (D.parleys || []).filter(function (t) { return t.from === pid || t.to === pid; });
+    g4.appendChild(panel('LETTERS', {
+      sub: letters.length + ' declassified · newest first',
+      foot: 'Private between the two while live; public four ticks after it was sent, to every agent and viewer at once.',
+    }, letters.length ? el('div', { class: 'log' }, letters.map(function (t) {
+      var out = t.from === pid;
+      return el('div', { class: 'ln' }, [
+        el('span', { class: 'tk', text: 't' + t.sentTick }),
+        el('span', { class: 'ty', text: (out ? 'TO ' : 'FROM ') + U.handleOf(out ? t.to : t.from) }),
+        el('span', { class: 'de', text: (t.answering ? '↩ ' : '') + t.act + ' — ' + t.excerpt }),
+      ]);
+    })) : empty('no letter names them yet',
+      'A parley is drawn from the tick it declassifies. Nothing here means nothing has been said in public yet, ' +
+      'not that nothing has been said.')));
+    stack.appendChild(g4);
+
     // the rundown beats about them
     var beats = (R.rundown || []).filter(function (s) {
       return (s.cast || []).some(function (c) { return c.principal === pid; }) ||
@@ -752,6 +900,10 @@ var Screens = (function () {
         ]);
       }) : empty('no rings to draw', 'Neither frame carries a <code>glyphs[]</code> row.'));
     var right = el('div', { class: 'rows', style: 'min-height:0' });
+    // ★ THE GRAND VENTURE heads the rail: its crews, their sockets and their stakes. It is a venture,
+    // so it lives with the ventures; the OVERVIEW carries its one-line tile and the map its crown.
+    // (On the OVERVIEW's side column it was measured at ~40 px tall on a 1000 px screen — a header.)
+    if (D.season) right.appendChild(grandPanel(D, D.season));
     right.appendChild(panel('★ THE VENTURE RING', {
       sub: 'the hollow arc rides on a word',
       foot: 'deep arc = escrowed, auto-executes · bright arc = elective, can simply not be paid',
@@ -1210,7 +1362,7 @@ var Screens = (function () {
       { k: 'sharePerTick', t: 'share', w: '58px', num: true },
       { k: 'occupants', t: 'occ', w: '44px', num: true },
       { k: 'extracted', t: 'extracted', w: '82px', num: true, cell: function (w) { return U.n(w.extracted); } },
-      { k: 'legend', t: 'state', w: '92px', cell: function (w) { return U.tag(w.legend, 'cy'); } },
+      { k: 'legend', t: 'state', w: '92px', cell: function (w) { return U.tag(w.legend, w.legend === 'DORMANT' ? 'dm' : 'cy'); } },
     ], wl, { sort: 'yieldPerTick', dir: -1, rerender: D.rerender })
       : U.skeleton(8, 6), { style: 'flex:1 1 auto;min-height:0' }));
 
@@ -1836,7 +1988,7 @@ var Screens = (function () {
       class: 'panel mfloat at', style: 'left:0;bottom:0;width:314px',
     }, [
       el('h2', null, ['LOCATOR', el('span', { class: 'sub', text: 'region 1 · ' + map.length + ' systems' })]),
-      el('div', { class: 'body', style: 'overflow:hidden' }, ZoomView.locator(map, con, 312, 178)),
+      el('div', { class: 'body', style: 'overflow:hidden' }, ZoomView.locator(map, con, 312, 178, D.R && D.R.growth && D.R.growth.opened)),
     ]);
     wrap.appendChild(loc);
 
@@ -2139,6 +2291,7 @@ var Screens = (function () {
           ]);
         }))
         : empty('no titles yet', '<code>hallOfFame[]</code> fills once the world has a history to rank.')));
+    side.appendChild(seasonsPanel(D));
 
     var kept = rows.reduce(function (a, r) { return a + r.electiveHonoured; }, 0);
     var broke = rows.reduce(function (a, r) { return a + r.defaults; }, 0);

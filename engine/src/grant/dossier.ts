@@ -52,6 +52,7 @@
  * method removes a row. The second assertion is what would fail if someone added one.
  */
 
+import { MAX_PRINCIPALS } from '../core/time.js';
 import type { GrantId, PrincipalId } from '../core/types.js';
 import type { CanonicalValue } from '../core/canonical.js';
 import { compareIds } from '../ledger/order.js';
@@ -81,11 +82,14 @@ export type DossierId = string & { readonly __brand: 'DossierId' };
  */
 export const AUDIT_LAG_TICKS = 4;
 
+/** Dossiers the book is dimensioned for, per principal the world can hold. Lifetime, like grants. */
+export const DOSSIERS_PER_PRINCIPAL = 4;
+
 /**
  * Total cap on the book (INV-26). Generous and deliberately of the same order as
  * `MAX_GRANTS`: a dossier is at most one per `message`, and `message` costs an action.
  */
-export const MAX_DOSSIERS = 4_096;
+export const MAX_DOSSIERS = DOSSIERS_PER_PRINCIPAL * MAX_PRINCIPALS;
 
 /** How deep {@link rootOf} will walk a custody chain before it calls the chain broken. */
 export const MAX_CUSTODY_DEPTH = 32;

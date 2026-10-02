@@ -62,6 +62,7 @@ export class VentureBook {
       throw new BookError(`venture ${venture.id} is already in the book`);
     }
     this.ventures.set(venture.id, venture);
+    this.sorted = null;
     // A venture may arrive already filled (a replay from a snapshot), so the index
     // is built from the rows rather than assumed empty.
     if (isLive(venture)) {
@@ -88,10 +89,22 @@ export class VentureBook {
     return this.ventures.size;
   }
 
-  /** Every venture, in `venture_id` order. The only sanctioned full scan. */
+  /**
+   * Every venture, in `venture_id` order. The only sanctioned full scan.
+   *
+   * ★ The order is cached and the cache is dropped by {@link add} — the only way the id SET changes,
+   * and the order is a function of the set alone (a venture's state moving does not move its id). It
+   * used to sort every venture in the world on every call, and `forPrincipal` and `live` both call it,
+   * so the observation paid O(V log V) per reader per read; at a few thousand principals that was a
+   * measurable share of every build (`scripts/population-scale.ts`). Frozen, because every caller now
+   * holds the same array.
+   */
   all(): readonly VentureRecord[] {
-    return [...this.ventures.values()].sort((a, b) => compareIds(a.id, b.id));
+    this.sorted ??= Object.freeze([...this.ventures.values()].sort((a, b) => compareIds(a.id, b.id)));
+    return this.sorted;
   }
+
+  private sorted: readonly VentureRecord[] | null = null;
 
   live(): readonly VentureRecord[] {
     return this.all().filter(isLive);

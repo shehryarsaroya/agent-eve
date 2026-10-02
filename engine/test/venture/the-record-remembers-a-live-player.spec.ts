@@ -206,23 +206,22 @@ async function playOneVenture(election: typeof IN_FULL | number | null): Promise
   }
   tick(h, 8);
 
-  // Create, then countersign: `create` does not bind the creator, and the venture retires
-  // ABANDONED if the window closes unsigned.
+  // ★ Create — and since `RULES_VERSION` 41 that is the creator's countersignature, so there is no
+  // second act to make: the create binds the creator, and the venture binds the moment its fillers sign.
   const made = verbs(await observe(creator), 'create').slice(0, 1);
   expect(made.length, '`create` is offered to a funded newcomer').toBe(1);
-  expect(await send(creator, made), '`create` is accepted').toBe(1);
-  tick(h, 1);
   // ── ★ THE CONTINGENT COLUMN ON THE VERB THAT BINDS THE CREATOR ────────────
   // A6's headline is "with `max_direct_loss` and `max_contingent_liability` shown before you
-  // sign". At this moment no role is filled, and the figure used to be Σ over roles ALREADY
-  // held by somebody else — i.e. 0 — for the party carrying the whole elective half.
-  const signOffer = verbs(await observe(creator), 'sign');
-  expect(signOffer.length, 'the creator is asked to countersign its own venture').toBe(1);
+  // sign". It used to be read off the creator's own `sign`, where the figure had once been Σ over
+  // roles ALREADY held by somebody else — i.e. 0 — for the party carrying the whole elective half.
+  // The binding act is `create` now, so the quote is read off `create`.
   signQuote = {
-    direct: Number(signOffer[0]?.['max_direct_loss']),
-    contingent: Number(signOffer[0]?.['max_contingent_liability']),
+    direct: Number(made[0]?.['max_direct_loss']),
+    contingent: Number(made[0]?.['max_contingent_liability']),
   };
-  expect(await send(creator, signOffer), 'the creator countersigns').toBe(1);
+  expect(await send(creator, made), '`create` is accepted').toBe(1);
+  tick(h, 1);
+  expect(verbs(await observe(creator), 'sign'), 'the creator is never asked to sign its own venture').toEqual([]);
   tick(h, 1);
 
   const mine = ((await observe(creator)).ventures['mine'] ?? []) as Row[];
@@ -450,16 +449,16 @@ describe('the record remembers a live player (A5, A6, A7, §6.4)', () => {
     ).toBe(charged);
   }, 120_000);
 
-  it('`sign` shows the creator a contingent liability, not a zero (A6’s headline promise)', async () => {
+  it('`create` — the creator’s countersignature since 41 — shows a contingent liability, not a zero (A6)', async () => {
     const played = await playOneVenture(IN_FULL);
     expect(
       played.signQuote.direct,
-      'the escrow is locked by signing, so the direct column is real too',
+      'the escrow is locked by the create, so the direct column is real too',
     ).toBeGreaterThan(0);
     expect(
       played.signQuote.contingent,
-      'the elective half is entirely contingent at signing — every role open, every one able to go to a ' +
-        'stranger. Published as 0 for the party that carries all of it, on the verb A6 names.',
+      'the elective half is entirely contingent when the creator binds itself — every role open, every one ' +
+        'able to go to a stranger. Published as 0 for the party that carries all of it, it would break A6.',
     ).toBeGreaterThan(0);
     // And it bounds what the same venture later actually charges: the worst case cannot be
     // smaller than the charge that materialises out of it.

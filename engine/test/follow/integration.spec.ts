@@ -70,7 +70,12 @@ async function mockResend(): Promise<{ url: string; calls: ResendCall[]; close: 
         res.end(JSON.stringify({ statusCode: authorised ? 404 : 401, name: 'error', message: 'refused' }));
         return;
       }
-      res.writeHead(200, { 'content-type': 'application/json' });
+      // `connection: close`, because the world run between two sends is synchronous: when it blocks
+      // the event loop past this server's keep-alive timeout (5 s), the server drops the idle socket
+      // while undici, which could not run its own timer, reuses it — `fetch failed`, and the recap
+      // never arrives. Measured on c771ece under load: 4 of 4 runs failed that way; with this, 4 of 4
+      // passed. Production is not exposed the same way: the worker retries a failed send.
+      res.writeHead(200, { 'content-type': 'application/json', connection: 'close' });
       res.end(JSON.stringify({ id: `em_${String(calls.length)}` }));
     });
   });

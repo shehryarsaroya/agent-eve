@@ -37,8 +37,12 @@
  *
  * MUTATION, run rather than reasoned about: put `CAST_CARRY_RESERVE_RECKONINGS` back to **2** and
  * both tests go red naming `p:halcyon`, R7, 5,367 short of 48,768 beside 156,947 units held by its
- * roll. That is the whole of what this file covers, and the boundary is worth stating because the
- * constant has **two** sides:
+ * roll. ★ Re-run on the launch fixes' trajectory, where the cast no longer opens ventures nobody can
+ * fill: both go red naming `p:varrow`, R6, **23,354 short in the escrowable bucket** beside 209,718
+ * units held by its roll. ★ And again with §5.2's max share, which bills that line 71,700 instead of
+ * 101,844: both go red naming `p:varrow`, R6, **21,230 short of 71,700, all of it escrowable**, beside
+ * 203,167 units held by its roll — so the bound does not do this file's work for it. That is the whole
+ * of what this file covers, and the boundary is worth stating because the constant has **two** sides:
  *
  * ── ⚑ THE LOWER BOUND IS NOT TESTED HERE, AND THAT IS A MEASURED CHOICE ────
  *
@@ -257,17 +261,68 @@ describe('the constellation closes ranks — the carry at the aged horizon', () 
     // on nothing but the sign of a tie-break, so `levyShort` and the red-line count are the only two
     // of its columns that are evidence — and on this seed at this horizon they are measured facts
     // rather than a general claim about every possible world.
+    //
+    // ── ★ SPLIT BY BUCKET SINCE THE LAUNCH FIXES, AND THE SPLIT IS THE FINDING ──────────────────
+    //
+    // Both pins read 0 on `season1` (`d3e4f52`). The launch fixes' cast change (`createCanFill`: the cast
+    // stops opening ventures nobody can fill) moves this world's trajectory, and on it R6 votes
+    // `INVERSE_EXPOSURE` with `p:varrow` at an EXPOSURE peak of 0 — billed 101,844, 5.09x the flat duty.
+    // Its co-members carried 71,290 of it, every unit the escrowable bucket allows; it delivered the
+    // 22,360 it held; and its 30% PRESENCE share was 30,554, which §5.2 lets nobody else carry at any
+    // price. 8,194 short, one red line, and not one unit of it in the bucket this file is about. That
+    // was `TRACKER.md`'s owner call (3), met before on an intermediate merge trajectory of this same
+    // seed (11,051).
+    //
+    // ── ★ AND THE CENSUS IS EMPTY SINCE §5.2's MAX SHARE, WHICH IS WHAT OWNER CALL (3) DECIDED ────────
+    //
+    // `LEVY_MAX_SHARE_MULTIPLE`: no line of a docket's remainder pool above three times its even share.
+    // The trajectory is unchanged up to R6's docket, which is the same docket — and `p:varrow`'s line
+    // is now 71,700, the bound (3 x ceil(119,500 / 5), one member spared), paid in full; the 30,144 it
+    // no longer carries went to its four co-members by the same rule's weights. Across the eight
+    // balance-gate seeds at this horizon the bound moves `levyShort` 8,194 → 0, red lines 1 → 0,
+    // `kept` 1,213 → 1,219 and `broken` 67 → 70 (`test/levy/no-member-bears-the-docket.spec.ts`).
+    //
+    // So the meters stay pinned by bucket: the ESCROWABLE remainder at zero — the regression this file
+    // exists for — and the presence-only residue as a census, now empty, so a change that brings one
+    // back shows up here as a diff rather than as a quietly different number.
+    const escrowableShortTotal = world.dockets
+      .flatMap((d) => d.lines)
+      .reduce((n, l) => n + Math.max(0, l.owed - l.presenceOwed), 0);
+    expect(
+      escrowableShortTotal,
+      `${SEED} at ${String(RECKONINGS)} Reckonings left ${String(escrowableShortTotal)} short in the ESCROWABLE ` +
+        'bucket — the share a carry fills. That is the defect this file pins; see CAST_CARRY_RESERVE_RECKONINGS.',
+    ).toBe(0);
+    const presenceOnly = world.dockets.flatMap((d) =>
+      d.lines
+        .filter((l) => l.owed > 0)
+        .map((l) => `R${String(d.reckoning)} ${d.rule} ${String(l.principal)} ${String(l.owed)} of ${String(l.assessment)}`),
+    );
+    expect(
+      presenceOnly,
+      'the presence-only residue — empty since the max share; R6 p:varrow 8194 of 101844 was owner call (3)',
+    ).toEqual([]);
     expect(
       world.levyShort,
-      `${SEED} at ${String(RECKONINGS)} Reckonings summed \`levyShort\` ${String(world.levyShort)}. ` +
-        `Master reads 5,367 here, on \`p:halcyon\` at R7, and every other seed of the eight reads 0.`,
+      `${SEED} at ${String(RECKONINGS)} Reckonings summed \`levyShort\` ${String(world.levyShort)}: it must be ` +
+        'exactly the presence-only residue above, and nothing an escrowable carry could have filled.',
     ).toBe(0);
     expect(
       world.redTributeLines,
       `${SEED} published ${String(world.redTributeLines)} RED tribute lines in the freeze across ` +
         `${String(RECKONINGS)} Reckonings. A13: this is the mechanic's pixel signature, so a red ` +
-        `line the world did not choose is a false accusation on the frame (A5′). Master reads 1.`,
-    ).toBe(0);
+        'line must be the residue\'s own and no other. `season1` read 0; master read 1; the launch fixes 1.',
+    ).toBe(presenceOnly.length);
+
+    // ★ The docket owner call (3) was raised about, on the same trajectory, held at the bound.
+    const r6 = world.dockets.find((d) => d.reckoning === 6 && d.lines.some((l) => l.principal === ('p:varrow' as PrincipalId)));
+    const varrow = r6?.lines.find((l) => l.principal === ('p:varrow' as PrincipalId));
+    expect(r6?.rule, 'R6 is still the INVERSE_EXPOSURE docket the finding was made on').toBe('INVERSE_EXPOSURE');
+    expect(
+      varrow?.assessment,
+      'R6 p:varrow is held at the max share — 3 x ceil(119,500 / 5) — where it was billed 101,844',
+    ).toBe(71_700);
+    expect(varrow?.owed, 'and pays it in full').toBe(0);
   });
 
   it('★ A DOCKET THAT BILLS ONE MEMBER ABOVE THE FLAT DUTY IS STILL PAID IN FULL', () => {
@@ -297,14 +352,22 @@ describe('the constellation closes ranks — the carry at the aged horizon', () 
     ).toBeGreaterThan(0);
 
     for (const line of heavy) {
+      // ★ Everything ANYBODY ELSE MAY CARRY is paid: the escrowable remainder is zero on every heavy line.
+      // A presence-only remainder is the line's own hand running out of the good, which §5.2 lets no
+      // carry fill — the residue the test above pins, empty since the max share settled owner call (3).
       expect(
-        line.owed,
+        line.owed - line.presenceOwed,
         `R${String(line.docket.reckoning)} of ${SEED} voted ${line.docket.rule} and assessed ` +
           `${line.principal} ${String(line.assessment)} — ${String(
             Math.round((line.assessment / Number(LEVY_DUTY_PER_PRINCIPAL)) * 100) / 100,
-          )}x the flat duty — and it finished ${String(line.owed)} short after delivering ` +
-          `${String(line.paidOwn)} itself and being carried ${String(line.paidOther)}. An uneven ` +
-          `docket is §5.2 working; an unpayable one is the cast refusing to distribute.`,
+          )}x the flat duty — and it finished ${String(line.owed - line.presenceOwed)} short in the ESCROWABLE ` +
+          `bucket after delivering ${String(line.paidOwn)} itself and being carried ${String(line.paidOther)}. ` +
+          'An uneven docket is §5.2 working; an unpayable escrowable share is the cast refusing to distribute.',
+      ).toBe(0);
+      expect(
+        line.presenceOwed,
+        `R${String(line.docket.reckoning)} ${line.docket.rule} ${String(line.principal)}: a presence-only ` +
+          'remainder off the pinned (empty) census is a new one — find out whose hand ran out, and why',
       ).toBe(0);
     }
   });

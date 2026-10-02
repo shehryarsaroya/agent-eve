@@ -122,3 +122,16 @@ describe('the vocabulary canon holds (HARD RULE 4)', () => {
     expect(/disposition/i.test(code)).toBe(false);
   });
 });
+
+describe('VOICE', () => {
+  it('gives every member a voice of its own, short enough to cost little', () => {
+    const voices = [...charactersFor(roster('voice-table'), 'voice-table').values()].map((c) => c.voice);
+    expect(voices.length).toBe(MAX_CAST);
+    // Twenty members writing the same sentence is the failure a voice exists to prevent.
+    expect(new Set(voices).size).toBe(MAX_CAST);
+    for (const voice of voices) {
+      expect(voice.length).toBeGreaterThan(40);
+      expect(voice.length).toBeLessThanOrEqual(200);
+    }
+  });
+});

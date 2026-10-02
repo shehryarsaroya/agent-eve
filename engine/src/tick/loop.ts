@@ -41,6 +41,7 @@ import {
   inCommitmentWindow,
   inFreeze,
   isSettlementTick,
+  MAX_PRINCIPALS,
   reckoningIndex,
   ticksUntilReckoning,
 } from '../core/time.js';
@@ -215,8 +216,18 @@ export function stepBudgetFor(
   );
 }
 
-/** Published cap on events buffered inside one tick (INV-26, scar #3). */
-export const MAX_BUFFERED_EVENTS = 8192;
+/** Rows one principal's share of a tick may legitimately write, at most. *(calibrate)* */
+export const EVENTS_PER_PRINCIPAL_PER_TICK = 16;
+
+/**
+ * Published cap on events buffered inside one tick (INV-26, scar #3).
+ *
+ * ⚑ **A FLAT 8,192, AND OVERRUNNING IT THROWS — WHICH INSIDE A TICK IS A HALT.** The settlement tick
+ * writes rows per principal (a Levy line, a docket row, a sweep) and per settled venture, so its
+ * legitimate size grows with the population. Sixteen rows per principal the world can hold is the
+ * bound; `scripts/population-scale.ts` reports the measured peak per tick next to it.
+ */
+export const MAX_BUFFERED_EVENTS = EVENTS_PER_PRINCIPAL_PER_TICK * MAX_PRINCIPALS;
 
 /** An action to execute, however it originated. */
 export interface ActionRequest {
@@ -381,6 +392,18 @@ export interface EngineOptions {
    * metered normally, which fails closed.
    */
   readonly allowance?: (request: ActionRequest) => boolean;
+  /**
+   * ★ **Has this due intent nothing to do right now?** A sentence saying why, or `null` to run it.
+   *
+   * `RULES_VERSION` 41. An order to pay the Levy that finds the bill already paid used to be run, refused
+   * (`"this assessment is already discharged in full"`), counted as a refusal, logged and posted as a
+   * correction — every tick, until its `until_tick`. A playtester read that as a stuck order, and it was
+   * the opposite. The owning module answers, because only it knows what "done for this Reckoning" means
+   * for its verb; the engine records the answer on the intent (`IntentBook.satisfiedAt`) and does not run
+   * it. Asked after every live action in the window has resolved, so a delivery made by hand this tick
+   * satisfies the order on the same tick. Omit it and every due intent runs, which is the old behaviour.
+   */
+  readonly intentSatisfied?: (intent: IntentRecord, tick: number) => string | null;
   readonly events?: EventSink;
   /**
    * The PAUSED state machine. Owned by `src/invariants/halt.ts`, never mirrored
@@ -471,6 +494,7 @@ export class Engine {
    * duplicating it here would be scar #5.
    */
   private readonly allowance: ((request: ActionRequest) => boolean) | null;
+  private readonly intentSatisfied: ((intent: IntentRecord, tick: number) => string | null) | null;
   /**
    * The obligation set for the tick being resolved, read ONCE at budget time.
    *
@@ -525,6 +549,7 @@ export class Engine {
     this.roleFills = options.roleFills ?? ((): RoleFills => NO_ROLE_FILLS);
     this.obligations = options.obligations ?? null;
     this.allowance = options.allowance ?? null;
+    this.intentSatisfied = options.intentSatisfied ?? null;
     this.events = options.events ?? null;
     // ── what is in `state_hash`, and what cannot be ────────────────────────
     //
@@ -584,6 +609,17 @@ export class Engine {
 
   get stateVersion(): number {
     return this.version;
+  }
+
+  /**
+   * True while a tick is resolving — between FREEZE_QUEUE and the end of WAKE.
+   *
+   * For readers that cache a derived view of the world between ticks (`Runtime.perEpoch`): inside a
+   * tick the world is mid-mutation, and a view cached there would be a view of a state no tick ever
+   * published. Read-only and derived from the one phase field there is.
+   */
+  get resolving(): boolean {
+    return this.inPhase !== null;
   }
 
   /** The last published tick-boundary hash. */
@@ -1077,6 +1113,15 @@ export class Engine {
     let ordinal = actions.length;
     for (const intent of this.intents.due(tick)) {
       this.step();
+      // ★ A satisfied order does not run (`RULES_VERSION` 41) — see `EngineOptions.intentSatisfied`. No
+      // action-log row is written for it: a standing intent's own run is not replay input
+      // (`replay.ts` skips `arrivalOrdinal === null`), and a row recording that nothing happened would be
+      // noise in the permanent journal, which is what the refusal flood already was.
+      const satisfied = this.intentSatisfied === null ? null : this.intentSatisfied(intent, tick);
+      if (satisfied !== null) {
+        this.intents.satisfiedAt(intent, tick);
+        continue;
+      }
       const request: ActionRequest = {
         principal: intent.principal,
         verb: intent.verb,
@@ -1087,7 +1132,7 @@ export class Engine {
         intentId: intent.id,
       };
       const outcome = this.applyOne(tick, request, null, true);
-      this.intents.ran(intent, outcome.ok);
+      this.intents.ran(intent, outcome.ok, tick);
       this.intentRunCount += 1;
       this.log.record({
         tick,
@@ -1455,6 +1500,33 @@ const BUILT_IN_VERBS: Readonly<Record<string, VerbHandler>> = {
     // So a FLAT spelling is accepted too: `{"intent_verb": "deliver", "obligation": "LEVY",
     // "amount": N, "until_tick": N}` — the repeated act's own params sit alongside, minus the three
     // control keys. The nested form still works; nothing that already sent it changes.
+    // ── ★ AND THE PARAMETER THAT ENDS ONE (`RULES_VERSION` 41) ───────────────────
+    //
+    // `IntentBook.stop` existed with no caller, so an intent ended only at its own stop condition and
+    // the cap's refusal told an agent there was no way to withdraw one. The verb that makes intents is
+    // the verb that amends them (A3: *creating or amending one costs an action*), so `stop` is a
+    // parameter here rather than a 41st verb. It is checked FIRST and alone: a request carrying `stop`
+    // and an intent to create is ambiguous, and doing both — or either — would be guessing.
+    const stop = request.params['stop'];
+    if (stop !== undefined) {
+      if (typeof stop !== 'string' || stop.length === 0) {
+        return reject(
+          'A3',
+          'stop names the intent to end: {"stop": "<intent id>"}. obligations.intents lists your intents with their ids.',
+        );
+      }
+      const extra = Object.keys(request.params).filter((k) => k !== 'stop');
+      if (extra.length > 0) {
+        return reject(
+          'A3',
+          `a stop ends one intent and does nothing else, so it takes {"stop": "<intent id>"} alone — you also ` +
+            `sent ${extra.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).join(', ')}. Nothing was stopped and ` +
+            'nothing was created: send the stop, then set the new intent as its own action.',
+        );
+      }
+      const stopped = ctx.intents.stopFor(request.principal, stop, ctx.tick);
+      return stopped.ok ? { ok: true, value: null } : stopped;
+    }
     const CONTROL_KEYS: readonly string[] = ['intent', 'intent_verb', 'intentVerb', 'repeat', 'until_tick', 'untilTick', 'max_runs', 'maxRuns'];
     const inner = request.params['intent'];
     const nested = typeof inner === 'object' && inner !== null && !Array.isArray(inner);

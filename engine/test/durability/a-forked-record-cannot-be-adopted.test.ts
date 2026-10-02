@@ -76,12 +76,25 @@ import type { PrincipalId } from '../../src/core/types.js';
 import type { SubmittedAction } from '../../src/tick/index.js';
 
 const SEED = 'forked-record-1';
-const CAST = 6;
-/** The world the record describes. Two checkpoints at ticks 0 and 100. */
-const TICKS = 200;
+/**
+ * Eight since the Season 1 merge (`RULES_VERSION` 41), widened as the guard in `build()` instructs
+ * rather than relaxed: under the merged rules a six-member world had ONE principal creating after the
+ * fork point (`p:brannock`), so there was nothing left to rename. Eight puts a second creator back in
+ * the post-fork window.
+ */
+const CAST = 8;
+/**
+ * The world the record describes: checkpoints at ticks 0, 100, 200 and 300.
+ *
+ * ★ Into the second Reckoning, widened as the guard in `build()` instructs rather than relaxed. Since the
+ * cast commissions only what a cast-mate could fill (`HeuristicCast.createCanFill`) it opens ventures
+ * when a settlement has freed the hands — the opening of a Reckoning — so a 200-tick world created
+ * nothing after tick 14 and had nothing after the fork point to rename. The second Reckoning opens at 288.
+ */
+const TICKS = 400;
 /** Where the rules move. Early enough that plenty of ventures are minted after it. */
 const FORK_FROM = 20;
-/** Ticks the forked world runs on for, so it writes a checkpoint of its OWN at tick 200. */
+/** Ticks the forked world runs on for, so it writes a checkpoint of its OWN at tick 400. */
 const AFTER = 60;
 
 function seated(seed = SEED): { runtime: Runtime; cast: HeuristicCast } {
@@ -120,7 +133,7 @@ function refuseCreatesBy(runtime: Runtime, principal: PrincipalId, fromTick: num
 }
 
 interface Forked {
-  /** The journal: ticks 0–199 from the world that was, 200–259 from the world that is. */
+  /** The journal: ticks 0–399 from the world that was, 400–459 from the world that is. */
   readonly store: InMemoryJournalStore;
   /** The principal whose `create` the new rules refuse. Read from the record, never guessed. */
   readonly victim: PrincipalId;

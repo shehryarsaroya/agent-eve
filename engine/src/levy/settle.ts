@@ -39,7 +39,7 @@ import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import { halt } from '../invariants/registry.js';
 import type { DocketRow, Inv24Inputs, LevyAssessment } from '../invariants/crowd.js';
-import { isNewcomer } from './assessment.js';
+import { isNewcomer, maxShareOf } from './assessment.js';
 import type { Book, ShortfallRow } from './book.js';
 import { LEVY_NOMINAL_MINOR } from './params.js';
 import { owingOf } from './payment.js';
@@ -263,15 +263,28 @@ export function inv24InputsFor(book: Book, reckoning: number): Inv24Inputs | nul
   const assessments: LevyAssessment[] = [];
   const floorEligible = new Set<PrincipalId>();
   const seizureQueue: PrincipalId[] = [];
+  const maxShare = new Map<ConstellationId, Minor>();
 
   for (const plan of plans) {
     totals.set(plan.constellation, plan.total);
+    // ── THE MAX SHARE, FROM THE DECLARED TOTAL AND NOT FROM THE LINES IT CHECKS ──
+    //
+    // `allocate`'s remainder is the total less the nominal rate of every relieved line, and so is
+    // this: a late enroller (`Book.admitLate`) adds a floored line and its nominal rate to the total
+    // together, which leaves the remainder — and the bound — where the assessment put them. Summing
+    // the pool's own amounts instead would make the bound a function of the amounts it checks.
+    const relieved = plan.lines.filter((line) => line.newcomerFloored || line.spared).length;
+    maxShare.set(
+      plan.constellation,
+      maxShareOf(minor(plan.total - LEVY_NOMINAL_MINOR * relieved), plan.lines.length - relieved),
+    );
     for (const line of [...plan.lines].sort((a, b) => compareIds(a.principal, b.principal))) {
       assessments.push({
         principal: line.principal,
         constellation: plan.constellation,
         amount: line.amount,
         newcomerFloored: line.newcomerFloored,
+        spared: line.spared,
       });
       // INDEPENDENT re-derivation, not `line.newcomerFloored`. Building floorEligible
       // from the flag the assessment set would make INV-24's "floored the wrong
@@ -293,6 +306,7 @@ export function inv24InputsFor(book: Book, reckoning: number): Inv24Inputs | nul
     floorEligible,
     nominalRate: LEVY_NOMINAL_MINOR,
     seizureQueue: seizureQueue.sort(compareIds),
+    maxShare,
   };
 }
 

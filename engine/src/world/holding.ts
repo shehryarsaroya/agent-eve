@@ -109,8 +109,8 @@ export function markFallen(holding: HoldingRecord, reckoningIndex: number): void
  *
  * Every COMMONS system is equally safe *by construction*, because hostile action
  * there is invalid rather than merely punished (A8) — so safety cannot be the
- * discriminator and crowding is the only axis left. Least-occupied first, ties
- * broken by system ID.
+ * discriminator and crowding is the only axis left. Least-occupied first; ties go
+ * to the newest constellation growth opened, then to the lowest system ID.
  *
  * **The seat depends on the enrolment *sequence*, not just on the set.** Crowding
  * is a function of who was seated first, so the caller must process enrolments in
@@ -123,13 +123,28 @@ export function safestSeat(
   commons: readonly SystemId[],
   occupancy: ReadonlyMap<SystemId, number>,
 ): SystemId {
+  // ★ GROWTH (`growth.ts`): the COMMONS is no longer one enclave. A grown constellation brings two
+  // civic systems of its own, empty on the day it opens, and §15.6 routes newcomers *"spatially … to
+  // new constellations"*. Least-occupied first is already that rule — an empty enclave is the
+  // least-occupied ground there is, so it fills until it is level with the old one, which is capacity
+  // in mind rather than a quota. On a tie the NEWEST constellation wins, then the lowest id; on a map
+  // that has never grown every candidate ties at rank 0 and the order is exactly what it always was.
+  const rankOf = new Map<SystemId, number>();
+  for (const g of map.grown) for (const id of g.systems) rankOf.set(id, g.index);
   let best: SystemId | null = null;
   let bestCount = Number.MAX_SAFE_INTEGER;
+  let bestRank = -1;
   for (const id of commons) {
     const count = occupancy.get(id) ?? 0;
-    if (count < bestCount || (count === bestCount && best !== null && cmpStr(id, best) < 0)) {
+    const rank = rankOf.get(id) ?? 0;
+    const better =
+      count < bestCount ||
+      (count === bestCount && rank > bestRank) ||
+      (count === bestCount && rank === bestRank && best !== null && cmpStr(id, best) < 0);
+    if (better) {
       best = id;
       bestCount = count;
+      bestRank = rank;
     }
   }
   if (best === null) {

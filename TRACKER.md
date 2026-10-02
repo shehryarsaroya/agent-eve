@@ -6,6 +6,492 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-02 (latest) — NO MEMBER BEARS THE DOCKET: §5.2's MAX SHARE, OWNER CALL (3) (branch `season1-levy-cap` off `season1-voices` `876dfa6`; not merged, not deployed)
+>
+> Still `RULES_VERSION` 41 (a fifth bullet in its launch-fixes note; Season 1 is a fresh world, so no bump
+> and no divergence), verbs 40/40, observe keys 11/11, kinds 8/8, no new §3 term and no new captured field.
+> `npm run gate0`: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **373 files, 4,380 passed, 1 skipped, 0 failed**
+> (520 s). The owner's decision on owner call (3) of the launch-fixes entry below: **no line of a docket's remainder
+> pool exceeds `LEVY_MAX_SHARE_MULTIPLE` (3, *calibrate*) × the pool's even share** (remainder ÷ pool size,
+> rounded up — the duty when nobody is floored or spared, 71,700 rather than 60,000 when one member of six
+> is spared). The excess is water-filled over the rest by the same rule's weights, every pass
+> `largestRemainder`, so Σ is exact; floored and spared lines are untouched. It applies whatever rule carried.
+>
+> - **One home** (`levy/assessment.ts`): `maxShareOf` is the bound, `poolShares` the water-filling, and
+>   `allocate` cuts every docket through them — the voted plan and the published-default counterfactual
+>   `namedLoser` reads alike. **INV-24 gains a clause**: a pool line above the max share halts the tick
+>   (`settle.ts:inv24InputsFor` derives the bound from the declared total, never from the amounts it
+>   checks). No invariant re-derived a docket from its weights before this — INV-24 checked the sum and
+>   the floor, `checkLevyAttribution` the shortfall arithmetic — so none could halt on the bound; grep
+>   covered `allocate(`, `weightOf`, `largestRemainder`, `relievedTotal`, `line.weight`, the four rule
+>   names, `namedLoser`/`underDefault`, and the frames/recap/tribute and client readers (all read the book).
+> - **The house cast's ballot** was the only Levy share prediction outside the book: it compared
+>   `weightOf(me) / Σ weightOf` across rules, which the bound no longer equals. It now compares the bill
+>   each rule would cut, `previewShares` = `poolShares` on the steady-state docket (the duty a member,
+>   nobody relieved — the docket the ratio was a fraction of). It catches exactly `LevyArithmeticError`
+>   (a docket `allocate` could not cut either) and skips that rule, because the server's scheduler calls
+>   `decide` unguarded and the ratio never threw. The `vote` affordance quotes no per-rule figure (its
+>   prose is qualitative and stays), and `levy.my_assessment` reads the book.
+> - **Surfaces**: `agent.md` §5, one sentence after the `INVERSE_EXPOSURE` warning — *"No rule bills a
+>   member above 3× an even share; the others take the excess, by that rule."* — **+89 on every cast
+>   prompt position** (FLOOR block): analytic 118,307 → 118,396, margin **1,604**; largest reachable
+>   111,537 → 111,626, margin 8,374. SPEC §5.2's canon sentence and §17's Levy row; TESTING.md and the
+>   registry's INV-24 line. Pixel signature (A13): the tribute line — no rope on a docket is more than
+>   three even shares thick.
+> - **`test/levy/no-member-bears-the-docket.spec.ts`**, eleven cases: the finding's docket (free share
+>   103,527, held at 60,000); the excess to the others exactly `largestRemainder(60,000, their weights)`, in
+>   weight order; the cascade (a line pushed over by another's excess); floored/spared untouched and a spare
+>   raising the bound to 71,700; a seeded 2,000-docket sweep; INV-24 passing the cut docket and halting the
+>   same docket unbounded; the preview equal to the bill rule by rule; and `g08` (8 members, 6 Reckonings):
+>   a real line held at the bound, the member's observation printing it, every cast ballot the cheapest
+>   bill, one the bound moved. Mutations run: the bound removed from `allocate` → five cases red and the
+>   `g08` world **halts at tick 864** on INV-24 (`p:sable` 104,059 above 69,750); the cast back on the
+>   ratio → red at tick 1441; INV-24's clause off → two red. `the-constellation-closes-ranks.spec.ts`'s
+>   presence-only census is now **empty** (`g07` R6 `p:varrow` billed 71,700, paid in full, where it was
+>   101,844 and 8,194 short); its carry-reserve mutation still goes red (21,230 escrowable short).
+> - **The hash** moves at the earlier of the first docket with a line over the bound (its phase 0) or the
+>   first cast ballot the bound changed. Measured on both trees at 8 members: `g03` tick 578, `g05` 1,153,
+>   `g07` 865 (ballots), `g08` 864 (R3's docket); identical before each.
+>
+> **Measured** — same scripts on both trees (`scripts/season-probe.ts`, `scripts/balance-gate.ts`, and the new
+> meter `scripts/levy-max-share.ts` they share; on `876dfa6` the meter's one import of the multiple is the
+> literal 3, nothing else differs). Season = 12 members from genesis through the boundary, `instant`:
+>
+> | | settled | dflt | kept | broken | `levyShort` | red | top line | over the bound → held |
+> |---|---|---|---|---|---|---|---|---|
+> | `fs-a` | 176 → 175 | 22 → 18 | 377 → 376 | 30 → 22 | 19,558 → 10,648 | 3 → 3 | 3.67× → 3.33× | 1 → 2 |
+> | `fs-b` | 180 → 183 | 24 → 23 | 380 → 388 | 35 → 34 | 136,300 → 124,520 | 8 → 9 | 8.26× → 3.37× | 5 → 2 |
+> | `g01` | 182 → 180 | 21 → 21 | 387 → 383 | 27 → 29 | 46,456 → 29,580 | 2 → 5 | 9.26× → 3.33× | 6 → 1 |
+> | `g02` | 189 → 180 | 13 → 11 | 396 → 377 | 14 → 13 | 71,914 → 65,537 | 6 → 9 | 9.91× → 3.29× | 3 → 2 |
+> | `g03` | 192 → 192 | 13 → 15 | 402 → 402 | 17 → 20 | 11,429 → 5,992 | 2 → 1 | 8.19× → 3.37× | 2 → 3 |
+> | `g04` | 181 → 179 | 14 → 13 | 377 → 375 | 18 → 15 | 392,195 → 392,269 | 16 → 20 | 8.85× → 3.37× | 5 → 4 |
+> | `g05` | 180 → 177 | 13 → 13 | 381 → 373 | 14 → 15 | 0 → 0 | 0 → 0 | 8.97× → 3.33× | 1 → 2 |
+> | `g06` | 185 → 184 | 18 → 17 | 385 → 382 | 22 → 21 | 33,222 → 151 | 1 → 1 | 8.78× → 3.33× | 3 → 2 |
+> | `g07` | 188 → 185 | 17 → 18 | 388 → 387 | 24 → 23 | 384,851 → 346,922 | 33 → 27 | 6.69× → 3.37× | 2 → 3 |
+> | `season-e2e-28` | 186 → 182 | 19 → 22 | 388 → 386 | 29 → 30 | 38,429 → 3,277 | 1 → 3 | 9.20× → 3.33× | 2 → 2 |
+> | **ten seeds** | 1,839 → 1,817 | 174 → 171 | 3,861 → 3,829 | 230 → 222 | **1,134,354 → 978,896** | **72 → 78** | 9.91× → 3.37× | 30 over → 23 held of 1,330 pool lines; 0 over after |
+>
+> 0 violations and 0 halts on every run either side; grand ventures 8 KEPT · 2 BROKEN → 10 KEPT. At the
+> balance-gate horizon (`g01`–`g08` × 9 Reckonings × 8 members): `levyShort` **8,194 → 0**, red **1/576 →
+> 0/576**, kept 1,213 → 1,219, broken 67 → 70, ventures 656 → 663, `CARRIED` 943,124 → 732,355, top line
+> 6.00× → 3.58×, 11 lines over the bound → 9 held of 400, 0 over.
+>
+> **`BY_STORES`, measured separately as asked.** At the gate horizon it changes nothing: 14 → 12 dockets,
+> nothing over the bound or held, 0 short either side. Over the ten seasons it does create shortfall:
+> `BY_STORES` dockets 41 → 46, its shortfall **503,686 → 534,754 (+31,068)** on 27 → 29 lines, and the bound
+> raised 88 lines by 371,948 in all, of which the raised lines ended at most **80,431** short that the raise
+> could account for (Σ min(owed, raise)) — **41,350 on `g04` and 39,081 on `g07`**, the two seeds whose
+> constellation is short of the levy good every Reckoning from R8–R9 on before and after (their season
+> totals moved +74 and −37,929). On the other eight seeds every raised `BY_STORES` line was paid in full.
+> The same measure under `INVERSE_EXPOSURE`: at most 27,456 (`fs-a` 10,648, `fs-b` 16,808, FINALE-time
+> insolvency). Not exempted — the owner decides.
+>
+> **What else moved, and why.** (1) **The vote moved before any docket did.** With a zero-exposure member
+> held, a moderately exposed member now bears part of the excess under `INVERSE_EXPOSURE` and its cheapest
+> bill is often `BY_EXPOSURE`: 16 of 623 cast ballots changed at the gate horizon and **100 of 1,800** over
+> the ten seasons (63 `INVERSE_EXPOSURE` → `BY_EXPOSURE`, 31 → `BY_STORES`, 6 off `BY_STORES`); every change had
+> the bound binding in the voter's preview and none came from rounding. `INVERSE_EXPOSURE` dockets fell 89 →
+> 54 over the seasons. (2) **Red lines rose 72 → 78 while `levyShort` fell 13.7%**: late-season insolvency
+> is spread over more, thinner lines. (3) `CARRIED` fell 22% at the gate horizon — the held member's
+> escrowable share no longer needs carrying.
+>
+> **For the owner:** (1) `BY_STORES` above — exempt it, keep it, or tune the multiple. (2) More red lines,
+> thinner, at season end: the bound changes who is short, not whether an insolvent constellation is.
+> (3) The bound with a spare in effect exceeds 3× the duty (71,700 = 3.585×), as the even-share formula
+> implies; "about 3×" was taken to allow it.
+
+> ### 2026-10-02 — THE OFFER BOOK STANDS: THE FOURTH LAUNCH BLOCKER (branch `season1-voices`, with the cast's voices and the three fixes below merged in; not deployed)
+>
+> Still `RULES_VERSION` 41, a fourth bullet in its launch-fixes note. Owner call (3) of the entry below:
+> `MAX_OFFER_ENTRIES` was a 256-row ring **for the whole world** that evicted its oldest row, and it was
+> classified RETENTION "display only" when the directory lists by it and the OFFER reach rung addresses
+> by it. So at launch volume a fresh offer left the board inside its own 288-tick freshness window, and
+> one principal publishing every tick cleared everybody else's — directory row and reach rung with it.
+>
+> - **One standing offer per principal** (`say/offer.ts` §2, `OfferBook`). A new offer replaces the
+>   author's last and moves to the back — the latest was the only row `freshOfferOf` ever chose, and
+>   SPEC §7.3 already calls an offer *"a standing price list"*. `EXPIRE` retires an offer once no
+>   freshness read can say yes (`offerLastReadTick` = published + 288), inside the hash and the abort
+>   path, beside the parley book. The `say` table's shape is unchanged; a restore refuses a capture
+>   `push` could not have produced (a second standing offer, ticks out of order, past the cap).
+> - **The cap is a POPULATION book**: 1 × `MAX_PRINCIPALS` = 10,000, a tripwire that throws rather than
+>   evicts. `capacity.spec.ts` reclassifies it. The directory port now asks for one principal's offer
+>   (`offerOf`) instead of walking the book once per seated principal, so the walk is O(seated), not
+>   O(seated × offers).
+> - **The surfaces say so.** `agent.md` §4: *"a standing price list; a new one replaces your last"* —
+>   +30 characters on every cast prompt position, folded into the existing sentence because its own
+>   line measured +90 and the analytic margin is now **1,693**. The `publish_offer` affordance's
+>   `what_it_forecloses` no longer says "nothing": it names the standing offer it replaces.
+> - **`the-offer-book-stands.spec.ts`**: a spammer publishes 280 offers inside one window and holds one
+>   row, while another principal's offer stays in the book, in the directory, on the OFFER rung and on
+>   `market.offers`; an offer is listed at exactly 288 ticks old and retired at 289; a republish starts
+>   the window again; a thousand authors hold a thousand rows. **Run against the unfixed tree, all three
+>   world tests fail** — the victim's offer is gone by the spammer's 256th.
+>
+> ### 2026-10-02 — SEASON 1 LAUNCH FIXES: THREE BLOCKERS ON THE INTEGRATED TREE (branch `season1-launch-fixes` off `season1` `d3e4f52`; not merged, not deployed)
+>
+> Still `RULES_VERSION` 41 (Season 1 is a fresh world, so a note in the 41 block rather than a bump),
+> verbs 40/40, observe keys 11/11, kinds 8/8, no new canon term. `npm run gate0`: tsc 0 · lint 0 ·
+> DET-8 and PROP-O3 pass · **371 files, 4,360 passed, 1 skipped, 0 failed**.
+>
+> - **The parley book rolls** (`say/parley.ts` §5). `MAX_PARLEY_ENTRIES` was a 512-row ring the gate
+>   refused past — the 513th parley of the WORLD'S LIFE was the last anybody could send, a morning of
+>   a launch. Eviction was never the fix (the opening count, the answer-once rule and the ceiling read
+>   these rows), so a letter now leaves only once every window that reads it has passed:
+>   `parleyLastReadTick` = the latest of its Reckoning, the 288-tick answer window and the map's
+>   thread (`PARLEY_THREAD_TICKS` from its reveal), retired in `EXPIRE`, inside the hash and the abort
+>   path. The cap is a POPULATION book (36 rows a principal — the 12-send ceiling × the 3 Reckonings a
+>   293-tick stretch can touch — × `MAX_PRINCIPALS` = 360,000), a tripwire that cannot fire below the
+>   ceiling. Every count reads one principal's mail (`ParleyBook.mailOf`), never the world's.
+>   `the-book-rolls.spec.ts`: 8 principals × 8 Reckonings at the ceiling, **768 letters**, every
+>   Reckoning the 4th opening (A15), the second letter before an answer (A15) and the 13th send
+>   (INV-26) refused, the published counts equal to the record; retiring 100 ticks early turns it red.
+>   This change alone moves no fact in a world without letters: the `fs-a` season ends on `season1`'s
+>   state hash (`3160799b41ea…` at tick 4,079).
+> - **A claim the season ends is `SEASON_ENDED`, not `CLOSED`.** HARD RULE 4: `syndicate/charter.ts`
+>   spells a charter's admission rule `CLOSED`. `SEASON_ENDED` names the only thing that ends such a
+>   claim and appears nowhere else in SPEC §3 or `src/`; `EXPIRED` was the alternative and already names
+>   a term its party set (an order's, a grant's), which a claimant never does. Renamed through the claim
+>   book, ticker, legend (`SEASON ENDED · BOND UNTOUCHED`), event (`claim.season_ended`), season record
+>   and frame (`seasonEndedClaims`), recap, client zoom, `SEASON_STATEMENT`/`SEASON_SUMMARY`, `agent.md`
+>   §5/§11B and SPEC §3/§5/§7.6. The season's own record stays `season.closed`. The repo vocabulary
+>   guard now reads array-declared enums (the blind spot the collision lived in) with a census of the
+>   nine words arrays and unions still share — see owner calls.
+> - **The heuristic cast commissions only what somebody can fill** (`cast/heuristic.ts:createCanFill`).
+>   Cause, measured at each create's tick: the create branch never asked who would fill it, a role holds
+>   its hand until the Reckoning settles, so after a cycle's opening almost nobody has a hand and every
+>   tick a member found no slot it rolled to open one more (abandoned: 98% with no idle cast-mate in the
+>   tier, 1% with 7–8; 88–99% of the creates after phase 48). The gate: cast-mates' free hands in the
+>   stage's tier (`fill_role`'s own `spendable`, never the creator's, never its delegates) must cover
+>   the roles already open there, the roles commissioned earlier this tick, and this venture's own.
+>   Two latent FINALE faults the new trajectory exposed, fixed in the same branch: the grand branches
+>   ignored INV-23 (a delegate of the grand creator counted as crew and was refused every tick —
+>   `fs-a`'s prize went UNCLAIMED), and nothing kept a mustered hand at the grand stage (ordinary fills
+>   and the aimless walk took it — `cf-b` never stood four there again). Regressions:
+>   `the-cast-commissions-what-it-can-fill.spec.ts`, `a-delegate-is-no-crew.spec.ts`.
+>
+> **Item 3, measured** (`scripts/season-probe.ts`, 12 members from genesis through the boundary,
+> `instant`; before = `season1` `d3e4f52`, after = this branch; same script on both trees):
+>
+> | | opened | settled | defaulted | abandoned unfilled | kept | elective defaults | BUILDs opened/settled | grand venture | `levyShort`, season |
+> |---|---|---|---|---|---|---|---|---|---|
+> | `fs-a` before | 1,465 | 174 | 22 | 1,238 | 370 | 31 | 11/10 | BROKEN corvid 322,016 (3 unpaid) | 14,767 (R13) |
+> | `fs-a` after | 226 | 176 | 22 | 13 | 377 | 30 | 17/12 | BROKEN corvid 299,136 (3 unpaid) | 19,558 (R13) |
+> | `fs-b` before | 1,572 | 188 | 20 | 1,326 | 400 | 28 | 17/11 | BROKEN corvid 298,784 (3 unpaid) | 120,136 (R10 28,184 · R12 37,659 · R13 54,293) |
+> | `fs-b` after | 228 | 180 | 24 | 8 | 380 | 35 | 15/10 | KEPT brannock 290,080 | 136,300 (R6 11,130 · R7 35,964 · R12 31,237 · R13 57,969) |
+> | `g01` before | 1,551 | 175 | 20 | 1,323 | 368 | 29 | 13/8 | KEPT brannock 305,024 | 450 (R11–R13, 150 each) |
+> | `g01` after | 229 | 182 | 21 | 10 | 387 | 27 | 15/9 | KEPT brannock 312,544 | 46,456 (R12 22,684 · R13 23,772) |
+> | ten seeds before | 14,263 | 1,821 | 195 | 11,946 | 3,846 | 266 | 137/101 | 7 KEPT · 2 BROKEN · 1 UNCLAIMED | 1,128,783 |
+> | ten seeds after | 2,275 | 1,839 | 174 | 117 | 3,861 | 230 | 154/101 | 8 KEPT · 2 BROKEN · 0 UNCLAIMED | 1,134,354 |
+>
+> Ten seeds = `fs-a`, `fs-b`, `g01`–`g07`, `season-e2e-28`; 0 violations on every run either side.
+> Abandoned unfilled 84% → 5% of opened; settled +1.0%, kept +0.4%, defaults −11%. The Levy total moves
+> +0.5% but per seed both ways (`fs-a`, `fs-b`, `g01`, `season-e2e-28` up; `g02`–`g07` down). The new
+> spikes on `g01`, `fs-b` and `season-e2e-28` trace to one mechanism: `INVERSE_EXPOSURE` billing the
+> member at an EXPOSURE peak of 0 five to nine times the 20,000 duty, whose 30% presence share nobody may
+> carry — owner call (3) of the entry below; the doomed fills had been spreading EXPOSURE peaks across
+> members and masking it. `fs-a`'s FINALE shortfall is goods, before and after. At
+> the balance-gate horizon (8 seeds × 9 Reckonings × 8 members) `kept` 1,136 → 1,213, `broken` 110 → 67,
+> and one such shortfall appears, `g07` R6 `p:varrow` 8,194 of 101,844 — pinned by bucket in
+> `the-constellation-closes-ranks.spec.ts` (escrowable remainder 0; presence-only residue a census).
+>
+> Fixtures widened as their own guards instruct, because the cast now opens ventures at a Reckoning's
+> opening: `a-forked-record-cannot-be-adopted` to 400 ticks, `books-in-the-hash`'s mint walk to a
+> Reckoning; `the-cast-takes-ground` counts ventures that FORMED (297 → 284 on its four seeds), not
+> ventures opened (2,639 → 301, 89% of them never formed).
+>
+> **For the owner:** (1) owner call (3) below is now the main source of the Levy's season-end spikes on
+> these seeds: cap one member's share of a docket, or let a carrier fill presence. (2) The guard's census
+> names the other array-vs-union words still shared — a charter's `OPEN` beside `OrderState`/`IndemnityState`
+> `OPEN` is the same shape as the `CLOSED` this fixed; `CONTACT` (range cell vs engagement state), `HOLD`,
+> `FITTING`, `LEVY`/`SYNDICATE` (ballots), `SMALL_GUN`. (3) **The prose OFFER book is the next
+> parley-shaped cap:** `MAX_OFFER_ENTRIES` 256 is a ring the OFFER reach rung and the directory COMPUTE
+> from, so at launch volume a fresh offer is evicted inside its 288-tick freshness window — and one
+> principal publishing every tick evicts everybody's. (4) `GrantBook.isLive` has no issuance clause, so
+> INV-23 asked at a venture's creation tick also bars a grant issued after it — an engine nuance a test
+> tripped over, not changed here.
+
+> ### 2026-10-01 — SEASON 1 INTEGRATED: FOUR LANES, ONE `RULES_VERSION` 41, ON BRANCH `season1` (not merged to master, not deployed)
+>
+> **The four Season 1 lanes are one branch.** Merged in this order — scale first, because it reshapes
+> how an observation is built and dimensions every book the others add to — `season1-scale` →
+> `season1-stakes-and-chores` → master (`16ef379`, seats and memory set together at cutover) →
+> `season1-season-and-grand-venture` → `season1-contact`, then each cross-lane fix as its own commit.
+> ONE rules bump (41: one block in `runtime.ts`, a section per lane and one for the merge), ONE asset
+> version (`?v=41` on every asset; INFRA.md keeps master's wording), verbs 40/40, axioms 15/15, observe
+> keys 11/11, kinds 8/8. master's deploy tooling, off-server backups and uptime workflow are untouched.
+>
+> **What Season 1 is, merged.** A world dimensioned for 10,000 principals with 500 host seats
+> (`COMPACT_SEATS`), observations built from shared views and spliced fragments, and a region that grows
+> by qualified population (scale); DORMANT WORKS, the creator's `create` as its countersignature,
+> standing intents that end and read satisfied, `fill_role` legality in one home, every menu question
+> asked at the tick the act lands (stakes); a 14-Reckoning season with `header.season`, a grand venture
+> formed only in the FINALE, Frontier claims CLOSED at the boundary and a `season.closed` record
+> (season); reach read off every situation two principals stood in, free answers, the DIRECTORY, letters
+> and offers as captured world state, the cast building with four, SIEGE offered outside the Commons
+> (contact).
+>
+> **Where two lanes met on one rule, and what the merge chose** (each its own commit):
+>
+> - **The grand venture is never one of the cast's four-role BUILDs.** Contact's slot filling,
+>   one-per-tier check and IN_FULL rule all matched it by kind; they skip `grand`, so a KEEP creed
+>   answers its shares. `the-four-role-cast-leaves-the-grand-venture-alone.spec.ts`, three cases, each
+>   red when its skip is removed.
+> - **The grand create is asked at the tick it lands, behind create's gates** (stakes' rule on the
+>   season's offer): offered from the tick before the window, never on its last tick, never to a
+>   principal owing a seal. The menu/engine sweep now covers it and contact's SIEGE; on the old code a
+>   cast-played FINALE drew 2 offered grand creates the engine refused.
+> - **The grand stage reads the launch map's graph**, so growth cannot move the stage the season
+>   announced or trip SSN-1 (today's generator never did — 12 seeds × 8 openings — now it cannot).
+> - **OBLIGE closes the season, then grows the region**; growth is last of all.
+> - **`header.season` carries one-line summaries** of its two statements, scale's `header.growth`
+>   precedent: in the house cast's 24,000-character projection the merged world kept 15.4 of 29.0
+>   affordances a wake against 17.3 of 26.5 on the scale lane, 0.6 of it the statements. `agent.md` §5
+>   keeps them verbatim (FLOOR in the cast's contract).
+> - **One stationed list** (`stationedAt`) for the aimless walk, the alloy errand and the crew walk —
+>   the pledged-hand fix stakes and contact each made, kept once — and **the aimless walk never sends a
+>   second hand into a standoff its member is already marching to** (`doubleMarches` 5 → 0, seed g06).
+> - **A WORKS line reads SPINNING UP, DORMANT, EXTRACTING or CROWDED OUT**, in that order.
+> - **The contact and season reads share the read epoch** — reach, the parley block, the directory's
+>   ranking, the season block, the grand index, the probe venture, the venture-tie and seal-gate walks —
+>   and `header.season` is ONE shared fragment for every reader outside a crew (a crew member's own
+>   stake stays in its envelope).
+>   The merge had put an O(P) term back into every observation (1,000 principals: 1.94 → 3.23 ms, the
+>   burst 1.9 → 3.2 s); profiled and removed, the merged observation costs 16–17% more than the scale
+>   lane's at 300 and at 1,000 alike — it is ~11% larger — and the burst grows with the population the
+>   way the scale lane's does (0.4 → 1.9 s from 300 to 1,000, against 0.4 → 1.6).
+> - Every new cap classified in `capacity.spec.ts` (season 5, contact 9); `MAX_PARLEY_ENTRIES` stays
+>   FLAGGED, now with the reason its lifetime refusal is load-bearing for A15. SPEC §3 carries FINALE,
+>   GRAND VENTURE, DORMANT, DIRECTORY and the CLAIM row's three endings (LAPSED · CEDED · CLOSED); §7.3
+>   the create-as-countersignature sentence; §12.1 the new sub-keys; `agent.md` §6 names
+>   `header.growth`. The cast contract is 67 units: analytic 118,219 of 120,000 (nothing dropped),
+>   largest reachable 111,455 (margin 8,545 against 4,000) — the three rule-writing lanes composed exactly.
+> - Two fixtures widened or updated as their own guards instruct: the forked-record fixture seats 8
+>   (one creator left after the fork at 6), and the season fixture stops having a creator sign its own
+>   candidate.
+>
+> **Measured on the merged tree.** `npm ci && npm run gate0`: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **368 files, 4,349 passed, 1 skipped, 0 failed** (14 min 2 s wall, run on `ce381b6` from a clean `npm ci`; the follow integration test, flaky under load on the base, passed in every full run on the merged tree — its root cause, undici reusing a keep-alive socket the mock server closed while a synchronous 288-tick run held the event loop, is fixed in the test harness by the season lane's `807a80f`). A 12-member heuristic
+> world from genesis through the boundary (seed `fs-a`, `instant`, 4,080 ticks): **0 invariant
+> violations**; 1,465 ventures opened — 174 settled, 22 defaulted, 1,252 abandoned unfilled, 17 still
+> open; elective promises honoured 370, defaults 31; **11 four-role BUILDs, 10 settled**; the grand
+> venture formed once (p:corvid, MERCENARY), delivered 322,016 and its creed kept the yield — `BROKEN`,
+> three shares unpaid; DORMANT 0 (a cast that acts every tick never sleeps); letters 0 (the heuristic
+> cast writes none); growth 0 (expected at 12); no Frontier claim was standing at the boundary, so
+> `CLOSED` is proven by `boundary.spec.ts` rather than by this run; `levyShort` 0 in every Reckoning
+> but the FINALE's, 14,767 (the whole constellation ran out of the good; the common base reads 20,528
+> there on this seed). The same season replayed on `ce381b6` ends on the state hash it ended on before
+> the read-epoch commits (`3160799b41ea…` at tick 4,079), so moving those reads moved no fact.
+> Season-one adoption round trip (`season-one-survives-adoption.spec.ts`): a boot adopts the
+> FINALE's checkpoint across a closed season, a grown region, a DORMANT WORKS and a letter answered
+> after it, replays Season 2's first 30 ticks and reaches the live head hash. At 300 principals (CPU clock, paired with the scale lane's tip): tick 15.2 ms mean against 18.4, the Reckoning 38 ms against 38, one observation 1.48 ms against 1.28 and the burst after the Reckoning 0.4 s against 0.4; at 1,000, 1.90 against 1.63 ms and 1.9 against 1.6 s — scale's gains kept (`SCALE-2026-10-01.md` §10). Re-read alone on `ce381b6`: tick 16.9 ms, the Reckoning 40 ms, 1.48 ms an observation, the burst 0.4 s, the same state `f25d19578f51`.
+>
+> **Still open, for the owner:** (1) `MAX_PARLEY_ENTRIES` refuses the 513th parley of the world's life
+> (both scale and contact flagged it; the refusal keeps the A15 counts honest, so the fix is a
+> per-principal count or a population-sized book, not deletion). (2) `ClaimState.CLOSED` shares its
+> spelling with a syndicate charter's `CLOSED` admission — an array-declared enum the repo vocabulary
+> guard cannot see; SPEC §3 now says which is which, a rename (`EXPIRED` is the sanctioned "term ran
+> out" word) is the alternative. (3) `INVERSE_EXPOSURE` billed one member 5.54× the flat duty on an
+> intermediate merged trajectory of g07, and its 30% presence share is uncarryable by §5.2, so the
+> world recorded a presence-only shortfall of 11,051; the final trajectory is clean and the
+> closes-ranks pins pass, but a cap on one member's share is a balance call. (4) The house cast's prompt
+> projection: merged observations are ~11% larger and the cast sees ~53% of its affordances at the
+> 24,000-character budget (65% on the scale lane) — raise `COMPACT_CAST_MAX_PROMPT_CHARS` or trim
+> per-observation prose. (5) The cast contract's analytic margin is 1,781 characters: the next rules
+> addition drops CONTEXT at the analytic ceiling (still legal) — trim duplicated prose first. (6) The
+> lanes' own owner calls stand unchanged: 14 Reckonings against A10's 4–8 weeks and "largest stake
+> carries it" (season); the creator's veto is `abandon`, not a withheld signature, and what counts as
+> play for DORMANT (stakes); `distinct_counterparties` counts identities, and the house heuristic writes
+> no letters (contact); paging the journal, lot consolidation, per-constellation drama budgets and D7's
+> wage route for growth (scale).
+
+> ### 2026-10-01 — SEASON 1 · CONTACT (branch `season1-contact`, `RULES_VERSION` 41, fresh world)
+>
+> **Who may write to whom is read off every situation two principals stood in, answering is free,
+> and the map says who is dealing.** A blind playtester could not message the ally it had just
+> fought beside and got no answer to two parleys; a review measured `reachable_principals` 0 on
+> most observations and no venture with four or more roles in the live world, ever. Verbs stay
+> 40/40 and observe keys 11/11 — every new surface is a parameter or a sub-key.
+>
+> - **Reach** (`say/reach.ts`) gains RAID (either side, while open and two Reckonings after),
+>   SYNDICATE, VENTURE (finished together in the last two Reckonings), OFFER (a fresh offer in your
+>   constellation) and the **earned** CONSTELLATION rung, priced in standing: two distinct
+>   counterparties honoured. Uncapped as a predicate; `MAX_REACH_ROWS` caps only what is printed.
+> - **Answers are free** (`say/parley.ts`): a letter buys one answer inside a rolling 288-tick
+>   window, decided by ring order; an *opening* keeps the A15 price (3 a Reckoning if entitled, 0 if
+>   not); a ceiling of 12 sends a Reckoning bounds the shared 512-letter book, which is now the
+>   captured `say` table (an uncaptured book let an adopted boot fork silently — see owner calls).
+> - **The DIRECTORY** (new §3 row, `say/directory.ts`): `ventures.directory` in `observe` and
+>   `directoryLines`/`parleyLines` on both frames, one builder, PUBLIC facts only, soliciting first
+>   and then by record so a fresh identity sinks. Being listed reaches nobody.
+> - **Four-role ventures in a world nobody steers**: the heuristic cast opens a BUILD about once a
+>   Reckoning per tier, fills it with four distinct principals and honours it IN_FULL out of its own
+>   proceeds; SIEGE is offered outside the Commons. Measured with `scripts/four-role-probe.ts`, six
+>   seeds × three Reckonings × twelve members: **16 opened, all 16 filled by four distinct principals
+>   and settled honoured**, 0 defaults, 0 abandoned, `levyShort` 0 as with the branch off (Σ defaults
+>   72 against 78). At the balance-gate horizon — eight seeds × nine Reckonings × eight members — 30
+>   opened, 24 settled honoured, 6 retired unfilled, 0 defaults, and `levyShort` **0 on and off**,
+>   kept/broken 1,172/86 against 1,173/85 (taken just before the errand fix below, which changes a
+>   world only where a pledged hand would have been walked). (`the-constellation-closes-ranks` pins `g07` at that
+>   horizon and is trajectory-sensitive: an intermediate stream label reproduced a presence-only
+>   shortfall there with no four-role venture live; the final one is clean.) The house heuristic
+>   still writes no letters, so `parleyLines` is empty in every
+>   seeded world (frame census) — threads come from the LLM cast and outside agents, and
+>   `test/say/the-thread-on-the-map.spec.ts` is the key's only non-vacuity proof.
+> - **The LLM cast reads its mail**: `header.parley.awaiting_reply`, on the key projection never
+>   drops, and a mail block with the exact answering call, framed as untrusted text.
+> - **Rendering (A13)**: THE DEALING MARK and THE PARLEY THREAD on the zoom map (§14.5), DEALING and
+>   PARLEY live rows, DEALING and LETTERS dossier panels; assets `?v=35`. Checked in headless Chrome
+>   against seeded frames: lanterns and DEALING lines on four holdings, threads with return strokes,
+>   both dossier panels filled.
+> - **A15, measured** (`scripts/parley-probe.ts`, six seeds × three Reckonings × twelve members, ten
+>   free identities each): cast entitled 69/72, with reach 72/72, offered the act 69/72; free
+>   identities reach 0, allowance 0, offers 0, accepted 0.
+> - **What the full suite found once the trajectory moved** — four latent defects, none in the contact
+>   rules: `alloyErrandFor` and `crewMove` could walk a hand pledged to a standoff (now excluded, the
+>   rule `fill_role` and the aimless walk already obey); `the-record-names-what-was-taken` read
+>   `atStake` after the rename to `magnitude`, vacuous until a partial default appeared on its seed;
+>   `docket`'s stranger scan needs a twelve-member world now that a BUILD introduces four at once;
+>   `a-delegate-can-spend`'s search skips four-role kinds and the grantor's own role. The INVITE
+>   refusal now states the parley price instead of only the verb.
+>
+> **Owner calls, not made here.** (1) `distinct_counterparties` counts identities and D7's
+> endowment can leave by venture payment, so a ring of fresh identities dealing with each other can
+> earn both the opening and the constellation rung — the price is real settled ventures, not zero,
+> but part of it is denominated in identities (A15). (2) The 512-letter shared ring will not hold at
+> thousands of seats: a letter that falls out of the ring stops being answerable for free. (3) **An
+> adopted boot's tail replay has no tripwire**: a captured table missing from a checkpoint replays
+> to a different head hash and boots anyway. `test/durability/a-letter-survives-adoption.spec.ts`
+> pins the `say` case; the class is open. (4) `RULES_VERSION` 41 and `?v=35` were pre-assigned on a
+> parallel branch and must be renumbered at merge. (5) **Merge note for the season branch**: §7.6's
+> GRAND VENTURE is that branch's word, so this one says *four-role* / *top-yield* throughout. Its
+> `topYieldSlotFor`, `topYieldCreateFor`'s one-per-tier check and `electionFor`'s IN_FULL rule for an
+> un-escrowable kind all match a `BUILD`, so at merge they must skip a `grand` venture, which that
+> branch's `grandFor` decides — including a creator whose policy is to KEEP. (6) The house heuristic
+> never writes a letter; whether it should send a recruiting letter when its four-role venture is
+> short of hands is a contact-versus-noise call left open. (7) Master reworded the `?v=` paragraph in
+> `docs/background/INFRA.md` after this branch's base: keep master's text with `?v=35`.
+
+> ### 2026-10-01 (branch `season1-stakes-and-chores`, unmerged) — SEASON 1: STAKES AND CHORES, `RULES_VERSION` 41
+>
+> Cut for the fresh Season 1 world (new seed, new record — no live journal is replayed across it).
+> Nothing deployed. Four rule changes and the surface fix that playing the live world asked for, plus
+> the two defects the work itself turned up (the clock half of the menu fix, and a cast bug):
+>
+> - **DORMANT WORKS.** A system's yield is split evenly among its WORKS, and dormant accounts (three
+>   QA identities, one outsider idle since tick ~3,170) still held WORKS taking 18.5% of world output
+>   and halving the income of the active player on three Commons systems. Now a principal with no
+>   ACCEPTED action for `WORKS_DORMANT_AFTER_RECKONINGS` (4, the seat lease's span) is DORMANT: its
+>   WORKS neither extracts nor counts in the split, nothing is confiscated, and it resumes the tick
+>   after the principal acts again. World-side clock in `works/book.ts` (`played`, captured), folded
+>   from the frozen window after PRODUCE; a standing intent's run is not play. §3 gains DORMANT. Frame
+>   `worksLines[]` gains `extractors` and `dormantSinceTick` and the legend `DORMANT`; the map, the
+>   zoom and both dossiers draw it grey and dotted (assets `?v=35`).
+> - **The creator's own `create` is its countersignature.** `formationWindowOutlastsAWake()` −6 → +12
+>   (the window stays 12; `CREATOR_WAKES_INSIDE_FORMATION_WINDOW` is 0). Fillers still sign; the
+>   creator's say over counterparties is `preference` and `abandon` while FORMING. Because create is
+>   now the binding act, it quotes the worst case (`maxElectiveLiability`, 2,400 on a default DIG, not
+>   the 1,200 price; its manifest prints each role's bound beside its price) and carries the "binding
+>   does NOT decide what you pay — that is `elect`" sentence the creator's `sign` used to. `agent.md`
+>   §10 had the same price-for-bound slip about what a delegated create draws, and now names the bound.
+> - **A standing intent can be ended** — `set_delivery_intent {"stop": id}`, no verb spent (40/40) —
+>   and **a satisfied one reads as satisfied**: a run with nothing to do (bill paid, ballot already
+>   cast, no whole batch of ore, the freeze for a refine) is recorded `satisfied`, posts no correction
+>   and spends no `max_runs`. A standing ballot without this re-cast itself into the public record 59
+>   times in 60 ticks. `obligations.intents[]` lists them; the menu now offers Charge and refine orders.
+> - **The menu stops offering a slot the engine refuses.** `fill_role` legality has one home
+>   (`Runtime.fillRoleAuthorityRefusal` / `fillSlotRefusalFor` / `ventureGateRefusalFor`) read by the
+>   handler, the board, the affordances and the heuristic cast — ferren's *"That Sable slot is barred
+>   by my grant despite the menu"*. The general cause was two-sided — a rule living only in a handler,
+>   and the menu asking at the tick it is READ rather than the tick the act LANDS — and the second half
+>   was wider than `fill_role`: an observation at tick 285 offered `graduate`, `refine`, `post_bond` and
+>   `form` that the freeze refuses at 286. The freeze set is now one home (`Runtime.COMMITTING_VERBS`,
+>   applied by the verb table) and `Runtime.clockGateFor` — that set, `elect`, a delivery and a ballot,
+>   asked at `tick + 1` — withholds them with the engine's own sentence in `header.withheld`.
+> - **A pledged hand stays put.** The alloy errand and the crew walk each kept a copy of the aimless
+>   walk's "stationed" list without the stages a FIGHT or a join pledged a hand to; on seed `gate-d` an
+>   ally's joined hand walked off toward an alloy book and a raid that read REPULSED for eighteen ticks
+>   resolved PLUNDERED (10,110 lost). Both now honour `musteredAt`.
+>
+> `npm run gate0` on the final tree: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **340 files, 4,192
+> passed, 1 skipped**, and 2 failed — both in `follow/integration.spec.ts`, see (6) below.
+>
+> ⚑ FOR THE OWNER: (1) `RULES_VERSION` 41 is pre-assigned and must be renumbered at merge if another
+> Season 1 lane lands first. (2) A creator can no longer refuse a counterparty by withholding its
+> signature — its levers are `preference` and `abandon` while FORMING; that is the trade for the +12.
+> (3) Canon moved: SPEC §3 gains DORMANT and §7.3 says the create is the creator's countersignature.
+> (4) "Play" for DORMANT is any accepted action by the principal itself: a delegate's act is the
+> delegate's play, and a standing intent's run is nobody's — both deliberate, both calibratable.
+> (5) Fill-role-as-countersignature (one act closes a filler's half) was considered and left out of
+> scope. (6) Pre-existing, found on the way and true on `c771ece` too: `the-cast-takes-ground`'s
+> documented mutation of `claimFor`'s online clause no longer turns it red (no claim lands in a
+> spin-up on the gate seeds), and `follow/integration.spec.ts` fails under heavy machine load and
+> passes alone. See the branch's final report for the test evidence.
+
+> ### 2026-10-01 — SEASON 1 SCALE: ONE WORLD AT 3,000 PRINCIPALS (branch `season1-scale`, `RULES_VERSION` 41)
+>
+> Measured, not projected (`docs/design/SCALE-2026-10-01.md`; `scripts/population-scale.ts` seats
+> synthetic heuristic populations on §12.4's wake cadence). **Fixed:** the observation burst after a
+> Reckoning was O(P²) in the BUILD — world-wide reads inside every principal's observation — so
+> `Runtime.perEpoch` shares them and `api/fragments.ts` splices each shared view's JSON into the
+> per-principal envelope, byte-identical (147 → 4.4 ms an observation at 3,000; ~7 min → 13 s for
+> everybody). **Eight books** bound below the population by arrival order or halted the world
+> (submission window, fill queue, elections, grants, open orders, Charge ballots, syndicates, the
+> per-tick event buffer); every cap is now classified in `test/core/capacity.spec.ts` and population
+> books derive from `MAX_PRINCIPALS` = 10,000. The tick grew with the world's AGE (INV-1 and INV-7
+> re-read the whole log, the state hash materialised the whole state): 2,289 → 680 ms at 1,000
+> principals by tick 863. Adopting a checkpoint past ~150,000 postings threw (`push(...rows)`).
+> **Growth is spent** (§4.2): a qualified population — paid capital, an elective promise kept to
+> someone else, capital at stake, never headcount — opens one constellation at the Reckoning, joined by
+> one STRAIT; THE RISE draws it. **What binds now is memory over a season** (~0.5–0.8 KB per principal
+> per tick of in-memory journal), so `DEFAULT_SEATS` is **500** on the shipped 4 GiB slice and
+> `COMPACT_SEATS` raises it. Open: page the journal out; consolidate lots (interacts with
+> `MAX_SEIZE_LOTS`); per-constellation drama budgets; the parley ring's lifetime refusal.
+
+> ### 2026-10-01 — SEASON 1: THE SEASON CLOCK, THE GRAND VENTURE AND THE A10 BOUNDARY (branch `season1-season-and-grand-venture`, `RULES_VERSION` 41, not merged, not deployed)
+>
+> **§7.6 names two mechanisms that make defection ever rational in a permanent-ledger world — a
+> season horizon and one grand venture — and the engine had neither.** Nothing ended. (COMPLETION's
+> Phase 1 line listed "season boundary" as built; `c771ece` had no season code, only comments.)
+> Cut at 41 for a fresh Season 1; no verb (40/40), no kind (8/8), no observe key (11/11).
+>
+> - **The clock** — `SEASON_RECKONINGS` = **14** *(calibrate)*: two calendar weeks at production pace
+>   (the FINALE lands on the weekday and hour the season opened), four renewal links of a
+>   3-Reckoning grant, two 5-Reckoning campaigns, ~11 h at `fast`. Below A10's 4–8 weeks on purpose
+>   and owner-visible: it is one constant. `header.season` in every observation; a season line on
+>   both frames.
+> - **The grand venture** — `create {"kind":"BUILD","stage":<stage>,"grand":true}`. Staged at the
+>   Frontier system farthest from the Commons, rotating by season (S1 Grist `sys-23`, S2 Keelrow
+>   `sys-27`); formed only in the FINALE; yields **320,000 (±10%)** = 40 × the measured 8,000
+>   median delivery, issued once from civic procurement; every role a hand at the stage staking
+>   ≥ **10,000 of `freeCash`** (zero for a fresh key — A15); one crew per principal; of every LIVE
+>   crew at the shared delivery tick the largest stake carries it, the rest deliver nothing and owe
+>   nothing. BUILD is un-escrowable, so every share is elective: the creator — or a treasurer or
+>   steward under a grant — decides, and the season record names who stated each share (A6).
+> - **The boundary (A10)** — at the FINALE's settlement every Frontier claim becomes `CLOSED` (bond
+>   untouched; the ANCHOR is the slice that bought one season) and campaigns on them end `MOOT`
+>   with bonds returned. Identity, standing, holdings, hands, stores, grants, syndicates, WORKS and
+>   Marches claims are byte-identical across it (`test/season/boundary.spec.ts`). A `PUBLIC`
+>   `season.closed` row carries the record; THE SEASONS renders it.
+> - **The cast plays it** — musters a hand from two Reckonings out, forms one crew only when four
+>   can stand at the stage (without that gate it left fourteen ABANDONED candidates), stakes a fifth
+>   of `freeCash`, and the creator answers by its public creed: MERCENARY keeps the yield, PATIENT
+>   appoints a treasurer, the rest pay.
+> - **Measured** — two 12-member worlds from genesis (`fs-a`, `fs-b`): all 14 Reckonings, 0
+>   violations, one crew carried ~293,000, KEPT. The FINALE probes draw both answers (`cf-a` KEPT;
+>   `cf-b` BROKEN, three defaults on the creator). E2E-28 pins a whole season (813–987 s on a loaded box).
+>   `npm ci && npm run gate0`: tsc 0 · lint 0 · both audits pass · **344 files, 4,205 passed, 1
+>   skipped** (3,745 s on a box shared with three other agents).
+>
+> **For the owner:** (1) 14 Reckonings against A10's 4–8 weeks; (2) "largest stake carries it" is
+> A4-safe (no arrival race) but rewards capital, and is this branch's call rather than the canon's;
+> (3) §18 #3, how much a season resets, is answered minimally (Frontier claims and their wars);
+> (4) a delegate can never pay itself, so grant betrayal here is routing and withholding, not
+> theft; (5) settlement's default rows still do not name an electing delegate (the season record
+> does); (6) 41 may collide with sibling Season 1 branches — renumber at merge.
+>
+> Also: `test/follow/integration.spec.ts` flaked under load on `c771ece` itself (4 of 4) — a dead
+> keep-alive socket against its mock Resend after a synchronous 288-tick run; test-only fix.
+>
 > ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
 >
 > **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'

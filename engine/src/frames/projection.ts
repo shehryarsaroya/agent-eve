@@ -87,6 +87,17 @@ import type { FrameSource } from './render.js';
  * known arithmetic be exact and machine-readable. `extracted` is cumulative units the world has
  * **handed over**, one `PUBLIC` event per tick, so it is a sum of completed public acts.
  *
+ * ★ **`DORMANT`, `dormantSinceTick` and `extractors` (`RULES_VERSION` 41) argue themselves the same
+ * way, and the argument has one honest cost stated.** The split is public arithmetic: `sharePerTick`
+ * is the system's yield divided by the WORKS dividing it, and a WORKS whose holder has had no action
+ * accepted for `WORKS_DORMANT_AFTER_RECKONINGS` Reckonings divides nothing — so a frame that hid it
+ * would print a share the ledger does not pay, and every co-located holder can read the exact tick
+ * off its own extraction the moment its share rises. The agent sees the same fact in its own observe
+ * (`holding.works.here.dormant_by`, `graduation.ground[].dormant_by`), so A9 holds by construction.
+ * What it reveals that a viewer could not otherwise count is coarse and late: *this principal has sent
+ * nothing at all, of any kind, for four Reckonings* — the same liveness fact the seat lease acts on,
+ * and nothing about what it did before it stopped.
+ *
  * **What a works line may never carry:** units the holder still has, anywhere (`SENSED`);
  * Reckonings of Levy or Charge the extraction would cover, which is a public rate divided by a
  * private stockpile and is the rejected fuel gauge exactly; anything that moves when a convoy
@@ -354,6 +365,22 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // matches `/stock|reserve|held|cargo|hand|goods|stores|escrow|cover|remaining/i`, which is that
   // rule made executable rather than remembered — the same instrument as the claim line's.
   'swayLines',
+  // ── ★ THE RISE (§4.2, A13), AND THE ONE NUMBER ON IT THAT NEEDED AN ARGUMENT ──
+  //
+  // The opened constellations are geography — their systems and their gate are on `map`, two keys up
+  // — and their ticks are the `constellation.opened` row's, which is `PUBLIC` at its own tick. That
+  // half adds no disclosure at all.
+  //
+  // **`qualified` is the half that needed an argument**, and it is `hollow`'s: it is computed from
+  // `freeCash`, and §11.2 puts a STORES balance at `SENSED`. It is admitted because it is not a
+  // quantity anybody holds: it is a **count over the whole region** of principals past three published
+  // thresholds, naming nobody and no figure, and it is the one number that makes a scheduled event
+  // watchable before it happens (A14). A viewer learns the region is filling; nobody learns what
+  // anybody holds. The rejected version is the useful half: a per-constellation or per-principal
+  // breakdown, which on a small enough population becomes a statement about one principal's
+  // balance. A9 then holds by construction — `observe`'s `header.growth` carries the same count,
+  // built by the same `Runtime.growthBlock`, to every agent.
+  'growth',
   // ── ★ THE CONVOY LINE (A13's sixth named example), AND IT IS THE CLAUSE ────
   //    EVERY OTHER LINE IN THIS FILE ALREADY BORROWED.
   //
@@ -402,6 +429,50 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // already publishes); the negotiation (`PARTIES` until settlement, which is why the LIVE frame
   // carries links and carries no reel); the seal. Refused by field name in `assertFrameBudgets`.
   'compactLinks',
+  // ── ★ THE SEASON LINE (SPEC §5, §7.6, A13) ─────────────────────────────────
+  //
+  // The clock half is a pure function of the tick and a published constant — no fact at all. The
+  // grand venture's announcement (stage, yield, window, stake) is published constants and a pure
+  // function of the map. A candidate card is a venture: its creator, its role-holders, its stage and
+  // its state are on `venture.formed` / the fills, all `PUBLIC`, and `formedBy` is that row's actor
+  // column. Its `staked` is the PUBLIC part of the crew's stake — the locks taken before the FINALE's
+  // commitment window — because §5.1 makes a commitment inside the window `PARTIES`-visible until
+  // settlement; those fills are a count (`sealedFills`), never an amount, and `assertFrameBudgets`
+  // refuses a sealed-stake field by name. The verdict is the `PUBLIC` `grand.verdict` row.
+  //
+  // It is built by the same function that builds every agent's `header.season`, called with no
+  // viewer, so the line is a strict subset of what every agent reads (A9) by construction.
+  'season',
+  // ── ★ THE SEASON RECORD (A10, §16 *Remembered*) ──────────────────────────
+  //
+  // A re-read of the `season.closed` row, `PUBLIC` at birth. Every figure on it is a settled venture's
+  // payout (`venture.settled`, `PUBLIC`), a difference of two public standing vectors (`standings` is
+  // admitted above), or a claim the season ended (`claimLines`' own clause). Nothing here was ever `PARTIES`.
+  'seasonRecords',
+  // ── ★ THE DEALING MARK (41), AND EVERY FIELD IS A PUBLIC FACT ALREADY ON THIS LIST ──
+  //
+  // A row is a holding (`handles`' own clause — *"a holding is rendered with its name on it"*), a
+  // published offer (§11.2 names *"published offers"* PUBLIC, and `market.offers` already serves the
+  // same rows to every agent galaxy-wide), a forming venture's kind and open roles (`venture.formed` /
+  // `venture.role_filled`, PUBLIC — `tomorrow` and the live `glyphs` already draw the empty socket),
+  // a count of live roles (the same rows' filled pips), and three standing vectors (`standings`, two
+  // entries up). So it is an ORDERING of facts this frame already carries, which is what A9 permits,
+  // and `say/directory.ts` builds it once for both this frame and `observe`'s `ventures.directory`.
+  //
+  // Not admissible, each considered: any stores, escrow, balance or goods (`SENSED`); any hand's
+  // position (`SENSED` — `world/sway.ts` refuses hands for exactly this); the reader-specific reach
+  // rung `observe` adds to each row (an agent's own situation, not a world fact); a score (§3).
+  // Refused by field name in `contract.ts:contactProblems`.
+  'directoryLines',
+  // ── ★ THE PARLEY THREAD (41), PUBLIC FROM ITS REVEAL TICK AND NOT ONE TICK BEFORE ──
+  //
+  // §11.2: a PARLEY is `PARTIES` to its two principals and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`,
+  // to every agent and every viewer on one clock, and *"its text does publish"*. So a thread is a
+  // re-read of a PUBLIC fact exactly when it is drawn from that tick — the DOSSIER THREAD's rule in the
+  // same words. The runtime filters through `parleysVisibleTo(…, null, tick)`, the viewer's own clause
+  // of the one predicate, and `assertFrameBudgets` refuses a thread whose `publishedTick` is later than
+  // the frame's own tick, so the bound is checked at the artifact rather than trusted at the source.
+  'parleyLines',
 ]);
 
 export class ProjectionError extends Error {}

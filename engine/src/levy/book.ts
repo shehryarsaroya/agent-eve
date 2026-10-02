@@ -142,6 +142,10 @@ export class Book {
   private readonly plans = new Map<string, LevyPlan>();
   private readonly payments = new Map<string, PaymentRow>();
   private readonly ballots = new Map<string, LevyBallot>();
+  /** Ballots held, for the cap-pressure report (`Runtime.capPressure`). */
+  get ballotCount(): number {
+    return this.ballots.size;
+  }
   private readonly chronic = new Map<PrincipalId, ChronicRow>();
   private readonly shortfalls = new Map<string, ShortfallRow>();
   /**
@@ -528,6 +532,11 @@ export class Book {
 
   hasVoted(forReckoning: number, principal: PrincipalId): boolean {
     return this.ballots.has(principalKey(forReckoning, principal));
+  }
+
+  /** The ballot this principal has standing for `forReckoning`, if any. A read; it moves nothing. */
+  ballotOf(forReckoning: number, principal: PrincipalId): LevyBallot | undefined {
+    return this.ballots.get(principalKey(forReckoning, principal));
   }
 
   ballotsFor(forReckoning: number, constellation: ConstellationId): readonly LevyBallot[] {

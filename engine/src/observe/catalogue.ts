@@ -388,8 +388,9 @@ function ventureAffordances(ctx: CatalogueContext, out: Candidate[]): number {
   const { sources } = ctx;
   let considered = 0;
 
-  // `create` — one candidate per kind. Nothing binds until countersignature (§7.3),
-  // so creating risks nothing; the numbers become real at `sign`.
+  // `create` — one candidate per kind. Since `RULES_VERSION` 41 the create IS the creator's
+  // countersignature (`venture/create.ts:CREATE_IS_COUNTERSIGNATURE`), so nothing further binds the
+  // creator; the venture binds its counterparties only as each of them signs (§7.3).
   for (const kind of VENTURE_KINDS) {
     considered += 1;
     const floor = commonsFloorRejection(sources.world, 'create', {

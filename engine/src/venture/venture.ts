@@ -45,7 +45,7 @@ import type {
   VentureState,
 } from '../core/types.js';
 import { addMinor, BPS_ONE, minor, type Minor } from '../core/units.js';
-import { accept, isPresent, reject, type HandRecord, type WorldResult } from '../world/index.js';
+import { accept, isPresent, reject, type HandRecord, type Rejection, type WorldResult } from '../world/index.js';
 import { boundAtFormation } from './create.js';
 import {
   MAX_ROLES_PER_VENTURE,
@@ -93,6 +93,19 @@ export interface VentureRoleRecord extends VentureRole {
   settledEscrowedMinor: Minor;
   /** Paid to this role electively, cumulative over every settlement pass. */
   settledElectiveMinor: Minor;
+}
+
+/**
+ * ★ What makes a venture **the season's grand venture** (SPEC §7.6): its season, and the yield it
+ * was formed against in place of its kind's `baseYieldMinor`.
+ *
+ * Declared here rather than in `src/season/` so the dependency runs one way — the season module
+ * reads ventures, the venture module never reads seasons. Pinned at formation, inside `terms_hash`
+ * (see `TermsHashInput.grand`), never rewritten: the yield a crew divides is part of what it signed.
+ */
+export interface GrandMarker {
+  readonly season: number;
+  readonly baseYieldMinor: Minor;
 }
 
 /**
@@ -179,6 +192,8 @@ export interface VentureRecord extends Venture {
   readonly actedBy: PrincipalId | null;
   readonly valuation: PinnedValuation;
   readonly rulesVersion: number;
+  /** ★ The season's grand venture marker, or null for every ordinary venture. See {@link GrandMarker}. */
+  readonly grand: GrandMarker | null;
   resolvedAtTick: number | null;
   /** How many Reckonings this has deferred to (§15.3's bounded cascade). */
   deferrals: number;
@@ -233,6 +248,8 @@ export interface CreateVentureInput {
    * create, and required whenever `boundByGrant` is present — see {@link VentureRecord.actedBy}.
    */
   readonly actedBy?: PrincipalId | null;
+  /** ★ Set exactly when this is the season's grand venture (SPEC §7.6). Absent for every other. */
+  readonly grand?: GrandMarker | null;
 }
 
 /**
@@ -374,6 +391,7 @@ export function createVenture(input: CreateVentureInput): WorldResult<VentureRec
     actedBy,
     valuation: input.valuation,
     rulesVersion: input.rulesVersion,
+    grand: input.grand ?? null,
     resolvedAtTick: null,
     deferrals: 0,
     escrowExecutedAtTick: null,
@@ -395,7 +413,20 @@ export function termsHashOf(venture: VentureRecord): string {
     resolvesAtTick: venture.resolvesAtTick,
     valuation: venture.valuation,
     rulesVersion: venture.rulesVersion,
+    grand: venture.grand,
   });
+}
+
+/**
+ * ★ **The yield a venture is divided against** — its kind's `baseYieldMinor`, or the grand venture's
+ * published yield when it carries a {@link GrandMarker}.
+ *
+ * The ONE answer every proceeds computation over a venture record reads: the delivery, the quote a
+ * signer echoes, the elective ceiling a grant is charged, and the board row. Two answers would be the
+ * preview and the payout disagreeing about one number — §7.1's failure, which PROP-V3 exists to catch.
+ */
+export function yieldBasisOf(venture: Pick<VentureRecord, 'kind' | 'grand'>): Minor {
+  return venture.grand?.baseYieldMinor ?? kindSpec(venture.kind).baseYieldMinor;
 }
 
 // ── Queries ──────────────────────────────────────────────────────────────────
@@ -617,19 +648,31 @@ export function activate(venture: VentureRecord, stateVersion: number, tick: num
 }
 
 /**
- * Fill one role.
+ * ★ **Why `principal` could not take role `roleIndex` of this venture at `tick` — the slot's own
+ * rules, with no hand in them.** `null` when the slot would take it.
  *
- * The uniqueness check against every other live venture is **not** here — it lives
- * in {@link ./book.ts}, which owns the index. This function enforces only what one
- * venture can see, so there is exactly one place that can answer "is this hand
- * already committed" and it is the index.
+ * ══════════════════════════════════════════════════════════════════════════
+ * **ONE HOME, TWO READERS: the allocation that grants a fill, and the menu that offers one.**
+ *
+ * These five clauses were the body of {@link fillRole} and nothing else could ask them, so the
+ * board that recruits for a slot re-derived its own shorter list (`FORMING`, not already a party)
+ * and the two drifted: the board offered a slot on the last tick of its window — a fill sent then
+ * resolves the tick after and `windowContains` refuses it — and it could not see any rule that
+ * lived only here. An affordance the engine then refuses is the server telling an agent to act
+ * and then declining (AGT-S2), and it is scar #1's shape: two surfaces, each coherent, disagreeing
+ * about one rule. So the clauses live here, `fillRole` calls them first, and `Runtime` exposes them
+ * to the menu with the tick the fill would actually resolve in.
+ *
+ * Messages and order are unchanged from when they were inline, so a refusal an agent has already
+ * learned to read reads the same.
+ * ══════════════════════════════════════════════════════════════════════════
  */
-export function fillRole(
+export function slotRefusal(
   venture: VentureRecord,
   roleIndex: number,
-  hand: HandRecord,
+  principal: PrincipalId,
   tick: number,
-): WorldResult<VentureRoleRecord> {
+): Rejection | null {
   if (venture.state !== 'FORMING') {
     return reject(
       'PROP-V6',
@@ -659,16 +702,38 @@ export function fillRole(
   // kind at any capital level: the constraint is on the *principal*, not the hand.
   // At the hand level a principal with three hands could fill three of four roles
   // and only need one counterparty, and §7.2's arithmetic would not bind.
-  const existing = roleOfPrincipal(venture, hand.principal);
+  const existing = roleOfPrincipal(venture, principal);
   if (existing !== null) {
     return reject(
       'PROP-V6',
-      `${hand.principal} already holds role ${existing.index} (${existing.label}) in ${venture.id}. ` +
+      `${principal} already holds role ${existing.index} (${existing.label}) in ${venture.id}. ` +
         'One principal fills at most one role in a venture; this kind needs ' +
         `${principalsRequired(venture.kind)} distinct principals and no amount of capital substitutes ` +
         'for one of them.',
     );
   }
+  return null;
+}
+
+/**
+ * Fill one role.
+ *
+ * The uniqueness check against every other live venture is **not** here — it lives
+ * in {@link ./book.ts}, which owns the index. This function enforces only what one
+ * venture can see, so there is exactly one place that can answer "is this hand
+ * already committed" and it is the index.
+ */
+export function fillRole(
+  venture: VentureRecord,
+  roleIndex: number,
+  hand: HandRecord,
+  tick: number,
+): WorldResult<VentureRoleRecord> {
+  const refused = slotRefusal(venture, roleIndex, hand.principal, tick);
+  if (refused !== null) return refused;
+  const role = venture.roles[roleIndex];
+  // `slotRefusal` has already refused a missing index; this narrows the type and nothing else.
+  if (role === undefined) return reject('PROP-V6', `${venture.id} has no role at index ${roleIndex}.`);
 
   if (!isPresent(hand, tick)) {
     return reject(

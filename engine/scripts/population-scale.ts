@@ -1,119 +1,111 @@
 /**
- * POPULATION SCALE — what does a tick actually cost as the world fills?
+ * POPULATION SCALE — what does a world cost as it fills?
  *
- * `SPEC.md` §15 and `CLAUDE.md` §6 both rest on one claim: *"at 300 principals a deterministic tick is
+ * `SPEC.md` §15 and `CLAUDE.md` §6 rest on one claim: *"at 300 principals a deterministic tick is
  * single-digit milliseconds on the target box, so every remaining risk is a correctness risk, not a
- * capacity risk."* That sentence decides where the whole engineering budget goes — it is the reason
- * effort went into invariants rather than into performance — and **it has never been measured.**
+ * capacity risk."* That sentence decides where the engineering budget goes, and until 2026-10-01 it
+ * had only ever been **projected**: this script ran 4..20 principals because `HeuristicCast` capped at
+ * `MAX_CAST` (20 names), fitted a curve, and printed *"A PROJECTION, NOT A MEASUREMENT"* under the
+ * number at 300. Season 1 expects thousands, so the projection is retired and the populations are
+ * seated for real — see `scripts/scale/harness.ts` for what each column measures and why the cast's
+ * own decision time is reported apart from the engine's.
  *
- * It could not be. `--principals P` feeds `HeuristicCast({size: P})` and the roster caps at
- * `MAX_CAST` (20 names, because a cast name may never collide with a handle `agent.md` uses as a
- * worked example). So the harness tops out at 20 and the live world runs ~22. There is no instrument
- * above that, which means the claim has been load-bearing and unfalsifiable at the same time — the
- * defect class this project keeps finding, one level up from the code.
+ * Usage:
  *
- * ── WHAT THIS MEASURES, AND WHAT IT HONESTLY CANNOT ──────────────────────────
+ *     npx tsx scripts/population-scale.ts                       # 300, 1000, 3000 · 300 ticks
+ *     npx tsx scripts/population-scale.ts --populations 300 --ticks 300
+ *     npx tsx scripts/population-scale.ts --sample 120          # observe a stride sample, extrapolate
+ *     npx tsx scripts/population-scale.ts --path reference      # the per-principal build, for "before"
+ *     npx tsx scripts/population-scale.ts --json out.json
+ *     npx tsx scripts/population-scale.ts --clock cpu           # CPU time: for a shared, loaded box
  *
- * It measures **the shape of the curve** from 4 to 20 principals: per-tick wall cost, and how it grows.
- * Shape is the useful part. If cost is flat or linear in population, 300 is a straightforward
- * extrapolation and the claim is probably safe. If it is super-linear — and several known costs are
- * (INV-7 sums the whole posting log every tick, `checkStandingJournal` replays AND sorts its journal
- * every tick, both recorded as INV-26 debt) — then the extrapolation is worthless and 300 needs a real
- * harness before anyone trusts the number.
+ * 300 ticks crosses one settlement (phase 287), so every row reports a Reckoning batch and the burst
+ * of observations the tick after it. A row marked `*` in the burst column was extrapolated from a
+ * sample; every other figure is measured.
  *
- * It does **not** measure 300, and the output says so. Extrapolating a wall-clock claim across a 15×
- * population gap would be exactly the kind of confident-and-unverified statement this script exists to
- * replace.
- *
- * Wall-clock timing lives here rather than in `src/` on purpose: DET-7 bans `Date.now` inside the
- * engine because a single unseeded read makes the world unreplayable. A measurement harness outside
- * the tick is the right home for it.
+ * Wall-clock timing lives here rather than in `src/` on purpose: DET-7 bans clock reads inside the
+ * engine because a single unseeded read makes the world unreplayable.
  */
 
-import { setSpeed } from '../src/core/time.js';
-import { HeuristicCast, MAX_CAST } from '../src/cast/index.js';
-import { Runtime } from '../src/sim/runtime.js';
+import { writeFileSync } from 'node:fs';
+import { observationBody } from '../src/api/fragments.js';
+import { formatRow, measurePopulation, referenceObserveBody, ROW_HEADER, wakeInput, type ObserveBody, type ScaleRow } from './scale/harness.js';
 
-const TICKS = 300;
-const POPULATIONS = [4, 8, 12, 16, 20];
-
-interface Row {
-  readonly population: number;
-  readonly totalMs: number;
-  readonly perTickMs: number;
-  readonly perTickPerPrincipalMs: number;
-  readonly ventures: number;
-  readonly postings: number;
+function arg(name: string): string | undefined {
+  const i = process.argv.indexOf(`--${name}`);
+  return i < 0 ? undefined : process.argv[i + 1];
 }
 
-function measure(population: number): Row {
-  setSpeed('instant');
-  const seed = `scale-${String(population)}`;
-  const rt = new Runtime({ seed });
-  const cast = new HeuristicCast(rt, { size: population });
-  cast.seat(seed);
+const populations = (arg('populations') ?? '300,1000,3000').split(',').map((s) => Number(s.trim()));
+const ticks = Number(arg('ticks') ?? 300);
+const sample = arg('sample') === undefined ? undefined : Number(arg('sample'));
+const wakeEvery = Number(arg('wake') ?? 18);
+const path = arg('path') ?? 'fragments';
+const jsonOut = arg('json');
+const progress = process.argv.includes('--progress');
+/**
+ * `--clock cpu` times with this process's own CPU time instead of the wall. On a shared box the wall
+ * counts every millisecond the scheduler gave to somebody else — the Season 1 measurements were taken
+ * at a load average above 200 — and CPU time does not. `wall` (the default) is what a dedicated host
+ * would see; on an idle machine the two agree to within GC helper threads.
+ */
+const clockName = arg('clock') ?? 'wall';
+const cpuClock = (): number => {
+  const used = process.cpuUsage();
+  return (used.user + used.system) / 1000;
+};
 
-  // Warm the JIT on a few ticks that are not counted, or the smallest population absorbs all the
-  // compilation cost and the curve slopes the wrong way for a reason that has nothing to do with scale.
-  for (let i = 0; i < 20; i += 1) {
-    for (const a of cast.decide(rt.engine.tick + 1, seed)) rt.engine.submit(a);
-    rt.runTick();
-  }
+/** The server's own path: shared fragments once per tick, a per-principal envelope (§15.5). */
+const fragmentObserveBody: ObserveBody = (runtime, principal) => observationBody(wakeInput(runtime, principal));
+const observe = path === 'reference' ? referenceObserveBody : fragmentObserveBody;
 
-  const started = performance.now();
-  for (let i = 0; i < TICKS; i += 1) {
-    for (const a of cast.decide(rt.engine.tick + 1, seed)) rt.engine.submit(a);
-    const report = rt.runTick();
-    if (report.halted) throw new Error(`halted at tick ${String(report.tick)} with population ${String(population)}`);
-  }
-  const totalMs = performance.now() - started;
-
-  return {
+const rows: ScaleRow[] = [];
+process.stdout.write(
+  `\nPOPULATION SCALE — ${String(ticks)} ticks from genesis, wake every ${String(wakeEvery)} ticks, observe path: ${path}, clock: ${clockName}\n\n`,
+);
+process.stdout.write(`${ROW_HEADER}\n`);
+for (const population of populations) {
+  const row = measurePopulation({
     population,
-    totalMs,
-    perTickMs: totalMs / TICKS,
-    perTickPerPrincipalMs: totalMs / TICKS / population,
-    ventures: rt.ventures.size,
-    postings: rt.ledger.allPostings?.().length ?? 0,
-  };
+    ticks,
+    wakeEvery,
+    observe,
+    ...(sample === undefined ? {} : { observeSample: sample }),
+    ...(clockName === 'cpu' ? { clock: cpuClock } : {}),
+    ...(progress
+      ? {
+          onTick: (tick: number, ms: number) => {
+            if (tick % 24 === 0) process.stderr.write(`  [${String(population)}] tick ${String(tick)} ${ms.toFixed(0)} ms\n`);
+          },
+        }
+      : {}),
+  });
+  rows.push(row);
+  process.stdout.write(`${formatRow(row)}\n`);
 }
 
-const rows = POPULATIONS.map(measure);
-
-process.stdout.write(`\nPOPULATION SCALE — ${String(TICKS)} ticks per run, 20 warm-up ticks discarded\n\n`);
-process.stdout.write('  pop   total ms   per-tick ms   per-tick-per-principal   ventures\n');
+process.stdout.write(
+  '\n  tick ms: steady-state ticks (the settlement tick is reported on its own as `reckon ms`).\n' +
+    '  obs ms/p: one observation body, built and serialised, on the first tick after the Reckoning.\n' +
+    '  burst s: every principal observing on that tick, one after another on one core. `*` = extrapolated.\n' +
+    '  sys/com/maxC: systems · COMMONS systems · most holdings standing in one COMMONS system.\n\n',
+);
 for (const r of rows) {
   process.stdout.write(
-    `  ${String(r.population).padStart(3)}   ${r.totalMs.toFixed(0).padStart(8)}   ` +
-      `${r.perTickMs.toFixed(3).padStart(11)}   ${r.perTickPerPrincipalMs.toFixed(4).padStart(22)}   ` +
-      `${String(r.ventures).padStart(8)}\n`,
+    `  ${String(r.population)}: halted=${String(r.halted)} decide ${r.decideMsPerTick.toFixed(1)} ms/tick (harness, not engine) · ` +
+      `${r.actionsPerTick.toFixed(1)} actions/tick · journal ${String(r.journal.events)} events / ${String(r.journal.postings)} postings ` +
+      `(max ${String(r.journal.maxEventsPerTick)} events in one tick) · state ${r.stateHash.slice(0, 12)}` +
+      (r.frames.reckoningError === null ? '' : `\n      FRAME ERROR: ${r.frames.reckoningError}`) +
+      `\n      growth: ${String(r.growth.qualified)} of ${String(r.growth.needed)} qualified · ${String(r.grown)} grown` +
+      `\n      fullest books: ${r.pressure
+        .slice(0, 5)
+        .map((p) => `${p.book} peak ${String(p.peak)}/${String(p.cap)}`)
+        .join(' · ')}` +
+      '\n',
   );
 }
-
-// ── THE SHAPE, WHICH IS THE POINT ──────────────────────────────────────────────
-//
-// Per-tick-per-principal FALLING means sub-linear (fixed overhead dominating) — good news for 300.
-// Flat means linear. RISING means super-linear, and the §15 claim cannot be extrapolated at all.
-const first = rows[0];
-const last = rows[rows.length - 1];
-if (first !== undefined && last !== undefined) {
-  const popRatio = last.population / first.population;
-  const costRatio = last.perTickMs / first.perTickMs;
-  const exponent = Math.log(costRatio) / Math.log(popRatio);
-  process.stdout.write(
-    `\n  population ×${popRatio.toFixed(1)} → per-tick cost ×${costRatio.toFixed(2)}   ` +
-      `(scaling exponent ≈ ${exponent.toFixed(2)})\n`,
-  );
-  const verdict =
-    exponent < 1.15
-      ? 'LINEAR OR BETTER — extrapolating §15\'s claim to 300 is reasonable, though still unmeasured'
-      : exponent < 1.6
-        ? 'MILDLY SUPER-LINEAR — 300 needs a real harness before the claim is trusted'
-        : 'SUPER-LINEAR — §15\'s "single-digit ms at 300" cannot be extrapolated from this curve';
-  process.stdout.write(`  verdict: ${verdict}\n`);
-  const projected = last.perTickMs * Math.pow(300 / last.population, exponent);
-  process.stdout.write(
-    `  naive projection at 300: ${projected.toFixed(1)} ms/tick ` +
-      `— A PROJECTION, NOT A MEASUREMENT (harness caps at MAX_CAST=${String(MAX_CAST)})\n\n`,
-  );
+if (jsonOut !== undefined) {
+  writeFileSync(jsonOut, `${JSON.stringify(rows, null, 2)}\n`);
+  process.stdout.write(`\n  wrote ${jsonOut}\n`);
 }
+process.stdout.write('\n');

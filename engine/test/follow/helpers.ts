@@ -239,11 +239,16 @@ export function frame(reckoningIndex: number, over: Partial<ReckoningFrame> = {}
     coverChains: [],
     map: [],
     swayLines: [],
+    // THE RISE (RULES_VERSION 41): `null` on a map that has never grown, as every engine frame is.
+    growth: null,
     convoyLines: [],
     compactLinks: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],
+    // ★ 41: the contact lines are required keys, and `publishFrame`'s budget assert walks them.
+    directoryLines: [],
+    parleyLines: [],
   };
   return { ...base, ...over } as unknown as ReckoningFrame;
 }

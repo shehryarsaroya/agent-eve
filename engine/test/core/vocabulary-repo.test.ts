@@ -78,6 +78,15 @@ const SANCTIONED = new Map<string, string>([
   // channel rather than a megaphone.
   ['ReachWhy.CAMPAIGN', 'the campaign you both stand in IS the reason you may address each other — the canon concept as a reason, not a second sense of the word'],
   ['ReachWhy.GRANT', 'a live grant between two principals is what makes them addressable; the reach rung names the same grant §3 defines and nothing else'],
+  // ★ 41's three new canon-word rungs, on the CAMPAIGN/GRANT entries' argument exactly: each names the
+  // situation two principals stood in together AS the reason one may address the other. A raid you
+  // stood in (either side), a syndicate you sit in, a venture you finished together. `VIA_RAID` and the
+  // like were the alternative and are refused for the reason above — two words for one concept is HARD
+  // RULE 4's violation with the sign flipped. The two non-canon rungs (`OFFER`, `CONSTELLATION`) need no
+  // entry: neither is a §3 term.
+  ['ReachWhy.RAID', 'the standoff you both stood in IS the reason you may address each other — §3\'s RAID, the predation, as the reason; the battle fought inside it is the same standoff, so it needs no second rung'],
+  ['ReachWhy.SYNDICATE', 'a syndicate you both sit in is what makes you addressable to each other; the rung names the org container §3 defines and nothing else'],
+  ['ReachWhy.VENTURE', 'a venture you both were parties to, finished, is the reason you may address each other — §3\'s VENTURE as the reason, and only once it has finished, because a live one has its own MESSAGE channel'],
   // ★ Added when `haul` went live and the word entered §3, and it is RAID's entry with a different
   // noun: carrying goods yourself and hiring a CARRIER to carry them are ONE concept bought two ways,
   // which is what `venture/kinds.ts` means by calling `CARRIER` + `ESCORT` "the vertical slice's exact
@@ -135,6 +144,8 @@ const SHARED_MEMBERS = new Map<string, string>([
     'value entering the economy against a named faucet; INV-1 treats the batch kind and the direction as one fact'],
   ['BatchKind+SupplyDirection.RETIRE',
     'value leaving the economy against a named sink; the mirror of ISSUE and the same argument'],
+  ['ReachWhy+VentureKind.RAID',
+    "§3's own RAID row reads 'predation; a venture kind', and a reach rung naming the standoff two principals stood in is that same predation as a reason — `VentureKind.RAID` is the kind, `ReachWhy.RAID` is 'you stood in one together'; one concept, read from two sides, and the SANCTIONED entry above argues it"],
   ['RaidSide+RoleLabel.RAIDER',
     'one who raids, whether it is a slot inside a RAID venture or the side a joiner takes in a standoff — the identical shape the ESCORT entry above sanctions, and §3 names RAID once for both'],
   ['AccountKind+Compartment.STORES',
@@ -223,6 +234,104 @@ function allUnions(): readonly Union[] {
   }
   return found;
 }
+
+/**
+ * ★ **Every array-declared enum in `src/`** — `const NAME = ['A', 'B'] as const`, or the same list inside
+ * `Object.freeze([...])` — whose body is nothing but upper-case string literals.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE BLIND SPOT A SHIPPED COLLISION LIVED IN.** `allUnions` reads `'A' | 'B'` declarations, so a
+ * vocabulary declared as an ARRAY — `syndicate/charter.ts:ADMISSION_RULES = ['OPEN', 'INVITE', 'CLOSED']`
+ * — was invisible to every check in this file. Season 1 then gave `ClaimState` a sixth member, `CLOSED`,
+ * for a Frontier claim the season ended, and one word named a claim's ending and who may join a house.
+ * Nothing went red: the merge found it by reading. The claim's ending is `SEASON_ENDED` now, and this is
+ * the half of the guard that would have seen it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function arrayEnums(): readonly Union[] {
+  const found: Union[] = [];
+  const decl = /const\s+([A-Z][A-Z0-9_]*)\s*(?::[^=\n]+)?=\s*(?:Object\.freeze\()?\s*\[([^\]]*)\]/g;
+  for (const file of srcFiles()) {
+    const rel = file.slice(file.indexOf('/src/') + 1);
+    const text = readFileSync(file, 'utf8');
+    for (const m of text.matchAll(decl)) {
+      const body = m[2] ?? '';
+      const members = [...body.matchAll(/'([A-Z][A-Z_]*)'/g)].map((x) => x[1] ?? '');
+      // Only a list made of nothing but literals is a vocabulary; `[a, b]` of identifiers is data.
+      if (members.length === 0 || body.replace(/'[A-Z][A-Z_]*'|[\s,]|\/\/[^\n]*/g, '') !== '') continue;
+      const line = text.slice(0, m.index).split('\n').length;
+      found.push({ file: rel, line, name: m[1] ?? '?', members });
+    }
+  }
+  return found;
+}
+
+/**
+ * Where an array-declared vocabulary shares a word with a declared union, **today**. A census, not a
+ * sanction — the shape `vocabulary.test.ts`'s cross-enum census already uses: each line is a pair this
+ * file can now see and nobody has yet adjudicated, and a NEW line fails the test, so the next collision
+ * is argued before it ships. An array that is wholly a union's own runtime list (`CLAIM_STATES`,
+ * `VENTURE_KINDS`, `HAND_STATES` …) is that union by construction and is not counted.
+ *
+ * `ClaimState+ADMISSION_RULES.CLOSED` was on this list until the launch fixes; it must never return.
+ */
+const ARRAY_UNION_CENSUS: readonly string[] = [
+  'EngagementState~RANGE_CELLS.CONTACT',
+  'HullState~MODULE_FAMILIES.FITTING',
+  'IndemnityState~ADMISSION_RULES.OPEN',
+  'OrderState~ADMISSION_RULES.OPEN',
+  'PlanStepKind~POSTURES.HOLD',
+  'ReachWhy~PEACEFUL_BALLOTS.SYNDICATE',
+  'VentureKind~PEACEFUL_BALLOTS.LEVY',
+  'WeaponFamily~STARTER_FIT.SMALL_GUN',
+  'WeaponFamily~WORLD_FLEET_FIT.SMALL_GUN',
+];
+
+describe('★ array-declared enums are read too — the blind spot the CLOSED collision lived in', () => {
+  const unions = allUnions().filter((u) => /^[A-Z]/.test(u.name));
+  const arrays = arrayEnums();
+  const membersOf = (name: string): ReadonlySet<string> =>
+    new Set(unions.filter((u) => u.name === name).flatMap((u) => u.members));
+
+  it('finds the array vocabularies, the charter\'s admission rules among them', () => {
+    expect(arrays.length, 'the walk found almost nothing — the regex has rotted').toBeGreaterThan(20);
+    expect(arrays.map((a) => a.name)).toContain('ADMISSION_RULES');
+    expect(arrays.map((a) => a.name)).toContain('CLAIM_STATES');
+  });
+
+  it('a claim\'s states share no word with any array vocabulary but the claim book\'s own list', () => {
+    // MUTATION: put `'CLOSED'` back in `ClaimState` (and `CLAIM_STATES`) — RED, naming ADMISSION_RULES.
+    const claim = membersOf('ClaimState');
+    expect(claim.size, 'ClaimState was not found').toBe(6);
+    const clashes = arrays
+      .filter((a) => !a.members.every((m) => claim.has(m)))
+      .flatMap((a) => a.members.filter((m) => claim.has(m)).map((m) => `${a.name}.${m}`));
+    expect(clashes, 'one word naming a claim\'s ending and something else (HARD RULE 4)').toEqual([]);
+    expect([...claim], 'the season\'s ending is SEASON_ENDED, never a charter\'s CLOSED').toContain('SEASON_ENDED');
+    expect([...claim]).not.toContain('CLOSED');
+  });
+
+  it('no NEW word is shared between an array vocabulary and a declared union', () => {
+    const byName = new Map<string, Set<string>>();
+    for (const u of unions) {
+      const set = byName.get(u.name) ?? new Set<string>();
+      for (const m of u.members) set.add(m);
+      byName.set(u.name, set);
+    }
+    const census: string[] = [];
+    for (const a of arrays) {
+      // A union's own runtime list is that union; it shares its members by construction.
+      if ([...byName.values()].some((members) => a.members.every((m) => members.has(m)))) continue;
+      for (const [name, members] of byName) {
+        for (const m of new Set(a.members)) if (members.has(m)) census.push(`${name}~${a.name}.${m}`);
+      }
+    }
+    const byKey = (x: string, y: string): number => (x < y ? -1 : x > y ? 1 : 0);
+    expect([...new Set(census)].sort(byKey), 'a new shared word: argue it, or give one of the words up').toEqual(
+      [...ARRAY_UNION_CENSUS].sort(byKey),
+    );
+  });
+});
 
 describe('SPEC §3 is a rules surface — repo-wide', () => {
   it('the canon parsed out of SPEC §3 is non-trivial, so a silent parse failure cannot pass this suite', () => {

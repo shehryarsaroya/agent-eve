@@ -18,7 +18,7 @@
  */
 
 import { beforeEach, describe, expect, it } from 'vitest';
-import { checkInv7, inv7Stats } from '../../src/ledger/invariants.js';
+import { checkInv7, inv7Stats, inv7SupplyStats } from '../../src/ledger/invariants.js';
 import { CURRENCY_FAUCET, Ledger, storesAccount } from '../../src/ledger/index.js';
 import type { EventId, PrincipalId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
@@ -155,5 +155,98 @@ describe('INV-7 still catches what it existed to catch', () => {
       'a growing, never-truncated log must be summed once and then extended',
     ).toBe(fullsAfterFirst);
     expect(inv7Stats.incremental).toBeGreaterThan(45);
+  });
+});
+
+/**
+ * Mirrors 3 and 4 — the faucet, sink, `movedQty` and endowment sums over the BATCH log's supply legs —
+ * made incremental by the same argument (`invariants.ts:SupplyPrefix`). The Season 1 scale measurement
+ * found this walk at an eighth of a 300-principal tick by age 1,000 and growing with the log.
+ */
+describe('INV-7 Mirror 3 is incremental and still catches what it existed to catch', () => {
+  beforeEach(() => {
+    inv7SupplyStats.fullRecomputes = 0;
+    inv7SupplyStats.incremental = 0;
+  });
+
+  /** A ledger with a stream of supply batches: an ISSUE per step, so Mirror 3 has rows to fold. */
+  function minting(n: number): Ledger {
+    const l = funded();
+    for (let i = 0; i < n; i += 1) {
+      l.issueCurrency({
+        eventId: `mint:${String(i)}` as EventId,
+        tick: 1,
+        faucet: CURRENCY_FAUCET.STARTER_STAKE,
+        to: storesAccount(B),
+        amount: minor(3),
+      });
+    }
+    return l;
+  }
+
+  function setBalance(l: Ledger, id: Parameters<Ledger['account']>[0], value: number): void {
+    // Reach past the API on purpose: these are the corruptions INV-7 exists to detect.
+    (l.account(id) as unknown as { balanceMinor: number }).balanceMinor = value;
+  }
+
+  it('catches a faucet whose cached balance drifted — AFTER the supply prefix is warm', () => {
+    // THE ASSERTION THE OPTIMISATION COULD HAVE BROKEN: the drift is on a faucet every one of whose legs
+    // is inside the folded prefix. MUTATION: skip the comparison when nothing new arrived — RED.
+    const l = minting(20);
+    expect(checkInv7(l, 1)).toEqual([]);
+    const balance = l.account(CURRENCY_FAUCET.STARTER_STAKE)?.balanceMinor ?? 0;
+    setBalance(l, CURRENCY_FAUCET.STARTER_STAKE, balance - 5);
+    const violations = checkInv7(l, 2);
+    expect(violations.map((x) => x.message).join(' ')).toMatch(/supply legs sum to/);
+  });
+
+  it('folds in full when the batch log is truncated under it', () => {
+    const l = minting(10);
+    expect(checkInv7(l, 1)).toEqual([]);
+    const warm = inv7SupplyStats.fullRecomputes;
+    // An aborted tick truncates both logs and restores the balances; model exactly that: keep the
+    // seed and mint:0..2, found from the logs rather than assumed.
+    const batches = l.allBatches() as unknown as { length: number };
+    const rows = l.allPostings();
+    const keepPostings = rows.reduce((n, r, i) => (String(r.eventId) === 'mint:2' ? i + 1 : n), 0);
+    const keepBatches = l.allBatches().reduce((n, b, i) => (String(b.eventId) === 'mint:2' ? i + 1 : n), 0);
+    expect(keepBatches, 'the boundary must be found, not assumed').toBeGreaterThan(0);
+    batches.length = keepBatches;
+    (rows as unknown as { length: number }).length = keepPostings;
+    setBalance(l, storesAccount(B), 9);
+    setBalance(l, CURRENCY_FAUCET.STARTER_STAKE, -100_009);
+    expect(checkInv7(l, 2), 'the shortened log reconciles with the restored balances').toEqual([]);
+    expect(inv7SupplyStats.fullRecomputes, 'and only because it re-folded from zero').toBeGreaterThan(warm);
+  });
+
+  it('notices a replacement that lands on the same length with the same ids', () => {
+    // A rehydrate rebuilds the log from the durable record. MUTATION: compare the boundary by eventId — RED.
+    const l = minting(6);
+    expect(checkInv7(l, 1)).toEqual([]);
+    const fullsBefore = inv7SupplyStats.fullRecomputes;
+    const batches = l.allBatches() as unknown as object[];
+    const copies = batches.map((b) => ({ ...b }));
+    batches.length = 0;
+    batches.push(...copies);
+    expect(checkInv7(l, 2)).toEqual([]);
+    expect(inv7SupplyStats.fullRecomputes).toBeGreaterThan(fullsBefore);
+  });
+
+  it('is incremental in the common case', () => {
+    const l = minting(1);
+    checkInv7(l, 1);
+    const fullsAfterFirst = inv7SupplyStats.fullRecomputes;
+    for (let i = 0; i < 40; i += 1) {
+      l.issueCurrency({
+        eventId: `later:${String(i)}` as EventId,
+        tick: 2,
+        faucet: CURRENCY_FAUCET.STARTER_STAKE,
+        to: storesAccount(A),
+        amount: minor(1),
+      });
+      expect(checkInv7(l, 2)).toEqual([]);
+    }
+    expect(inv7SupplyStats.fullRecomputes, 'a growing log is folded once and then extended').toBe(fullsAfterFirst);
+    expect(inv7SupplyStats.incremental).toBeGreaterThan(35);
   });
 });

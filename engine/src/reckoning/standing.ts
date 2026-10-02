@@ -287,7 +287,9 @@ export class StandingBook {
       });
     }
 
-    this.journal.push(...changes);
+    // A loop rather than `push(...changes)`: one Reckoning's changes grow with the population, and a
+    // spread past ~150,000 arguments throws inside the settlement tick, which is a halt.
+    for (const change of changes) this.journal.push(change);
 
     const diffs: StandingDiff[] = [...touched].sort(compareIds).map((principal) => ({
       prev: before.get(principal) ?? zero(principal),

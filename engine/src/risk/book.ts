@@ -482,6 +482,16 @@ export class RiskBook {
     return this.covers.size + this.indemnities.size + this.fronts.size;
   }
 
+  /** Covers held, for the cap-pressure report (`Runtime.capPressure`). */
+  get coverCount(): number {
+    return this.covers.size;
+  }
+
+  /** Indemnities held, for the cap-pressure report. */
+  get indemnityCount(): number {
+    return this.indemnities.size;
+  }
+
   // ── Durability ────────────────────────────────────────────────────────────
 
   /**

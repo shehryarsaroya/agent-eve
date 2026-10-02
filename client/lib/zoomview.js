@@ -13,7 +13,7 @@
  *   `claimLines[].anchorHot`      a claim collecting nothing looks, on the
  *                                 map, exactly like one collecting everything
  *   `claimLines[].tenants`        who is paying rent to whom
- *   `claimLines[].state`          `CEDED` and `LAPSED` are different endings
+ *   `claimLines[].state`          `CEDED`, `LAPSED` and `SEASON_ENDED` are different endings
  *   `ruins[]`                     memory: what stopped, and who ended it
  *   `swayLines[].reachers`        whether a border means anything
  *
@@ -187,8 +187,10 @@ var ZoomView = (function () {
    * It reads the SAME `MapView.layout` the map itself draws from, so the
    * miniature and the thing it is a key to cannot disagree.
    */
-  function locator(map, con, W, H) {
-    var lay = MapView.layout(map, W, H, { l: 8, r: 8, t: 14, b: 14 });
+  function locator(map, con, W, H, grown) {
+    // `grown` is the frame's `growth.opened`: the locator must place a grown constellation where the
+    // map does (THE RISE puts it on a satellite ring), or the box it draws would point at nothing.
+    var lay = MapView.layout(map, W, H, { l: 8, r: 8, t: 14, b: 14 }, grown);
     var P = lay.pos, kids = [], seen = {};
     map.forEach(function (s) {
       var a = P[s.id]; if (!a) return;
@@ -245,7 +247,7 @@ var ZoomView = (function () {
     var members = map.filter(function (m) { return m.constellation === con; });
     if (!members.length) { U.clear(host); return; }
 
-    var gal = MapView.layout(map, 1200, 800);
+    var gal = MapView.layout(map, 1200, 800, undefined, R.growth && R.growth.opened);
     MapView.setBlocOrder(R.standings);
     var minY = Infinity, maxY = -Infinity;
     members.forEach(function (m) {
@@ -267,9 +269,13 @@ var ZoomView = (function () {
     ((D.L && D.L.convoyLines) || R.convoyLines || []).forEach(function (c) {
       (convoys[c.to] || (convoys[c.to] = [])).push(c);
     });
+    // ★ 41 — who is dealing at each holding, and the letters between holdings in this constellation.
+    var dealing = {};
+    (D.directory || []).forEach(function (d) { (dealing[d.at] || (dealing[d.at] = [])).push(d); });
+    var threads = (D.parleys || []).filter(function (t) { return t.fromAt && t.toAt && inCon[t.fromAt] && inCon[t.toAt]; });
 
     var gVerge = S('g'), gLanes = S('g'),
-      gDisc = S('g'), gLab = S('g'), gSel = S('g');
+      gDisc = S('g'), gLab = S('g'), gSel = S('g'), gThread = S('g');
 
     /* ══════════════════════════════════════════════ ★ WHO HOLDS THIS ════
      *
@@ -543,6 +549,8 @@ var ZoomView = (function () {
       var vg = (o.glyphs || []).filter(function (x) { return x.stage === s.id; }).slice(0, 4);
       var lastMiss = cl && (cl.state === 'LAPSED' || (cl.arrearsOf > 0 && cl.arrears >= cl.arrearsOf));
       var ceded = cl && cl.state === 'CEDED';
+      // ★ The season's ending: nobody's verdict, nothing slashed, the system open to the next anchor.
+      var endedBySeason = cl && cl.state === 'SEASON_ENDED';
       // the ring says who holds it and how close to falling it is — the same
       // three-step ramp the map's claim tint uses, so the two agree.
       var ring = !cl ? null
@@ -575,7 +583,9 @@ var ZoomView = (function () {
        *
        * A square that is still SPINNING UP is drawn hollow, because it is not
        * taking a share yet, and a viewer counting productive ground would
-       * otherwise count it. */
+       * otherwise count it. A DORMANT one is drawn grey and dotted for the
+       * same reason from the other end: it stands, its holder stopped playing,
+       * and it divides nothing until that holder acts again. */
       var SQ = 13, GAP = 4, n = Math.min(wk.length, 9);
       var cols = Math.min(3, Math.max(1, Math.ceil(Math.sqrt(n))));
       var rows = Math.ceil(n / cols);
@@ -584,13 +594,15 @@ var ZoomView = (function () {
       wk.slice(0, 9).forEach(function (w, i) {
         var cc = i % cols, rr2 = Math.floor(i / cols);
         var up = /SPINNING/.test(w.legend || '');
+        var asleep = w.legend === 'DORMANT';
         g.appendChild(S('rect', {
-          class: 'zworks' + (up ? ' up' : ''),
+          class: 'zworks' + (up ? ' up' : '') + (asleep ? ' dormant' : ''),
           x: (x0 + cc * (SQ + GAP)).toFixed(1), y: (y0 + rr2 * (SQ + GAP)).toFixed(1),
           width: SQ, height: SQ,
         }, S('title', {
-          text: U.handleOf(w.holder) + ' · ' + w.legend + ' · ' + w.sharePerTick +
-            '/tick · ' + U.n(w.extracted) + ' extracted',
+          text: U.handleOf(w.holder) + ' · ' + w.legend +
+            (asleep && w.dormantSinceTick != null ? ' since t' + w.dormantSinceTick : '') +
+            ' · ' + w.sharePerTick + '/tick · ' + U.n(w.extracted) + ' extracted',
         })));
       });
       // a RUIN is a square with a cross through it, in the same grid — what
@@ -691,13 +703,37 @@ var ZoomView = (function () {
             : 'OCCUPANTS ' + (wk[0].occupants || wk.length) + ' · ' + wk[0].legend,
           c: spin ? 'am' : 'cy',
         });
+        // ★ DORMANT ground: how many stand idle and how many are dividing the yield,
+        // straight off `worksLines[].extractors` — the gap is the story.
+        var asleepN = wk.filter(function (w) { return w.legend === 'DORMANT'; }).length;
+        if (asleepN > 0) {
+          st.push({ t: 'DORMANT ' + asleepN + ' · ' + (wk[0].extractors != null ? wk[0].extractors : '?') + ' SHARING', c: 'dm' });
+        }
       }
       if (cl) {
         if (lastMiss) st.push({ t: 'ARREARS ' + cl.arrears + ' of ' + cl.arrearsOf + ' · NEXT MISS LAPSES', c: 'rd' });
         else if (cl.arrears > 0) st.push({ t: 'ARREARS ' + cl.arrears + ' of ' + cl.arrearsOf, c: 'am' });
         else if (ceded) st.push({ t: 'CEDED', c: 'ce' });
+        else if (endedBySeason) st.push({ t: 'SEASON ENDED · BOND UNTOUCHED · OPEN TO ANCHOR', c: 'ce' });
         else st.push({ t: cl.legend || cl.state, c: 'cy' });
         if (!cl.anchorHot) st.push({ t: 'ANCHOR COLD · COLLECTING NOTHING', c: 'dm' });
+      }
+      // ★ THE DEALING MARK's words: who here is offering or recruiting. A lantern on the disc's rim
+      // says it at a glance; the line says who.
+      var dl = dealing[s.id] || [];
+      if (dl.length) {
+        st.push({
+          t: 'DEALING · ' + dl.slice(0, 2).map(function (d) { return U.handleOf(d.principal); }).join(', ') +
+            (dl.length > 2 ? ' +' + (dl.length - 2) : ''),
+          c: 'cy',
+        });
+        g.appendChild(S('circle', {
+          class: 'zdeal', cx: (p.x + r * 0.71).toFixed(1), cy: (p.y - r * 0.71).toFixed(1), r: '3.2',
+        }, [S('title', { text: dl.map(function (d) {
+          return U.handleOf(d.principal) + ' — ' + (d.offering || ((d.seeking || [])[0]
+            ? 'recruiting ' + d.seeking[0].kind + ', ' + d.seeking[0].open + ' of ' + d.seeking[0].roles + ' open'
+            : 'at work')) + ' · ' + d.kept + ' kept, ' + d.broke + ' broken';
+        }).join('\n') })]));
       }
       rn.slice(0, 1).forEach(function (rr4) { st.push({ t: rr4.legend.toUpperCase(), c: 'dm' }); });
       if (sw && sw.reachers) {
@@ -885,9 +921,29 @@ var ZoomView = (function () {
       }
     });
 
+    // ★ THE PARLEY THREAD — a thin dotted arc from the sender's holding to the recipient's, drawn only
+    // from the tick the letter declassified (the frame carries nothing earlier). An answer is the
+    // return stroke, bowed the other way, so a conversation reads as a pair of arcs.
+    threads.forEach(function (t) {
+      var a = P[t.fromAt], b = P[t.toAt];
+      if (!a || !b) return;
+      var path;
+      if (t.fromAt === t.toAt) {
+        path = 'M' + (a.x - 10).toFixed(1) + ',' + (a.y - 18).toFixed(1) + ' q10,-22 20,0';
+      } else {
+        var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y;
+        var bow = (t.answering ? -0.18 : 0.18);
+        path = 'M' + a.x.toFixed(1) + ',' + a.y.toFixed(1) + ' Q' + (mx - dy * bow).toFixed(1) + ',' +
+          (my + dx * bow).toFixed(1) + ' ' + b.x.toFixed(1) + ',' + b.y.toFixed(1);
+      }
+      gThread.appendChild(S('path', { class: 'zthread' + (t.answering ? ' ans' : ''), d: path }, [
+        S('title', { text: U.handleOf(t.from) + ' → ' + U.handleOf(t.to) + ' · ' + t.act + ' · t' + t.sentTick + '\n' + t.excerpt }),
+      ]));
+    });
+
     var root = S('svg', {
       id: 'zoomsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
-    }, [gVerge, gLanes, gDisc, gLab, gSel]);
+    }, [gVerge, gLanes, gThread, gDisc, gLab, gSel]);
     // the same seeded field off the same ids, on a canvas for the same reason
     U.clear(host);
     var cv = document.createElement('canvas');

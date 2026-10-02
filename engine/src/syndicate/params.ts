@@ -28,6 +28,7 @@
  * stayed inside both — which is exactly A6's "no `betray()` verb" requirement one level up.
  */
 
+import { MAX_PRINCIPALS } from '../core/time.js';
 import { minor, type Minor } from '../core/units.js';
 
 /**
@@ -42,8 +43,14 @@ export const MAX_MEMBERS = 24;
 /** Syndicates one principal may belong to. Divided loyalty is interesting; infinite is noise. */
 export const MAX_SYNDICATES_PER_PRINCIPAL = 3;
 
-/** Syndicates in a world, so the book is bounded (INV-26). *(calibrate)* */
-export const MAX_SYNDICATES = 64;
+/**
+ * Syndicates in a world, so the book is bounded (INV-26). *(calibrate)*
+ *
+ * One founding per principal the world can hold. It was a flat 64, so the 65th founder in a world of
+ * thousands was refused for arriving after 64 others — a gate on the only org container in the game,
+ * priced in arrival order. The founding cost (`FOUNDING_COST_MINOR`) is what bounds how many exist.
+ */
+export const MAX_SYNDICATES = MAX_PRINCIPALS;
 
 /**
  * What founding costs, retired rather than paid to anybody.

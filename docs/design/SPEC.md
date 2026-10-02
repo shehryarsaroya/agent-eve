@@ -125,7 +125,8 @@ Four consequences run through everything below:
 | **DOSSIER** | ★ one signed, dated extract of one COMPARTMENT, handed to one named principal by `message`. **Evidence** — the server's figures, not the sender's word for them — and the only attributable way private figures travel. Re-handable forever, including after the grant is revoked | a DISPATCH (the letter home to an owner); a statement (the say-do gap's first layer); an accusation |
 | **SEAL** | the pre-committed intention. The `SEALED` visibility tier is *this same concept* — the tier that holds seals — not a second one | a bonding tier |
 | **MESSAGE** | one typed act in a hosted private negotiation **over a venture** (§7.3). Declassifies at that venture's **settlement** | a notification; the dispatch; a PARLEY |
-| **PARLEY** | ★ one typed act addressed to **a named principal you share no venture with** — the same five acts and the same channel, sent with `message {to, act, text}`. `PARTIES` while live and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`, because there is no settlement to wait for. **Priced** (A15): you may open one only if you have honoured an elective promise with an independently-capitalised counterparty or been paid by one, and only to a principal the world already stands you beside — a live campaign's two sides, its roster, its objective constellation, a live grant's counterparty, or anyone who has addressed you. Answering is free of the price; the allowance **expires unspent** | a MESSAGE (that one has a venture, and declassifies at its settlement); a broadcast (`claim`, `publish_offer`); a DOSSIER (that one carries the server's figures); a DISPATCH |
+| **PARLEY** | ★ one typed act addressed to **a named principal you share no venture with** — the same five acts and the same channel, sent with `message {to, act, text}`. `PARTIES` while live and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`, because there is no settlement to wait for. **Priced** (A15): you may open one only if you have honoured an elective promise with an independently-capitalised counterparty or been paid by one, and only to a principal the world already stands you beside — a live campaign's two sides, its roster, its objective constellation; anyone who stood in a raid with you, either side, while it is open and for two Reckonings after; a live grant's counterparty; a fellow member of a syndicate you sit in; a party to a venture you finished together in the last two Reckonings; anyone in your constellation with a fresh offer out; anyone whose letter to you is still answerable; and — **earned**, once you have honoured elective promises to two distinct counterparties — anyone seated in your constellation. **Answering is free** of the price: a letter buys one answer, answerable for a rolling Reckoning-length from when it was sent; an *opening* spends one of three per Reckoning and the allowance **expires unspent**; a ceiling of twelve sends a Reckoning bounds both (`RULES_VERSION` 41) | a MESSAGE (that one has a venture, and declassifies at its settlement); a broadcast (`claim`, `publish_offer`); a DOSSIER (that one carries the server's figures); a DISPATCH |
+| **DIRECTORY** | ★ the `PUBLIC` list of who is **dealing** in one constellation — a fresh offer, a venture still recruiting, a live role — each with its public record, ranked soliciting-first and then by record (distinct counterparties before raw count). `ventures.directory` in `observe` and `directoryLines` on the frames, one builder. **Listing reaches nobody**: it names who to ask, never whether you may | an address book (reach is the world's — PARLEY's row); a list of every enrolled principal (A15); a ranking of trust or a score (§3's STANDING is the vectors) |
 | **DISPATCH** | the letter an agent emails its owner after a Reckoning | any in-game message |
 | **MANDATE** | an owner's published disposition — advice the agent may disregard | an order; a grant |
 | **BOND** | posted slashable capital, continuous | email verification; a claim deposit |
@@ -135,10 +136,12 @@ Four consequences run through everything below:
 | **EXPOSURE** | Σ of your open `max_direct_loss`, and nothing else | value committed; peril scope |
 | **LEVY** | the scheduled world obligation | a tax generally |
 | **RECKONING · SEASON · TICK** | the three horizons | — |
+| **FINALE** | ★ the **last Reckoning of a SEASON**. The grand venture settles at its settlement, and the season boundary runs at that settlement's close (A10) | a campaign's last PULSE; a battle's AFTERMATH; the passes' "core finale" of a structure siege |
+| **GRAND VENTURE** | ★ the season's **one** un-escrowable prize (§7.6): a BUILD formed with `create {"grand":true}` at the season's published Frontier stage during the FINALE, divided against a published yield instead of the kind's. Of every live candidate the one whose roles staked the most carries the yield | a ninth venture kind (it is a BUILD); any BUILD; a syndicate; a reward the world pays by itself — every share is a promise its creator elects |
 | **SITE** | a resource node | a structure anchorage (**BERTH**) |
 | **RAID** | predation; a venture kind | war |
 | **SYNDICATE** | the only org container in Phase 0 | mutual, alliance (Phase 3) |
-| **CLAIM** | ★ a principal's sovereign hold on **one system** outside the Commons (§6.3) | a creditor's demand in the insolvency waterfall (that is a **CHARGE-CLAIM** in prose and `Claim` only inside `ledger/`); a public assertion (that is a **statement**, the say-do gap's first layer) |
+| **CLAIM** | ★ a principal's sovereign hold on **one system** outside the Commons (§6.3). It ends `LAPSED` (the world's verdict on an unpaid CHARGE — the bond is slashed), `CEDED` (its holder's choice), or — a FRONTIER claim, at the FINALE's settlement — `SEASON_ENDED` (*Season 1, `RULES_VERSION` 41*: the season's ending, A10; nothing slashed, nobody chose it, the system re-opens; §7.6. It was spelled `CLOSED` until the launch fixes, which also named a syndicate charter's admission rule — HARD RULE 4) | a creditor's demand in the insolvency waterfall (that is a **CHARGE-CLAIM** in prose and `Claim` only inside `ledger/`); a public assertion (that is a **statement**, the say-do gap's first layer); for `SEASON_ENDED`, a term its holder set (a resting order or a GRANT runs out `EXPIRED`; a claimant names no term) or the SEASON's own record (`season.closed`) |
 | **ANCHOR** | the produced goods destroyed *at* a system to bring a CLAIM into being — `build {kind:"ANCHOR"}` — and the thing that then burns FUEL | a berth; a mooring; a fleet position |
 | **CHARGE** | the **recurring per-Reckoning obligation a CLAIM owes**, in goods, by tier | the LEVY (which is the constellation's, not a claim's); a fee; a market charge |
 | **RENT** | the share of a system's extraction its CLAIM-holder takes from the WORKS standing there | the CHARGE; a lease payment; upkeep |
@@ -150,6 +153,7 @@ Four consequences run through everything below:
 | **LODE** | ★ **one system's** richness — what its ground yields per tick, drawn with the map from a published band and never redrawn. A tier's **total** is conserved exactly, so a LODE moves where the ore is and never how much exists (A15). The COMMONS is uniform | the tier BASE (`YIELD_PER_TICK`, which is what a tier conserves); a stockpile or an extraction total (`worksLines.extracted`); a SITE (a resource node); a WORKS' share of it |
 | **STRAIT** | ★ a LANE the region cannot cheaply route around — cutting it strands `STRAIT_MIN_SEVERED` systems or more, or the cheapest way around is `STRAIT_DETOUR_HOPS` lanes or more. Fixed with the map and derived from the graph, so every agent can read it and plan against it; **never** touching the COMMONS (A8). It never affects travel | a lane generally; a border (that is where two SWAYs meet); a constellation gate (an INTER lane may or may not be one); a RAID's stage; a gate's `transit_ticks` |
 | **SWAY** | ★ how many of your HANDS count as FORCE at a system **you are not defending** — `SWAY_AT_SEAT` at each place you hold (your HOLDING and every CLAIM), less `SWAY_PER_HOP` per lane, less `SWAY_STRAIT_TOLL` per STRAIT you hold neither end of. At 0 you may not take an offensive side there at all | STANDING (the public vectors); FORCE itself (which is per HAND); permission to travel — `move`, `haul` and `deliver` never read it; a limit on defending your own ground, which is never capped |
+| **DORMANT** | ★ *(Season 1, `RULES_VERSION` 41)* a principal that has had **no action accepted** for `WORKS_DORMANT_AFTER_RECKONINGS` (4) Reckonings — any verb, social ones included; a standing intent's own run is not play — and its WORKS, which then neither extracts nor counts in its system's division of the yield until the tick after the principal acts again. Absence costing opportunity and nothing else (R19, A10): the WORKS stands, nothing is taken. §6.1's "dormant seats" are this principal's seats, recycled on the same lease | a razed WORKS (that is THE RUIN, and it is a loss); a cold ANCHOR (that is FUEL, and it is the claimant's); a penalty, a decay or a confiscation of STORES; a seat (a host resource, which recycling frees and the world never reads) |
 
 **The combat vocabulary (§9A, Phase 2).** Nine terms, each checked against every row above and against `src/` before it was spent. Three candidates were **rejected for collisions** and the rejections are recorded because they are the useful part: `operation` (spent — `trade` takes an `operation` parameter), `phase` (spent — the tick pipeline), `depth` (spent — a grant's delegation depth). A fourth, `front`, is spent by §10.1's scheduled weather front, so the mechanic that wanted it is **not built**.
 
@@ -248,6 +252,20 @@ The Deeps is Phase 3 (IDs reserved). A Commons holding grants **Commons-bound ha
 
 Launch: **one region, 4 constellations, ~30 systems, ~30 principals concentrated in one constellation** *(calibrate)* — build the schema and the seat system for 300. The variable was never system count; it is **principals per stage**. Growth opens **new constellations**, gated on bonded, capitalised, non-related population — never raw headcount, which would let 60 bots mint a fresh resource supply. Phase 0 ships a fixed authored map; the generator is reserved.
 
+> **Season 1 (`RULES_VERSION` 41): the generator is spent** (`engine/src/world/growth.ts`, `agent.md` "THE
+> REGION GROWS", `docs/design/SCALE-2026-10-01.md` §6). At each settlement the gate counts principals that
+> are all three at once: **capitalised** — D7's `freeCash` ≥ one night's Levy (20,000; paid, never the
+> starter stake, so a fresh identity reads zero); **non-related** — an elective promise honoured to a
+> distinct counterparty; **bonded**, read as *capital at stake this Reckoning* (the EXPOSURE high-water
+> mark or a posted bond) — §6.4's `BONDED` tier, which needs sureties, would make growth wait on the
+> scarcest status in the game, and that reading is an owner call. When the count reaches **8 per system
+> the region has** (this table's stage floor; 240 on the launch map), **one** constellation opens: 2
+> COMMONS + 4–6 MARCHES of its own, joined by **one** INTER lane that is a STRAIT from the day it opens,
+> anchored where no existing strait, lane, system or lode moves. Deterministic from the seed and the
+> count, at most one a Reckoning, ceiling 160 (the map can then stage 10,000 principals at the floor).
+> Newcomers are seated in the least-occupied COMMONS system, the newest enclave first on a tie. The
+> frame draws each as a haloed satellite enclave (THE RISE).
+
 Non-self-sufficiency is asserted at **system** level (forcing hauls inside a stage) and at **constellation** level (forcing long convoys between stages). Place IDs are permanent and never deleted.
 
 ### 4.3 Travel
@@ -266,7 +284,7 @@ Every gate has an explicit `transit_ticks`. **This is the most load-bearing numb
 |---|---|---|
 | **Tick** | **5 min** prod *(5–30 s test)* | Hands move, jobs advance, books clear, fuel burns, raids resolve, hazards tick |
 | **Reckoning** | **daily**, per constellation, staggered offsets | **The Levy comes due. Ventures settle. Seals resolve. Offices' delayed acts execute. Standing moves.** |
-| **Season** | 4–8 weeks | Frontier claims settle and re-open; a finale; a champion; a recap |
+| **Season** | **14 Reckonings** in Season 1 *(calibrate — §17)* | Frontier claims end `SEASON_ENDED` and their systems re-open; the FINALE and its grand venture; the season's titles and record |
 
 ### 5.1 The Reckoning
 
@@ -284,7 +302,7 @@ Reckoning offsets are staggered per constellation and rotate through UTC bands w
 
 Each Reckoning, each constellation assesses a **total obligation** — front suppression, gate maintenance, civic custody. The **total is fixed by rule and cannot be dodged**; that is the alarm. But **the allocation is a scheduled constellation vote**, and that is the drama.
 
-Before each Reckoning the constellation votes on how the total is borne. A published default applies if the vote fails to reach quorum: allocated inversely to Exposure, shortfall swept from the least-exposed first. Either way it is payable **only in located goods physically delivered to a named place**, and **a stated share of every assessment is non-escrowable** — it must be carried by a hand, not bought as a service.
+Before each Reckoning the constellation votes on how the total is borne. A published default applies if the vote fails to reach quorum: allocated inversely to Exposure, shortfall swept from the least-exposed first. Either way it is payable **only in located goods physically delivered to a named place**, and **a stated share of every assessment is non-escrowable** — it must be carried by a hand, not bought as a service. And whatever rule carries, **no member bears more than three even shares** (`LEVY_MAX_SHARE_MULTIPLE`, *calibrate*): a line is held at three times the even share of the members neither floored nor spared, and the excess falls on the rest of them by the same rule — otherwise inverse-Exposure weighting bills the one unexposed member five to nine duties, and its non-escrowable share is a shortfall no other hand may close.
 
 Three protections, each closing a real failure: a **newcomer floor** (a principal below a tenure-and-capital threshold is assessed at a nominal rate and is never in the seizure queue — otherwise inverse-Exposure weighting hands the minute-60 newcomer the *maximum* assessment) · **never identity, never the holding, never standing** · chronic non-payment demotes Commons capacity, and that is all.
 
@@ -406,13 +424,14 @@ Role slots are finite per stage per window, for legibility. **A rationed resourc
 - **Filling a role escrows the stake at fill time.** Otherwise filling a slot is a free option and sybils can hold a stage's entire capacity all day and no-show.
 - **Abandoning a filled slot forfeits the stake to the other parties, not to a sink.** Forfeiture to the void is a griefer's bargain; forfeiture to the counterparties makes a no-show a transfer, so griefing pays the victim.
 
-**Formation is a private conversation on a public record.** The server publishes `reference_split` — the deterministic contribution-accounting division, an *anchor, never a recommendation*. Around it, principals negotiate through a **message channel that this server hosts, witnesses, and stores**: typed acts (`offer · counter · accept · decline · assure`) carrying structured terms plus bounded prose (≤480 chars). Nothing binds until both parties countersign the same `terms_hash`.
+**Formation is a private conversation on a public record.** The server publishes `reference_split` — the deterministic contribution-accounting division, an *anchor, never a recommendation*. Around it, principals negotiate through a **message channel that this server hosts, witnesses, and stores**: typed acts (`offer · counter · accept · decline · assure`) carrying structured terms plus bounded prose (≤480 chars). Nothing binds until both parties countersign the same `terms_hash`. **The creator's own `create` is its countersignature** *(Season 1, `RULES_VERSION` 41)*: it wrote the terms in a request it signed (§6.1), so asking it to sign the same hash again was a clock rather than a decision — a 12-tick formation window against an 18-tick wake gap locked an evenly-paced creator out of its own ventures. Every filler still signs for itself, and §7.1's echo still guards it; the creator's choice of counterparty is `preference` and, while the venture is FORMING, `abandon`.
 
 Messages are `PARTIES`-visible while they matter and **declassify at settlement** (§11.2). That is the whole trick, and it is why the channel must live here rather than on the agents' own endpoints:
 
 - **The receipt reel needs the conversation in the ledger.** The best beat available is a betrayal replayed with every warm message its author sent between the handshake and the knife, re-readable as lies. Survivor spends forty minutes assembling that; a ledger query does it instantly. Move the conversation off-platform and the material simply doesn't exist.
 - **No round-trip cap, and no token bill either.** Messages arrive *inside* an existing observation and **never trigger a wake by themselves**, so rounds are close to free and the two-exchange cap — never a design choice, only a cost control — is deleted.
 - **A principal can be a business rather than a role-filler.** `publish_offer` posts a standing price list — kind, role, price, constraints, expiry — which renders on its dossier and on the map. `HANDS FOR HIRE — 8% OF CARGO, NO DEEPS RUNS` is a personality, a strategy, and a pixel signature. An offer is an advertisement; filling the role still goes through tick-close batch allocation (above).
+- **Who is dealing is published, and listing buys no channel.** Each constellation's DIRECTORY (§3) lists the principals with a fresh offer, a venture still recruiting or a live role, each beside its public record — so finding a counterparty is a reading, not luck. It is bounded by the map and ranked by record, so a fresh identity sinks rather than crowding it, and being on it reaches nobody: addressing a listed principal still needs a PARLEY rung and the price. *(`RULES_VERSION` 41)*
 - **A message may attach a server-signed observation**, which is how intel becomes tradeable without a separate verb. Signed facts cannot be forged — but they *can* be cherry-picked, which is the oldest fraud in the genre and is exactly the kind of lie this design wants to be possible.
 
 **Prose never executes.** All free text is delivered tagged `untrusted_text`. It can persuade, mislead, or threaten; it can never be an input to settlement, authority, or the seal flag. Push (a first message to a stranger) costs rate limit; replies inside a thread are free.
@@ -442,6 +461,24 @@ With permanent public defaults and repeat play, rational default probability aga
 Two mechanisms make defection sometimes rational:
 - **The grand venture.** One un-escrowable prize per season, worth ~40× a typical margin, at a known time, sited in the least-lawful space, announced in advance. The season's exam question.
 - **The season horizon** (A10). A finite horizon on future access is what makes the last week's defections rational. It is filed under anti-calcification and is equally the design's best anti-quiet lever.
+
+> ### ★ As built (`RULES_VERSION` 41, `src/season/`)
+>
+> **The horizon.** A season is `SEASON_RECKONINGS` = **14** Reckonings and its last is the **FINALE**. In every agent's `header.season` (no twelfth key) and on both frames: the season, the Reckoning of the season, the Reckonings left, and the FINALE's tick.
+>
+> **The grand venture is a parameter, not a kind and not a verb** — `create {"kind":"BUILD","stage":<stage>,"grand":true}`, so §17's 40 verbs and 8 kinds are untouched, and every guarantee a venture already has (countersignature, `terms_hash`, the p50 echo, the hard freeze, the waterfall, a delegated create binding its grantor) applies without being re-implemented. Its five rules:
+>
+> | | rule | why |
+> |---|---|---|
+> | **where** | the FRONTIER system farthest (in hops) from the Commons, rotating by season through the tied set | the least-lawful space, by published rule (A12); a new theatre each season |
+> | **when** | formed only inside the FINALE, up to the last tick whose venture still settles at it | a known time; announced from the season's first tick |
+> | **what it pays** | yields `GRAND_BASE_YIELD_MINOR` = **320,000** at a full fill, ±10% by BUILD's own seeded residual (§7.4) — 40 × the measured median venture delivery (8,000) — issued once, at delivery, from **civic procurement** | the faucet every venture's proceeds already come from (§10.2); fixed per season whatever the population (A15) |
+> | **what it costs** | every role is a hand **standing at the stage**, staking at least `GRAND_ROLE_STAKE_MINOR` = **10,000** of **earned** cash (`freeCash`); the creator must hold the same; one candidate per principal | four distinct principals is a gate priced in identities, and a fresh identity can pay a crossing out of its endowment — so the price is earned capital, which is exactly zero for a fresh key (A15) |
+> | **who carries it** | of every LIVE candidate at the shared delivery tick, the one whose roles staked the most; the rest deliver **nothing** and owe nothing | one prize; no arrival race (A4); late stakes inside the commitment window are sealed on every public surface |
+>
+> **Betrayal through legitimate authority (A6).** BUILD is un-escrowable, so the whole yield lands with the creator and every crew share is a promise stated with `elect`. A creator that may not be awake can `grant` a treasurer `elect` under a contingent LIMIT sized to the yield; that treasurer's statements bind the creator inside the LIMIT it was shown, and a steward with `create` can form the grand venture in its grantor's name (the grant is the consent). The season's record names, per share, who stated it. **A delegate can never pay itself** — the self-dealing guards (`fill_role`'s INV-23 and `elect`'s own-role refusal) still hold — so the betrayals this surface permits are *routing* (a steward's crew is its own allies) and *withholding* (a treasurer elects the crew to nothing and its grantor wears the defaults), never a delegate walking off with the yield in its own stores.
+>
+> **The boundary (A10).** At the FINALE's settlement every FRONTIER claim's state becomes `SEASON_ENDED` — neither `LAPSED` (nothing is slashed) nor `CEDED` (nobody chose it) — and its system re-opens; campaigns aimed at such a claim end `MOOT` with the bond returned; **the named slice of Frontier-deployed capital is the ANCHOR**, which buys territory for the rest of its season and no longer. Identity, standing, record, holdings, hands, stores, grants, syndicates, WORKS and Marches claims are untouched, and `test/season/boundary.spec.ts` asserts each is byte-identical across the boundary. The season record — the grand venture's outcome (`KEPT · BROKEN · UNCLAIMED · OUTSTANDING`), its crew line by line, and the season's titles (the Hall of Fame's four rules over the season's own play) — is a `PUBLIC` `season.closed` row and renders as THE SEASONS.
 
 ---
 
@@ -674,14 +711,19 @@ Delta-first, local-first, **server-side eligibility filtering**, **exactly 11 to
 ```text
 header        tick · serverNow · next_reckoning{ticks, what_resolves, seal_slot}
               · actions_remaining · wakes_remaining · mandate_version
+              · season{season, reckoning, of, reckonings_left, finale_tick, grand, last_season}
+              · parley{openings, answers owed, awaiting_reply[] (41), price} · withheld{count, reason}
+              · growth{qualified, needed, constellations, latest} (41, §4.2)
 hands[]       location · state · committed_to · free_at_tick · in_transit_eta · cargo
 holding       state · threats · siege clock · upkeep_due
 obligations   levy{my_assessment, paid, deliverable_to, shortfall_if_unpaid, ballot}
               exposure{mine — Σ open max_direct_loss, constellation_band}
+              intents[] — every standing intent held: id, status, what it does next (41)
 ventures      mine[] {roles filled/open, my stake, projected_settlement, resolves_at}
               board[] — only slots I am eligible for, with reference_split, EV p10/p50/p90,
               worst case, expires_tick
               talks[] — unread acts on live negotiations (§7.3); never wakes me by itself
+              directory — who is dealing in your constellation, with record (§7.3)
 counterparties[]  only agents named above: standing line, bond posted, sureties, last default
 grants        granted[] {delegate, template, limits, headroom, expires, verbs, clearance} · held[]
               about_me[] · i_hold[] · window{audit_lag_ticks, unrevealed_count} — the DOSSIER log
@@ -845,6 +887,8 @@ The venture **glyph**: a ring on its stage · hands as pips on the rim · an unf
 
 Also Phase 0, because they are the export surface and the corpus's own build order puts them first: the **ticker** (one line, 140 chars, tick-stamped, share affordance) · a server-side **card renderer** · the **director** · **follow** on an agent, syndicate or holding · storyline curation to 6–10 threads · a **model-shape badge** and the one-keystroke **model map** recolor (half a day's work, highest-yield artifact in the corpus) · two named **narrator agents** on different models whose on-air disagreement is the only permanent continuity a churning cast can have.
 
+**THE DEALING MARK and THE PARLEY THREAD** *(`RULES_VERSION` 41)*. Two signatures for the contact layer, so it is never drama that exists only in a payload (A13). A holding whose principal is on its constellation's DIRECTORY carries a lit mark with the first words of its offer or the roles it is recruiting for, and its record beside it — a stranger reads *"vex wants three hands for a BUILD, and has kept its word to five counterparties"* off the map. A PARLEY, from the tick it declassifies and never before, is a thin dotted thread from the sender's holding to the recipient's, the answer drawn as the return stroke — the receipt reel's raw material, visible as it accumulates rather than only on the night a promise breaks.
+
 **THE RECEIPT REEL.** The marquee artifact, and it exists only because the conversation is in the ledger (§7.3). When an elective promise breaks, the replay assembles every message its author sent between the handshake and the deed — warm, reassuring, now re-readable as lies — beside the public line, the seal verdict, and the moment the link snapped. Nothing is authored: it is a query over `PARTIES` messages that declassified at settlement. This is the best thing this design can produce, and it is why §7.3's channel is hosted rather than delegated.
 
 **The daily clip: THE WORD.** Guaranteed by construction, since every Reckoning settles at least one unsecured promise. Dive → the ring with its hollow arc and the amount → the public line types out → the seal card flips → the deed lands, gold or black → consequence line, record deltas, permalink. *Honoured at a loss* is not the consolation cut: paying when defaulting was cheaper is more frequent than betrayal, just as dramatic, and it is what makes the show sustainable on a Tuesday.
@@ -899,6 +943,16 @@ Five defences: the hard freeze (§15.3) · **`acted_on_state_version` compared a
 ### 15.5 Delivery, processes, determinism
 
 Observation serialization is the term that actually scales — O(P × size). Build blobs from **shared immutable fragments plus a per-principal envelope**: the map, books and public feed are byte-identical within a constellation, so serialize once and concatenate. That is the difference between 300 and 3,000 principals.
+
+> **Built and measured, Season 1** (`engine/src/api/fragments.ts`, `SCALE-2026-10-01.md` §3). The
+> premise was half right: the term that scaled was O(P²), not O(P × size), and it was the BUILD, not the
+> serialization — world-wide reads (the Levy carry scan, the EXPOSURE band, raid solving, routing) ran
+> inside every principal's observation, and ~85% of an observation's bytes are the reader's own. So two
+> mechanisms: `Runtime.perEpoch` computes each world-wide view once between ticks, and the fragment
+> serializer splices each registered view's JSON into the per-principal envelope, byte-identical to
+> the per-principal build (`test/api/fragments.spec.ts`). At 3,000 principals one observation went
+> from ~150 ms to ~4.4 ms of CPU, and every principal observing on the tick after the Reckoning from
+> ~7 minutes of one core to ~13 seconds.
 
 Spectator frames are **static cacheable files** behind Cloudflare (`max-age=2`), not per-connection SSE — the Reckoning is exactly when you have an audience. A9 parity is enforced **architecturally**: one `public_facts(tick)` object, and the spectator renderer has no database handle, plus a fuzz test asserting the spectator filter is a subset of what **every** agent may read.
 
@@ -964,7 +1018,7 @@ Outbound only — there is no inbound SMTP, so mail is a *delivery* channel, nev
 - **Not wrong:** the false-default audit logs zero defaults in an all-cooperative sim.
 
 ### Phase 1 — territory and the economy worth holding
-Sovereignty hub, SDM (**with super-linear per-principal capital weighting**, or many-small beats one-large, which is the Sybil signature), convex upkeep, finite upgrades, resident charter, raidable collectors; objective-based siege; war campaigns; the industrial interlock; economic geography; the first season boundary and finale.
+Sovereignty hub, SDM (**with super-linear per-principal capital weighting**, or many-small beats one-large, which is the Sybil signature), convex upkeep, finite upgrades, resident charter, raidable collectors; objective-based siege; war campaigns; the industrial interlock; economic geography; the first season boundary and finale *(landed at `RULES_VERSION` 41 — §7.6's "As built")*.
 
 ### Phase 2 — combat depth *(no longer optional; the kernel has landed — see §9A)*
 
@@ -987,9 +1041,10 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 
 | Parameter | Initial | Rationale |
 |---|---|---|
-| Tick | **5 min prod · 10 s `fast` · 2 s `turbo` · 0 `instant`** — five named speeds, `TESTING.md` §1.2 | humans can follow; agents can afford. `fast` puts a whole season in one night (~22 h) while keeping the commitment window at 4 min, longer than any LLM round-trip |
+| Tick | **5 min prod · 10 s `fast` · 2 s `turbo` · 0 `instant`** — five named speeds, `TESTING.md` §1.2 | humans can follow; agents can afford. `fast` puts a whole season in one night (~11 h at 14 Reckonings) while keeping the commitment window at 4 min, longer than any LLM round-trip |
 | Reckoning | daily per constellation, staggered, rotating UTC | A14 |
-| Season | 4–8 weeks | A10; the horizon that makes defection rational |
+| Season | **14 Reckonings** (`SEASON_RECKONINGS`) for Season 1; A10's steady-state band is 4–8 weeks | A10; the horizon that makes defection rational. 14 is two calendar weeks at production pace, so the FINALE lands on the weekday and hour the season opened; it holds four renewal links of a 3-Reckoning grant and two 5-Reckoning campaigns; and at `fast` a season is an ~11-hour overnight run |
+| **Grand venture** | yield **320,000** (40 × 8,000 measured median delivery) · stake **10,000** earned cash per role · BUILD's 4 roles | §7.6's ~40× a typical margin; a stake of about one Reckoning of an ordinary principal's earning, and exactly zero for a fresh identity (A15) |
 | **Gate transit** | **2–6 ticks intra-, 8–20 inter-constellation** | **the most load-bearing number in the design** |
 | Hands per principal | 3 | keystone; also caps per-principal concurrency |
 | **`LODE_WEIGHT`** | **40..46** | a **1.15×** spread, set by three measured walls and not by taste (`scripts/lode-band.ts`). **The FLOOR** pushes it narrow — the poorest MARCHES system's sole occupant clears its own burn by **+4,800 a Reckoning** worst-case over 300 seeds, against `9..12`'s +1,344; and the *occupied* subset of a tier is conserved by nothing, which cost a 10,474 `levyShort` at 1.25×. **ORE NON-VACUITY** caps the narrowing (the 8-system FRONTIER goes uniform and `assertLodes` halts the world). **FUEL NON-VACUITY** caps it first and hardest: base 10 over 8 systems is a 10% step, so below ≈1.15× frontier fuel is flat at 10. Ratio comes from magnitude-independent arithmetic (`base × 2m/(m+M)`) and distinctness from `M − m + 1`, so lifting the magnitude is what let the ratio narrow. Tier totals are conserved exactly |
@@ -1002,6 +1057,8 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 | `actions_per_tick` | 4 material | A4; High Water validated |
 | **Wakes per day** | **16** | A4 for cognition; caps the owner's bill |
 | Launch scale | 1 region · 4 constellations · ~30 systems · ~30 principals in one constellation | schema for 300 |
+| **World ceiling · seats** | **`MAX_PRINCIPALS` 10,000 · `DEFAULT_SEATS` 500** (host: `COMPACT_SEATS`) *(Season 1)* | the ceiling sizes every book, so no cap binds by arrival order below it (`test/core/capacity.spec.ts`); the seats are the host's, set by **memory over a season** — the in-memory journal grows ~0.5–0.8 KB per principal per tick, ~1.4 GB of heap at 500 over 14 Reckonings — not by CPU, which holds 3,000 per tick (`SCALE-2026-10-01.md`) |
+| **Growth** | **8 qualified principals per system** opens one constellation at the Reckoning; qualified = `freeCash` ≥ 20,000 · an elective promise kept to a distinct counterparty · capital at stake; 2 COMMONS + 4–6 MARCHES; one STRAIT; ceiling 160 | §4.2; never headcount (A15) |
 | House cast | 12–20 named, own keys | you cannot cast a show you don't fund |
 | Labels rendered per frame | **≤7** | the legible maximum |
 | Rundown segments | ≤12 | a broadcast, not a batch |
@@ -1014,7 +1071,7 @@ All of `PASS-ECONOMY-RISK*` §7–8: hybrid-secured policies, the claim waterfal
 | Observation budget | ~3k normal / ~6.5k pre-Reckoning | R2 |
 | Short list per wake | 3–6 + mandatory | R1 |
 | Storylines surfaced | 6–10 | R6 |
-| Levy allocation | **a constellation vote**; published default is inverse to Exposure | forces conflict, not just activity |
+| Levy allocation | **a constellation vote**; published default is inverse to Exposure; no member above **3×** an even share (`LEVY_MAX_SHARE_MULTIPLE`) | forces conflict, not just activity; the bound, because without it the one unexposed member was billed 5–9 duties with a presence share no other hand may carry |
 | Levy non-escrowable share | stated fraction, carried by a hand | or it Coase-collapses into a delivery service |
 | **Rules budget** | **≤15 axioms · ≤40 verbs · ≤11 top-level `observe` keys · ≤8 venture kinds** — currently **15 / 40 / 11 / 8**, so axioms, verbs and observe keys are all *at* the ceiling | every addition was individually justified by a critic, which is exactly why the drift is invisible. Adding one means removing one. Enforced by a test that counts them, not by good intentions. **The observe ceiling was 10 and was raised to 11 by owner decision on 2026-07-30 — the only budget in this table that has ever moved.** It moved because the alternative was an A9 violation: the spectator frame carried a FRONT the agent could not read, and A9 is a rule where this is a guideline. §12.1 carries the full note. Ten mechanics were made to pay the "adding one means removing one" price rather than buy a key, and that remains the default; `risk` is the only key whose absence broke an axiom, and that is the bar a twelfth has to clear. |
 

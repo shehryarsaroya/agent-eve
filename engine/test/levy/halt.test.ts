@@ -336,10 +336,12 @@ describe('INV-24 cannot witness the newcomer floor it is handed', () => {
     const violations = checkInv24(
       {
         totals: new Map([['con-1' as never, minor(LEVY_DUTY_PER_PRINCIPAL * 2)]]),
-        assessments: lines.map((l) => ({ ...l, constellation: 'con-1' as never })),
+        assessments: lines.map((l) => ({ ...l, constellation: 'con-1' as never, spared: false })),
         floorEligible,
         nominalRate: LEVY_NOMINAL_MINOR,
         seizureQueue: [],
+        // A pool of two can never exceed the max share, so it cannot be what this test is about.
+        maxShare: new Map([['con-1' as never, minor(LEVY_DUTY_PER_PRINCIPAL * 3)]]),
       },
       1,
     );

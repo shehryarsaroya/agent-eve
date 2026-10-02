@@ -10,6 +10,119 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
+## ⏱ 2026-10-02 (latest) — §5.2's max share, branch `season1-levy-cap` off `season1-voices`
+
+*Not merged, not deployed. Owner call (3) decided: no line of a docket's remainder pool above
+`LEVY_MAX_SHARE_MULTIPLE` (3) × its even share. `TRACKER.md`'s STATUS carries the account, the per-seed table
+and the `BY_STORES` reading. Still `RULES_VERSION` 41 — verbs 40/40, observe keys 11/11, kinds 8/8.*
+
+| | reading, 2026-10-02 |
+|---|---|
+| `tsc` · lint · audits · vitest (`npm run gate0`) | 0 · 0 · DET-8 and PROP-O3 pass · **373 files, 4,380 passed, 1 skipped, 0 failed** (520 s) |
+| ten seeds, one season each (12 members) | `levyShort` 1,134,354 → **978,896** · red lines 72 → 78 · top line 9.91× → **3.37×** the duty · lines over the bound 30 → **0** (23 held of 1,330 pool lines) · settled 1,839 → 1,817 · kept 3,861 → 3,829 · broken 230 → 222 · grand ventures 8 KEPT, 2 BROKEN → 10 KEPT |
+| balance gate (8 seeds × 9 Reckonings × 8 members) | `levyShort` 8,194 → **0** · red 1/576 → **0/576** · kept 1,213 → 1,219 · broken 67 → 70 · top line 6.00× → 3.58× · `CARRIED` 943,124 → 732,355 |
+| `BY_STORES` alone | gate horizon: no change (0 short either side). Ten seasons: its shortfall 503,686 → 534,754, at most 80,431 of it on lines the bound raised, all on `g04`/`g07`, whose constellations are short of the good every Reckoning from R8–R9 on either side |
+| the house cast's ballot | reads the bill each rule would cut (`previewShares`), not the weight ratio: 16 of 623 ballots moved at the gate horizon, 100 of 1,800 over the seasons, every one with the bound binding |
+
+---
+
+## ⏱ 2026-10-02 — the Season 1 launch fixes, branch `season1-launch-fixes` off `season1`
+
+*Not merged, not deployed. `TRACKER.md`'s STATUS carries the account and the owner calls; this is the
+reading. Still `RULES_VERSION` 41 — verbs 40/40, observe keys 11/11, kinds 8/8.*
+
+| | reading, 2026-10-02 |
+|---|---|
+| `tsc` · lint · audits · vitest (`npm run gate0`) | 0 · 0 · DET-8 and PROP-O3 pass · **371 files, 4,360 passed, 1 skipped, 0 failed** (524 s) |
+| the parley book | rolls: a letter leaves once no window reads it; cap **360,000** = 36 a principal × `MAX_PRINCIPALS` (POPULATION, was a lifetime 512); 768 letters in one test world with every per-Reckoning limit intact |
+| the claim ending | `SEASON_ENDED` (was `CLOSED`, which a charter's admission rule also spells); the vocabulary guard reads array-declared enums |
+| a whole season, played (`fs-a`, 12 members, `instant`) | 226 ventures opened (was 1,465) · **176 settled** (174) · 22 defaulted (22) · **13 abandoned unfilled** (1,238); kept 377 (370), elective defaults 30 (31); 17 four-role BUILDs, 12 settled (11/10); grand venture `BROKEN` by corvid's creed, 299,136 delivered, three shares unpaid; `levyShort` 0 every Reckoning but the FINALE (19,558; was 14,767) |
+| ten seeds, one season each | opened 14,263 → 2,275 · settled 1,821 → **1,839** · abandoned unfilled 11,946 → **117** · kept 3,846 → **3,861** · elective defaults 266 → 230 · grand ventures 7 KEPT, 2 BROKEN, 1 UNCLAIMED → 8, 2, **0** · `levyShort` 1,128,783 → 1,134,354 |
+| balance gate (8 seeds × 9 Reckonings × 8 members) | kept 1,136 → 1,213 · broken 110 → 67 · `levyShort` 0 → 8,194 (one presence-only line, `g07` R6, owner call (3)) |
+
+---
+
+## ⏱ 2026-10-01 — Season 1 integrated on branch `season1`: one `RULES_VERSION` 41 for four lanes
+
+*Merged, measured, not deployed. `TRACKER.md`'s STATUS carries the account — the merge order, every
+place two lanes met on one rule and what was chosen, and the owner calls. The four lane readings below
+this one are each lane alone; read this block wherever they disagree.*
+
+| | reading, 2026-10-01 (branch `season1`) |
+|---|---|
+| `RULES_VERSION` | **41** — one bump for scale, stakes and chores, the season, contact |
+| `tsc` · lint · audits | 0 · 0 · DET-8 and PROP-O3 pass |
+| vitest (`npm ci && npm run gate0`) | **368 files, 4,349 passed, 1 skipped, 0 failed** (14 min 2 s, clean `npm ci`, `ce381b6`) |
+| budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent by the merge |
+| client | one asset version, `?v=41`; every screen renders headless against a season of frames with no script error |
+| a whole season, played (fs-a, 12 members, `instant`) | **0 violations**; 1,465 ventures · 174 settled · 22 defaulted · 1,252 abandoned; **11 four-role BUILDs** (10 settled); one grand venture, `BROKEN` by a MERCENARY creed (322,016 delivered, three shares unpaid); DORMANT 0 · letters 0 · growth 0 · no Frontier claim standing at the boundary (`CLOSED` is proven by `boundary.spec.ts`); `levyShort` 0 every Reckoning but the FINALE (14,767; the base reads 20,528 on this seed); replayed on `ce381b6`, the same final state hash |
+| adoption | `season-one-survives-adoption.spec.ts`: the FINALE checkpoint adopted across a closed season, a grown region, a DORMANT WORKS and a letter; the head hash reproduced |
+| scale (CPU clock, paired with the scale lane) | 300 principals: tick **15.2** ms (lane 18.4) · Reckoning **38** (38) · one observation **1.48** ms (1.28) · burst **0.4 s** (0.4); 1,000: **1.90** ms (1.63) · burst **1.9 s** (1.6) — a constant 16–17% for a ~11% larger observation, scale's O(P) burst kept; re-read alone on `ce381b6`, 300: tick 16.9 ms · Reckoning 40 · 1.48 ms · 0.4 s |
+| cast contract | 67 units · analytic **118,219** of 120,000 · largest reachable **111,455** (margin 8,545) |
+
+---
+
+## ⏱ 2026-10-01 — branch `season1-stakes-and-chores`, `RULES_VERSION` 41 (unmerged, nothing deployed)
+
+*A Season 1 lane, cut for a fresh world. `TRACKER.md`'s STATUS carries the account; this is the reading.*
+
+| | reading, 2026-10-01 |
+|---|---|
+| `RULES_VERSION` | **41** — pre-assigned; renumber at merge if another Season 1 lane lands first |
+| `tsc` · lint · audits | 0 · 0 · DET-8 and PROP-O3 pass |
+| vitest (`npm run gate0`) | **340 files, 4,192 passed, 1 skipped** — plus 2 failed in `follow/integration.spec.ts`, pre-existing on `c771ece` and load-dependent (passes alone, 4 of 4) |
+| budgets | verbs **40/40** (no verb spent: `stop` is a `set_delivery_intent` param) · axioms 15/15 · observe keys 11/11 · venture kinds 8/8 |
+| `formationWindowOutlastsAWake()` | **−6 → +12** — the creator's `create` is its countersignature |
+| DORMANT | `WORKS_DORMANT_AFTER_RECKONINGS` **4** (= 1,152 ticks, the seat lease's span) |
+| cast contract | analytic ceiling **111,254** of 120,000 · largest reachable **104,743** (margin 15,257) |
+
+---
+
+## ⏱ 2026-10-01 — Season 1 scale: one world at 3,000 principals, and what a season costs
+
+*Branch `season1-scale`, `RULES_VERSION` 41. Measured, not projected — `docs/design/SCALE-2026-10-01.md`
+has the method, every table and the owner decisions. §4c below is superseded: its 300-principal figure
+was a projection from 20, and it is now measured.*
+
+| | reading, 2026-10-01 (process CPU time, M4 Pro) |
+|---|---|
+| one Reckoning at 300 · 1,000 · 3,000 | steady tick **19 · 69 · 211 ms**; Reckoning **46 · 243 · 832 ms**; one observation **1.6 · 2.0 · 4.4 ms**; the burst after the Reckoning **0.5 · 2.0 · 13.3 s** (was 1.9 · 29.2 · ~442 s) |
+| the 3,000-principal Reckoning frame | **renders** (was refused: 100+ WORKS on one system all read `EXTRACTING` at a share of 0) |
+| caps | every `export const MAX_*` in `src/` classified in `test/core/capacity.spec.ts`; **eight books** that bound by arrival order or halted the world now derive from `MAX_PRINCIPALS` = **10,000** |
+| seats | `DEFAULT_SEATS` **500**, host configuration via `COMPACT_SEATS`, refused above the ceiling |
+| age (1,000 principals, tick 863) | steady tick **2,289 → 680 ms**, Reckoning **4,831 → 1,170 ms** — INV-1 and INV-7's supply walk incremental, lot list cached, state hash streamed |
+| what binds now | **memory**: the journal grows ~0.5–0.8 KB per principal per tick, ~1.4 GB of heap at 500 principals over a 14-Reckoning season, ~5.4 GB at 3,000 |
+| growth (§4.2) | spent: a qualified population (paid capital, an elective promise kept to someone else, capital at stake — never headcount) opens one constellation at the Reckoning, joined by one STRAIT, at 8 qualified per system |
+| latent fault fixed | adopting a checkpoint of any world past ~150,000 postings threw (`push(...rows)`) and fell back to a replay from genesis |
+
+**Still open, in order:** page the in-memory journal out (the season wall) · consolidate lots (the
+remaining per-tick term, and a raid-balance decision) · bound `postingsFor` by tick · per-constellation
+drama budgets. (The parley ring's lifetime refusal is fixed: the book rolls — `say/parley.ts` §5.)
+
+---
+
+## ⏱ 2026-10-01 — `RULES_VERSION` 41 on `season1-season-and-grand-venture`: the season, its FINALE and the grand venture
+
+*Branch reading, not merged. Sibling Season 1 branches are landing at the same time; renumber the
+version and re-read these figures after the merge.*
+
+| | reading, 2026-10-01 (branch) |
+|---|---|
+| `RULES_VERSION` | **41** (the season table, `ClaimState.SEASON_ENDED` — spelled `CLOSED` until the launch fixes, HARD RULE 4 —, grand ventures) |
+| `tsc` · lint | 0 · 0 |
+| vitest | **344 files, 4,205 passed, 1 skipped** (`npm ci && npm run gate0`, 3,745 s) |
+| budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent |
+| contract | analytic ceiling **111,983** of 120,000 · largest reachable **105,219** (margin 14,781) |
+| a whole season, played | 12-member heuristic worlds from genesis (`fs-a`, `fs-b`, E2E-28): 14 Reckonings, **0 violations**, one crew carries the grand venture (~293,000 delivered, KEPT); the FINALE probes draw both answers (`cf-a` KEPT, `cf-b` BROKEN) |
+
+⚑ **"Season boundary" was on the Phase 1 line below for two months and did not exist.** At `c771ece`
+the word appears in `src/` only in comments; nothing ended, no claim closed, there was no FINALE and no
+grand venture. Phase 1's last named item — *"the first season boundary and finale"* (SPEC §16) — is now
+built, offered (`header.season`, the create and fill affordances), selected (the house cast), counted
+(SSN-1..5, the season record) and reached by play (E2E-28).
+
+---
+
 ## ⏱ 2026-07-30 — `RULES_VERSION` 40, 312 files / 3,889 tests, and a re-seeded world
 
 *The rest of this file predates the three merges of 2026-07-30 and its version numbers, test counts
@@ -173,8 +286,8 @@ surface is full rather than partial. Adding a mechanic now means spending a verb
 
 ## Phase 1 — all five areas have implementations
 
-`src/sovereignty/` (3,958 loc), syndicates, `src/works/` (574 loc), season boundary, siege/campaign
-code. **`works` is by far the thinnest module in the tree** and it is the one the economy runs on.
+`src/sovereignty/` (3,958 loc), syndicates, `src/works/` (574 loc), siege/campaign code, and — only
+since `RULES_VERSION` 41 — the season boundary (`src/season/`; this line claimed it before it existed). **`works` is by far the thinnest module in the tree** and it is the one the economy runs on.
 
 ---
 
@@ -369,6 +482,11 @@ For scale: the next largest are `api/observe.ts` (2,866), `api/server.ts` (2,236
   reason, or it is not deferred.
 
 ### 4c. Scale: MEASURED at last — the number is wrong by ~10×, the conclusion survives
+
+> **Superseded 2026-10-01** by `SCALE-2026-10-01.md`, which seats 300, 1,000 and 3,000 principals
+> rather than projecting from 20: 51 ms a tick at 300 on the base commit, 19 ms after Season 1's
+> fixes. The conclusion below held for one Reckoning and failed for a season — the tick grew with the
+> world's age (INV-1, INV-7's supply walk, the state hash), and memory, not CPU, is what binds.
 
 `SPEC.md` §15 and `CLAUDE.md` §6 both rest on *"at 300 principals a deterministic tick is **single-digit
 milliseconds** on the target box, so every remaining risk is a correctness risk, not a capacity risk."*

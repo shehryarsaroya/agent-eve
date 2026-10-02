@@ -160,6 +160,7 @@ describe('the aggregate pass is silent on a healthy world', () => {
           floorEligible: new Set(),
           nominalRate: minor(50),
           seizureQueue: [],
+          maxShare: new Map(),
         },
         docket: [{ reckoningIndex: 0, kind: 'LEVY', principals: [...PRINCIPALS] }],
         principals: [...PRINCIPALS],
@@ -935,12 +936,14 @@ describe('the clock-and-crowd group fires', () => {
         levy: {
           totals: new Map([[CONSTELLATION, minor(1_000)]]),
           assessments: [
-            { principal: ALICE, constellation: CONSTELLATION, amount: minor(400), newcomerFloored: false },
-            { principal: BOB, constellation: CONSTELLATION, amount: minor(400), newcomerFloored: false },
+            { principal: ALICE, constellation: CONSTELLATION, amount: minor(400), newcomerFloored: false, spared: false },
+            { principal: BOB, constellation: CONSTELLATION, amount: minor(400), newcomerFloored: false, spared: false },
           ],
           floorEligible: new Set(),
           nominalRate: minor(50),
           seizureQueue: [],
+          // 3 x ceil(1,000 / 2): a pool of two, which no line can exceed — this test is about the sum.
+          maxShare: new Map([[CONSTELLATION, minor(1_500)]]),
         },
       },
       287,
@@ -954,13 +957,14 @@ describe('the clock-and-crowd group fires', () => {
         levy: {
           totals: new Map([[CONSTELLATION, minor(1_000)]]),
           assessments: [
-            { principal: ALICE, constellation: CONSTELLATION, amount: minor(950), newcomerFloored: false },
-            { principal: CARA, constellation: CONSTELLATION, amount: minor(50), newcomerFloored: false },
+            { principal: ALICE, constellation: CONSTELLATION, amount: minor(950), newcomerFloored: false, spared: false },
+            { principal: CARA, constellation: CONSTELLATION, amount: minor(50), newcomerFloored: false, spared: false },
           ],
           // CARA is a newcomer and must be at the nominal rate and out of the queue.
           floorEligible: new Set([CARA]),
           nominalRate: minor(50),
           seizureQueue: [CARA],
+          maxShare: new Map([[CONSTELLATION, minor(1_500)]]),
         },
       },
       287,
@@ -968,6 +972,58 @@ describe('the clock-and-crowd group fires', () => {
     const messages = report.violations.filter((v) => v.id === 'INV-24').map((v) => v.message);
     expect(messages.some((m) => m.includes('does not record the floor'))).toBe(true);
     expect(messages.some((m) => m.includes('seizure queue'))).toBe(true);
+  });
+
+  it('INV-24 — a line of the remainder pool assessed above the max share (§5.2)', () => {
+    // Four pool lines and one spared line on a total of 4,500: the remainder is 4,000 and the max
+    // share 3 x 1,000. ALICE at 3,001 is one unit over it and the docket still sums, so this is the
+    // clause and nothing else. CARA, spared, is outside the pool whatever she is assessed — and her
+    // 500 here is the nominal rate, so no other clause has anything to say about her either.
+    const report = checkInvariants(
+      {
+        levy: {
+          totals: new Map([[CONSTELLATION, minor(4_500)]]),
+          assessments: [
+            { principal: ALICE, constellation: CONSTELLATION, amount: minor(3_001), newcomerFloored: false, spared: false },
+            { principal: BOB, constellation: CONSTELLATION, amount: minor(333), newcomerFloored: false, spared: false },
+            { principal: CARA, constellation: CONSTELLATION, amount: minor(500), newcomerFloored: false, spared: true },
+            { principal: 'p:dov' as never, constellation: CONSTELLATION, amount: minor(333), newcomerFloored: false, spared: false },
+            { principal: 'p:eke' as never, constellation: CONSTELLATION, amount: minor(333), newcomerFloored: false, spared: false },
+          ],
+          floorEligible: new Set(),
+          nominalRate: minor(500),
+          seizureQueue: [],
+          maxShare: new Map([[CONSTELLATION, minor(3_000)]]),
+        },
+      },
+      287,
+    );
+    const messages = report.violations.filter((v) => v.id === 'INV-24').map((v) => v.message);
+    expect(messages, 'exactly one clause fires, and it is the max share').toHaveLength(1);
+    expect(messages[0]).toContain(`${String(ALICE)} is assessed 3001`);
+    expect(messages[0]).toContain('above the max share of 3000');
+
+    // At the bound itself the line is legal: the max share is a ceiling, not a target.
+    const atBound = checkInvariants(
+      {
+        levy: {
+          totals: new Map([[CONSTELLATION, minor(4_500)]]),
+          assessments: [
+            { principal: ALICE, constellation: CONSTELLATION, amount: minor(3_000), newcomerFloored: false, spared: false },
+            { principal: BOB, constellation: CONSTELLATION, amount: minor(334), newcomerFloored: false, spared: false },
+            { principal: CARA, constellation: CONSTELLATION, amount: minor(500), newcomerFloored: false, spared: true },
+            { principal: 'p:dov' as never, constellation: CONSTELLATION, amount: minor(333), newcomerFloored: false, spared: false },
+            { principal: 'p:eke' as never, constellation: CONSTELLATION, amount: minor(333), newcomerFloored: false, spared: false },
+          ],
+          floorEligible: new Set(),
+          nominalRate: minor(500),
+          seizureQueue: [],
+          maxShare: new Map([[CONSTELLATION, minor(3_000)]]),
+        },
+      },
+      287,
+    );
+    expect(atBound.violations.filter((v) => v.id === 'INV-24')).toEqual([]);
   });
 
   it('INV-25 — a principal absent from the docket (the anti-quiet invariant)', () => {

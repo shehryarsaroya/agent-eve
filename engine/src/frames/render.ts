@@ -36,8 +36,12 @@ import {
   MAX_DOCKET_CARDS,
   MAX_FRAME_COMPACT_LINKS,
   MAX_FRAME_CONVOY_LINES,
+  MAX_FRAME_DIRECTORY_LINES,
+  MAX_FRAME_PARLEY_LINES,
   type CompactLink,
   type ConvoyLine,
+  type DirectoryLine,
+  type ParleyLine,
   MAX_RAID_LINES,
   MAX_FRAME_BATTLE_LINES,
   MAX_LABELS_PER_FRAME,
@@ -55,6 +59,7 @@ import {
   MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
+  type FrameGrowth,
   type MapSystem,
   type SwayLine,
   type MarketLine,
@@ -62,6 +67,8 @@ import {
   type SyndicateLine,
   type ReckoningFrame,
   type RundownSegment,
+  type SeasonLine,
+  type SeasonRecordLine,
   type TributeLine,
   type VentureGlyph,
   type BeatKind,
@@ -172,6 +179,8 @@ export interface FrameSource {
   readonly map?: readonly MapSystem[];
   /** ★ §16.12 #1's border signature. Optional so `emptyFrame` and older fixtures stay valid. */
   readonly swayLines?: readonly SwayLine[];
+  /** ★ §4.2's signature, THE RISE. Optional so `emptyFrame` and older fixtures stay valid. */
+  readonly growth?: FrameGrowth;
   /**
    * ★ A13's sixth named example: THE CONVOY LINE. Supplied by `frames/motion.ts`, never derived here.
    *
@@ -183,6 +192,25 @@ export interface FrameSource {
   readonly convoyLines?: readonly ConvoyLine[];
   /** ★ A13's second and third: THE COMPACT LINK, and the snap. Supplied by `frames/motion.ts`. */
   readonly compactLinks?: readonly CompactLink[];
+  /**
+   * ★ THE SEASON LINE (SPEC §5, §7.6, A13), supplied by the season layer — the FINALE countdown and
+   * the grand venture. Passed in for the reason every line set is: a renderer that decided which crew
+   * carries the yield would be inventing a verdict.
+   */
+  readonly season?: SeasonLine;
+  /** ★ THE SEASON RECORD — closed seasons, newest first, each FINALE and its champions (A10). */
+  readonly seasonRecords?: readonly SeasonRecordLine[];
+  /**
+   * ★ THE DEALING MARK (41). Supplied by `say/directory.ts` through the runtime — the same builder
+   * `observe`'s `ventures.directory` reads — and never derived here, because a renderer that chose
+   * who is "dealing" would be a second opinion on a list agents read as fact.
+   */
+  readonly directoryLines?: readonly DirectoryLine[];
+  /**
+   * ★ THE PARLEY THREAD (41). Supplied already filtered to letters that have DECLASSIFIED; the frame
+   * asserts the bound against its own tick, so a thread can never be drawn ahead of its reveal (A9).
+   */
+  readonly parleyLines?: readonly ParleyLine[];
 }
 
 export interface SettledView {
@@ -306,6 +334,8 @@ function claimUrgency(line: ClaimLine): number {
     case 'STRAINED':
       return 2;
     case 'CEDED':
+      return 1;
+    case 'SEASON_ENDED':
       return 1;
     case 'SUPPLIED':
       return 0;
@@ -833,6 +863,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // live. `assertFrameBudgets` refuses an over-long list rather than this slicing it, so growth
     // past `MAX_FRAME_SWAY_LINES` is a designed aggregation instead of a silently gappy fence.
     swayLines: [...(src.swayLines ?? [])].sort((a, b) => compareIds(a.system, b.system)),
+    // ★ THE RISE — a pass-through, never truncated: the list is bounded by `MAX_GROWN_CONSTELLATIONS`
+    // at the source, and a frame that dropped an opened constellation would draw ground with no
+    // history, which is the map's hole argument one key over.
+    growth: src.growth ?? null,
     // ── ★ A13's THREE UNRENDERED NAMED EXAMPLES, TWO OF THEM NOW DRAWABLE ─────
     //
     // Selected and ordered by `frames/motion.ts`, which owns the significance rule for each — landings
@@ -841,6 +875,10 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     // of one line set is scar #5 and the module that knows which snap is news is the one that made it.
     convoyLines: (src.convoyLines ?? []).slice(0, MAX_FRAME_CONVOY_LINES),
     compactLinks: (src.compactLinks ?? []).slice(0, MAX_FRAME_COMPACT_LINKS),
+    // Pass-throughs, ordered by their builders (`say/directory.ts` ranks; the runtime orders threads
+    // newest first) — a second ordering here would be a second home for one rule.
+    directoryLines: (src.directoryLines ?? []).slice(0, MAX_FRAME_DIRECTORY_LINES),
+    parleyLines: (src.parleyLines ?? []).slice(0, MAX_FRAME_PARLEY_LINES),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
       .sort(
@@ -928,6 +966,8 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     glyphs: byStakesAscending.map(glyphFor),
     ticker: src.ticker.filter((t) => t.length <= 140),
     nextDocket: docket,
+    season: src.season ?? null,
+    seasonRecords: src.seasonRecords ?? [],
   };
 
   // A13 as arithmetic. Throws rather than shipping an unreadable frame.
@@ -964,11 +1004,16 @@ export function emptyFrame(reckoning: number, tick: number, stateHash: string): 
     coverChains: [],
     map: [],
     swayLines: [],
+    growth: null,
     convoyLines: [],
     compactLinks: [],
+    directoryLines: [],
+    parleyLines: [],
     glyphs: [],
     ticker: [],
     nextDocket: [],
+    season: null,
+    seasonRecords: [],
   };
   assertFrameBudgets(frame);
   return frame;

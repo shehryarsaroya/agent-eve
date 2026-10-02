@@ -262,14 +262,21 @@ describe('★ A15 — the price of a parley, measured', () => {
       charges: [],
     });
 
-    const capacity = w.runtime.parleysFor(sybil, w.runtime.engine.tick);
+    // Read with the read-epoch memo off. Reach and the parley block are shared once per read epoch since
+    // the Season 1 merge, keyed on the state hash — which only a TICK moves, and the synthetic credit
+    // above lands outside one (it has to: INV-21 would halt the tick). A real credit always arrives in a
+    // tick, so this is the test's out-of-band write being honest about itself, not a hole in the cache.
+    const capacity = w.runtime.withoutReadMemo(() => w.runtime.parleysFor(sybil, w.runtime.engine.tick));
     expect(capacity.distinct_counterparties, 'one counterparty, honoured').toBe(1);
     expect(capacity.earned_minor, 'and still not a penny anybody paid it').toBe(0);
     expect(
       capacity.parleys_per_reckoning,
       'a kept elective promise with somebody who is not you is the price, and it is payable by playing',
     ).toBe(PARLEYS_PER_RECKONING);
-    expect(parleyOfferCount(w.runtime, sybil), 'and the menu now names somebody').toBeGreaterThan(0);
+    expect(
+      w.runtime.withoutReadMemo(() => parleyOfferCount(w.runtime, sybil)),
+      'and the menu now names somebody',
+    ).toBeGreaterThan(0);
   });
 
   it('an action from the per-tick budget is NOT the price, and `message` stays free', () => {

@@ -96,6 +96,7 @@ const CLAIM_STATES: readonly ClaimState[] = Object.freeze([
   'CONTESTED',
   'LAPSED',
   'CEDED',
+  'SEASON_ENDED',
 ]);
 
 export function isClaimState(s: string): s is ClaimState {
@@ -264,6 +265,10 @@ export class Book {
   private readonly plans = new Map<string, ChargePlan>();
   private readonly payments = new Map<string, ChargePayment>();
   private readonly ballots = new Map<string, ChargeBallot>();
+  /** Ballots held, for the cap-pressure report (`Runtime.capPressure`). */
+  get ballotCount(): number {
+    return this.ballots.size;
+  }
   private readonly shortfalls = new Map<string, ChargeShortfallRow>();
   private readonly cessions = new Map<SystemId, CessionOffer>();
   /** Bond locks per principal, in canonical id order. The **amounts** live in the ledger. */
@@ -363,7 +368,12 @@ export class Book {
   }
 
   /** End a claim. Terminal, and the state says which ending it was. */
-  end(system: SystemId, state: Extract<ClaimState, 'LAPSED' | 'CEDED'>, reckoning: number, to: PrincipalId | null): void {
+  end(
+    system: SystemId,
+    state: Extract<ClaimState, 'LAPSED' | 'CEDED' | 'SEASON_ENDED'>,
+    reckoning: number,
+    to: PrincipalId | null,
+  ): void {
     const claim = this.claims.get(system);
     if (claim === undefined) throw new SovereigntyBookError(`there is no claim on ${system} to end`);
     claim.state = state;
@@ -579,6 +589,11 @@ export class Book {
 
   hasVoted(forReckoning: number, principal: PrincipalId): boolean {
     return this.ballots.has(pairKey(forReckoning, principal));
+  }
+
+  /** The Charge ballot this claimant has standing for `forReckoning`, if any. A read; it moves nothing. */
+  ballotOf(forReckoning: number, principal: PrincipalId): ChargeBallot | undefined {
+    return this.ballots.get(pairKey(forReckoning, principal));
   }
 
   ballotsFor(forReckoning: number, constellation: ConstellationId): readonly ChargeBallot[] {
@@ -1050,7 +1065,7 @@ export class Book {
 
 /** Terminal states end a claim. A terminal claim is not on the roll and owes nothing. */
 export function isTerminal(state: ClaimState): boolean {
-  return state === 'LAPSED' || state === 'CEDED';
+  return state === 'LAPSED' || state === 'CEDED' || state === 'SEASON_ENDED';
 }
 
 function pairKey(reckoning: number, id: string): string {

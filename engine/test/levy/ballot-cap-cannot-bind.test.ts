@@ -49,10 +49,13 @@ describe('the ballot cap cannot bind below the population the world admits', () 
     expect(MAX_LEVY_BALLOTS).toBe(MAX_PRINCIPALS * (LEVY_RETAINED_RECKONINGS + 1));
   });
 
-  it('and the seat policy reads the same population figure', () => {
+  it('and the seat policy can never seat more than that figure', () => {
     // They could not import each other, which is how a flat 512 and a flat 300 drifted apart. One
-    // home now: `core/time.ts`.
-    expect(DEFAULT_SEATS).toBe(MAX_PRINCIPALS);
+    // home now: `core/time.ts`. Since the Season 1 cap audit the two are DECOUPLED on purpose — the
+    // world ceiling sizes the books and the host's seats sit below it (`COMPACT_SEATS` may raise them
+    // up to the ceiling and no further) — so the property is an inequality, and it is the one that
+    // matters: no seat the host can grant is a principal the ballot book was not sized for.
+    expect(DEFAULT_SEATS).toBeLessThanOrEqual(MAX_PRINCIPALS);
   });
 
   it('covers the seat-recycle overlap the retention window allows', () => {

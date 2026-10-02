@@ -73,16 +73,53 @@ export const GRANT_IS_CONSENT =
  *     special case: the house's consent is the covenant its members voted.
  * ══════════════════════════════════════════════════════════════════════════
  *
- * Returns the creator when the create is delegated, and nobody otherwise — an agent creating on its
- * own account still signs its own terms, because there is no grant standing in for the signature and
- * `sign`'s echo of `your_take_at_p50` is the only check that the creator read what it priced (§7.1).
+ * ══════════════════════════════════════════════════════════════════════════
+ * **★ AND SINCE `RULES_VERSION` 41, THE CREATOR'S OWN `create` IS ITS COUNTERSIGNATURE TOO.**
+ *
+ * This used to return nobody for an ordinary create, on the reasoning that *"there is no grant
+ * standing in for the signature and `sign`'s echo of `your_take_at_p50` is the only check that the
+ * creator read what it priced (§7.1)."* Both halves were weaker than they looked, and the cost of
+ * the rule was the core loop:
+ *
+ *   - **The creator wrote the terms.** `terms_hash` is a deterministic function of the very params
+ *     the creator sent, in a request it signed with its own key (RFC 9421, §6.1). Asking it to sign
+ *     the same hash a second time asks it to agree with itself. §7.1's echo exists to catch a
+ *     COUNTERPARTY that believed it took a wage when the engine recorded a share — a misreading of
+ *     somebody else's terms — and the creator cannot misread terms it authored. The echo still
+ *     guards every filler, unchanged.
+ *   - **The second signature was a clock, not a decision.** `FORMATION_WINDOW_TICKS` is 12 and an
+ *     agent pacing `WAKES_PER_RECKONING` evenly wakes once every 18 ticks, so a creator that did not
+ *     spend two wakes back to back watched its own venture retire ABANDONED before it could look at
+ *     the world again (`formationWindowOutlastsAWake` was pinned at −6). A rule that is honoured only
+ *     by the agents with the most wakes to spare is A4 inverted.
+ *
+ * **What the creator keeps is the real decision.** Until the last filler signs, the venture is
+ * FORMING and `abandon` takes it back at no cost — that is how a creator refuses a counterparty it
+ * does not want, and `preference` orders who wins a contested slot before that. What it no longer
+ * has is a veto it can exercise only by being awake at the right tick.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * Returns the creator in every case. `boundByGrant` is still read by the caller to record WHOSE act
+ * the binding was (`bindingNote`, `actedBy`), which is the provenance A5′ needs; it no longer changes
+ * who is bound.
  */
 export function boundAtFormation(args: {
   readonly creator: PrincipalId;
   readonly boundByGrant: GrantId | null;
 }): readonly PrincipalId[] {
-  return args.boundByGrant === null ? [] : [args.creator];
+  return [args.creator];
 }
+
+/**
+ * The sentence the engine and `agent.md` must both say about the creator's signature (`RULES_VERSION`
+ * 41), pinned here for {@link GRANT_IS_CONSENT}'s reason: the rules-surface test reads this constant
+ * and asserts the document carries it.
+ */
+export const CREATE_IS_COUNTERSIGNATURE =
+  'Your own create is your countersignature: you wrote the terms and signed the request that made ' +
+  'them, so you never send sign on a venture you created. It goes LIVE the tick its last role is ' +
+  'filled and every filler has signed, whether or not you are awake — and until then abandon takes ' +
+  'it back at no cost, which is how you refuse a counterparty you do not want.';
 
 /** The public sentence a delegated formation writes, for a receipt, a refusal or an affordance. */
 export function bindingNote(args: {

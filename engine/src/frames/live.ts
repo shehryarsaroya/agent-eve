@@ -52,7 +52,9 @@ import {
   MAX_FRAME_CLAIM_LINES,
   MAX_FRAME_COMPACT_LINKS,
   MAX_FRAME_CONVOY_LINES,
+  MAX_FRAME_DIRECTORY_LINES,
   MAX_FRAME_FRONT_BANDS,
+  MAX_FRAME_PARLEY_LINES,
   MAX_RAID_LINES,
   assertLiveFrameBudgets,
   type AuthorityLine,
@@ -60,10 +62,13 @@ import {
   type ClaimLine,
   type CompactLink,
   type ConvoyLine,
+  type DirectoryLine,
   type LiveFrame,
+  type ParleyLine,
   type LivePhase,
   type RaidLine,
   type SapLine,
+  type SeasonLine,
   type VentureGlyph,
 } from './contract.js';
 
@@ -102,7 +107,13 @@ export interface LiveSource {
   readonly claimLines?: readonly ClaimLine[];
   readonly saps?: readonly SapLine[];
   readonly frontBands?: readonly FrontBand[];
+  /** ★ 41 — who is dealing, per constellation. */
+  readonly directoryLines?: readonly DirectoryLine[];
+  /** ★ 41 — letters that have declassified, newest first. */
+  readonly parleyLines?: readonly ParleyLine[];
   readonly ticker?: readonly string[];
+  /** ★ THE SEASON LINE, live — the countdown and the crews still forming. */
+  readonly season?: SeasonLine;
 }
 
 /**
@@ -202,7 +213,11 @@ export function renderLiveFrame(src: LiveSource): LiveFrame {
     claimLines: (src.claimLines ?? []).slice(0, MAX_FRAME_CLAIM_LINES),
     saps: src.saps ?? [],
     frontBands: (src.frontBands ?? []).slice(0, MAX_FRAME_FRONT_BANDS),
+    // Pass-throughs: ordered by their builders, capped here because the budget is the renderer's.
+    directoryLines: (src.directoryLines ?? []).slice(0, MAX_FRAME_DIRECTORY_LINES),
+    parleyLines: (src.parleyLines ?? []).slice(0, MAX_FRAME_PARLEY_LINES),
     ticker: (src.ticker ?? []).filter((t) => t.length <= 140),
+    season: src.season ?? null,
   };
 
   assertLiveFrameBudgets(frame);
@@ -257,7 +272,19 @@ export const LIVE_FACT_KEYS: readonly (keyof LiveSource)[] = Object.freeze([
   'claimLines',
   'saps',
   'frontBands',
+  // ── ★ 41's two, both already argued on `PUBLIC_FACT_KEYS`. ────────────────
+  //
+  // `directoryLines` is an ordering of PUBLIC facts — holdings, offers, forming ventures, standing —
+  // none of which declassifies on a clock, so publishing it per tick is a re-read. `parleyLines` is
+  // the one key here whose subject DOES have a clock (`PARTIES` → `PUBLIC` at `sent + AUDIT_LAG_TICKS`),
+  // and it is admissible for the DOSSIER THREAD's reason: it carries a letter only from the tick it
+  // declassified, and `assertLiveFrameBudgets` refuses one whose reveal is later than the frame.
+  'directoryLines',
+  'parleyLines',
   'ticker',
+  // ★ The season line. On `PUBLIC_FACT_KEYS` with its argument; its one clock-tier field — a crew's
+  // stake committed inside the commitment window — is carried as a count and never as an amount.
+  'season',
 ]);
 
 export class LiveProjectionError extends Error {}

@@ -35,6 +35,7 @@ import { HeuristicCast } from '../../src/cast/index.js';
 import { setSpeed } from '../../src/core/time.js';
 import type { PrincipalId } from '../../src/core/types.js';
 import { ELECTABLE_VENTURE_STATES, Runtime } from '../../src/sim/runtime.js';
+import { isTopYield } from '../../src/venture/index.js';
 
 /**
  * Run a heuristic world until a live grant exists whose grantor also has an electable venture with a
@@ -65,12 +66,20 @@ function worldWithAMandate(seed: string): {
         // Electable states only. A SETTLED venture is refused by `vElect` before the mandate is even
         // consulted, so picking one tests the state gate and reports it as an authority failure.
         if (!ELECTABLE_VENTURE_STATES.includes(v.state)) continue;
+        // ★ 41: not a four-role kind. Its elective half is the WHOLE consideration — 8,000 to 24,000 a
+        // role on a BUILD — against cast grant LIMITs of a few thousand, so a delegate's IN_FULL there
+        // is refused by INV-22's headroom check: the limit gate, not the draw this file is about.
+        // Measured on `delegate-states-once` once the cast began opening BUILDs: the first pairing
+        // found was a BUILD needing 17,600 of contingent headroom against 5,832.
+        if (isTopYield(v.kind)) continue;
         for (const role of v.roles) {
           const holder = role.filledByPrincipal;
           if (holder === null) continue;
           // The delegate must not hold the role itself: a creator paying its own role is booked as
           // paid in full and `vElect` refuses it (scar #9), so that pairing would test the wrong gate.
-          if (holder === grant.delegate) continue;
+          // ★ And for the same reason not the GRANTOR's own role — the cast's creator now works role 0
+          // of its own four-role venture, and electing on it is the creator paying itself.
+          if (holder === grant.delegate || holder === grant.grantor) continue;
           if (rt.electionOn(v.id, role.index) !== undefined) continue;
           return {
             rt,

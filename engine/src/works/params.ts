@@ -55,6 +55,7 @@
  * frontier is where raids aim and claims lapse.
  */
 
+import { TICKS_PER_RECKONING } from '../core/time.js';
 import { qty, type Minor, type Qty } from '../core/units.js';
 import type { GoodId, SystemId, ZoneTier } from '../core/types.js';
 import {
@@ -781,3 +782,43 @@ export const WORKS_PER_PRINCIPAL_PER_SYSTEM = 1;
  * ticks are free, whose *creation* is the decision that costs.
  */
 export const WORKS_SPINUP_TICKS = 24;
+
+/**
+ * ★ **Reckonings without an accepted action before a principal's WORKS goes DORMANT.** *(calibrate)*
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE YIELD WAS PAYING PEOPLE WHO HAD LEFT.** A system's yield is divided evenly among the WORKS
+ * standing on it (`Book.sharesAt`), and a WORKS kept dividing it whether or not anybody behind it was
+ * still playing. Measured on the live world on 2026-10-01: three QA identities that played only on
+ * day one, and one outside agent idle since tick ~3,170, still held WORKS taking **18.5% of world
+ * output (160 of 864 ore a tick)** — and on three Commons systems they halved the income of the one
+ * active player sharing each. Absence was not costing the absent anything; it was costing the people
+ * who stayed.
+ *
+ * So a principal with no ACCEPTED action for this many Reckonings is DORMANT, and its WORKS neither
+ * extracts nor counts in its system's split; the active neighbours divide the whole yield. **Nothing
+ * is confiscated** (R19, A10: absence costs opportunity, never assets) — the WORKS stands, its holder
+ * and its record are untouched, and it resumes **the tick after** the principal acts again. A15 holds:
+ * the yield still belongs to the place, so the active WORKS split exactly what the system yields and
+ * no identity count changes the total.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **Four, to agree with the seat lease** (`api/seats.ts:IDLE_SEAT_TICKS`): a played seat is recycled
+ * four Reckonings after its principal's last accepted action, and both read the SAME fact — an action
+ * that entered the queue, any verb, social ones included; a standing intent's own run is not play.
+ * Longer than the three Reckonings R19 promises are harmless, so an agent left alone for three days
+ * still returns to a WORKS that never stopped. The two constants are separate because one is a host
+ * resource and one is a world rule, and `test/works/dormant-works.spec.ts` pins that they agree.
+ */
+export const WORKS_DORMANT_AFTER_RECKONINGS = 4;
+
+/** {@link WORKS_DORMANT_AFTER_RECKONINGS} in ticks — the figure `Book.isDormant` compares. */
+export const WORKS_DORMANT_AFTER_TICKS = TICKS_PER_RECKONING * WORKS_DORMANT_AFTER_RECKONINGS;
+
+/** The sentence `agent.md` must carry, byte for byte (golden-tested). */
+export const DORMANT_STATEMENT =
+  `A WORKS only divides its system's yield while its holder plays. If ${String(WORKS_DORMANT_AFTER_RECKONINGS)} ` +
+  'Reckonings pass with no action of yours accepted — any verb, social ones included; a standing intent ' +
+  'running is not you playing — your WORKS goes DORMANT: it extracts nothing and the WORKS still working ' +
+  'there divide the whole yield. Nothing is taken from you, and it resumes the tick after your next ' +
+  'accepted action.';

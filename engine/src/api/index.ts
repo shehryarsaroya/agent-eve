@@ -67,6 +67,7 @@ export {
   IDLE_SEAT_TICKS,
   MAX_HANDLE_LENGTH,
   SeatBook,
+  seatCapacityFrom,
   UNPLAYED_SEAT_TICKS,
   type AcceptedRow,
   type Seat,

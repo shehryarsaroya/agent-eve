@@ -141,7 +141,7 @@ Asserted in the `ASSERT` phase of every tick, before `COMMIT`. **On failure: abo
 - `INV-23` No grant chain contains a cycle; no principal is transitively its own delegate; no delegate is counterparty to a deal it signs on another's behalf.
 
 ### The clock and the crowd
-- `INV-24` Σ Levy assessments equals the constellation total, exactly. The newcomer floor is applied to every eligible principal.
+- `INV-24` Σ Levy assessments equals the constellation total, exactly. The newcomer floor is applied to every eligible principal. No line of a remainder pool is assessed above the max share (`LEVY_MAX_SHARE_MULTIPLE` × the pool's even share, SPEC §5.2).
 - `INV-25` **Every principal appears in ≥1 docket row per Reckoning.** The anti-quiet invariant, and the one most likely to quietly stop being true as features are added.
 - `INV-26` Every array in every serialized structure is within its declared cap. *(Scar #3: unbounded arrays became an OOM/disk DoS.)*
 

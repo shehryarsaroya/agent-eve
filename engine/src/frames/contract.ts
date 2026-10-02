@@ -37,11 +37,13 @@ import type {
   ConstellationId,
   SystemId,
   VentureId,
+  VentureKind,
   VentureState,
   ZoneTier,
 } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
 import { TICKS_PER_RECKONING } from '../core/time.js';
+import { MAX_GROWN_CONSTELLATIONS, MAX_MAP_SYSTEMS } from '../world/growth.js';
 
 /** §17: labels rendered per frame. The legible maximum. */
 export const MAX_LABELS_PER_FRAME = 7;
@@ -129,11 +131,15 @@ export const MAX_FRAME_COVER_CHAINS = 4;
  * Every other line budget picks the readable members of a set larger than a viewer can follow.
  * A border cannot be sampled: drop one system and the fence has a hole in it, and a hole reads as
  * *"nobody reaches here"* — which is a specific, false, and load-bearing claim, since bare ground is
- * exactly where §16.12 #1 says a small holder can live. So this is a **ceiling on the map**, checked
- * against `LAUNCH_SYSTEM_BOUNDS.max`, and the day the region grows past it the assertion fires and
- * the renderer's aggregation gets designed rather than discovered.
+ * exactly where §16.12 #1 says a small holder can live. So this is a **ceiling on the map**.
+ *
+ * ⚑ **IT WAS 32, "CHECKED AGAINST `LAUNCH_SYSTEM_BOUNDS.max`", AND THE DAY THE REGION GREW IS HERE.**
+ * Its own note said the assertion would fire when growth arrived and the aggregation would get
+ * designed then. The design is that there is nothing to aggregate: one line per non-COMMONS system is
+ * already the whole fence, so the ceiling is the map's own (`world/growth.ts:MAX_MAP_SYSTEMS`), and a
+ * map can never hold a system this budget cannot draw.
  */
-export const MAX_FRAME_SWAY_LINES = 32;
+export const MAX_FRAME_SWAY_LINES = MAX_MAP_SYSTEMS;
 
 /**
  * Formation bars one battle line may carry. Both sides, both caps.
@@ -939,6 +945,47 @@ export const MAX_FRAME_CONVOY_LINES = 16;
 export const MAX_FRAME_COMPACT_LINKS = 12;
 
 /**
+ * ★ **THE RISE** — growth's pixel signature (SPEC §4.2, A13).
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE SIGNATURE, NAMED.** A claim **tints** a system · THE PINCH narrows a lane · THE LODE sizes a
+ * node · THE VERGE fences a bloc. **THE RISE lights a new constellation at the rim**: its systems drawn
+ * with a halo on the Reckoning it opened, joined to the map by the one lane THE PINCH already draws as a
+ * door — and a meter on the rim, `qualified` against `needed`, so a viewer can watch the next one
+ * coming. A14's sentence about the Levy applies: the night a constellation opens is scheduled, and the
+ * count that schedules it is on screen every night before it.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * `PUBLIC`, every field. The systems and the gate are geography already on this frame's `map`; the
+ * ticks are the `constellation.opened` row's own; and `qualified` is a **count** over three gated
+ * quantities that names nobody and no figure — the same count `observe` puts on every agent's
+ * `header.growth`, which is what A9 asks for. `assertFrameBudgets` checks every system named here
+ * against the frame's own `map`, because a halo drawn around a system the map cannot place is a hole.
+ */
+export interface FrameGrowth {
+  /** `world/growth.ts:GROWTH_STATEMENT`, verbatim. */
+  readonly rule: string;
+  readonly qualified: number;
+  readonly needed: number;
+  readonly systems: number;
+  readonly constellations: number;
+  readonly grown: number;
+  /** The next settlement tick, when the gate is read again. */
+  readonly nextCheckTick: number;
+  /** Every constellation growth has opened, oldest first. Bounded by `MAX_GROWN_CONSTELLATIONS`. */
+  readonly opened: readonly FrameGrownConstellation[];
+}
+
+export interface FrameGrownConstellation {
+  readonly constellation: ConstellationId;
+  readonly openedAtTick: number;
+  readonly openedAtReckoning: number;
+  /** `[anchor, landing]` — the STRAIT's end on the old map, then its end in the new constellation. */
+  readonly gate: readonly [SystemId, SystemId];
+  readonly systems: readonly SystemId[];
+}
+
+/**
  * ★ **THE VERGE** — the projection signature (A13, §16.12 #1).
  *
  * ══════════════════════════════════════════════════════════════════════════
@@ -1136,6 +1183,15 @@ export interface WorksLine {
   /** Live WORKS standing there. The crowding, which is the economic story. */
   readonly occupants: number;
   /**
+   * ★ The WORKS actually **dividing** the yield this tick — online and not DORMANT (`RULES_VERSION` 41).
+   *
+   * `occupants` counts structures standing; this counts the ones sharing. The gap is a WORKS whose
+   * holder has stopped playing, and on the live world it was 18.5% of all output paid to nobody. The
+   * identity a reader can check is now `sharePerTick + rentPerTick === trunc(yieldPerTick /
+   * extractors)` for an EXTRACTING line (largest remainder may hand one line a unit more).
+   */
+  readonly extractors: number;
+  /**
    * What this WORKS's holder **keeps** per tick at today's crowding: the share less the rent.
    *
    * ══════════════════════════════════════════════════════════════════════════
@@ -1151,8 +1207,23 @@ export interface WorksLine {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly sharePerTick: number;
-  /** `EXTRACTING` · `SPINNING UP 6 ticks` — the two words a viewer reads. */
+  /**
+   * `EXTRACTING` · `SPINNING UP 6 ticks` · `DORMANT` · `CROWDED OUT` — the words a viewer reads.
+   * `DORMANT` is a WORKS whose holder has stopped playing (`RULES_VERSION` 41), which neither extracts
+   * nor divides. `CROWDED OUT` is an online, dividing WORKS whose share of the system truncates to
+   * nothing because too many stand there, which at a few thousand principals is a real and common
+   * state rather than an edge case.
+   */
   readonly legend: string;
+  /**
+   * ★ The tick this WORKS stopped dividing its system's yield because its holder stopped playing, or
+   * null while it is not DORMANT (`RULES_VERSION` 41, `works/params.ts:WORKS_DORMANT_AFTER_TICKS`).
+   *
+   * `PUBLIC`, and `frames/projection.ts` argues it: the split is public arithmetic, and a neighbour can
+   * read this exact tick off its own extraction the moment its share rises. Nothing about the holder
+   * is lost while it shows — the WORKS stands, and it resumes the tick after its holder acts again.
+   */
+  readonly dormantSinceTick: number | null;
   /** Cumulative units the place has HANDED OVER to this WORKS, GROSS. Never a stock reading. */
   readonly extracted: number;
   /** The rate the claim on this system takes, in bps. Zero on unclaimed ground. */
@@ -1486,6 +1557,121 @@ export interface ReceiptLine {
  * A settled Reckoning, rendered. Immutable once written — a settled tick never
  * changes — which is why nginx may cache frame JSON as `immutable`.
  */
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ THE SEASON — the FINALE countdown, the grand venture, and the season's champions (A13)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** At most this many grand candidates on a frame, largest public stake first. */
+export const MAX_FRAME_GRAND_CANDIDATES = 6;
+/** At most this many closed seasons on a frame, newest first. */
+export const MAX_FRAME_SEASONS = 8;
+
+/** One crew slot on a grand candidate card. */
+export interface GrandSlotCard {
+  readonly label: string;
+  /** The slot's share of the yield, in bps. */
+  readonly shareBps: number;
+  readonly holder: PrincipalId | null;
+  readonly holderHandle: string | null;
+}
+
+/**
+ * ★ **THE GRAND CANDIDATE** — one crew contesting the season's grand venture.
+ *
+ * `PUBLIC`, every field: a venture's creator, its role-holders and its formation are `PUBLIC` rows
+ * (`venture.formed`, the fills), and `formedBy` is the actor column of that same row. `staked` is
+ * the PUBLIC part of the crew's stake only — fills committed inside the FINALE's commitment window
+ * are PARTIES-visible until settlement (§5.1) and appear here as a count, `sealedFills`, never as an
+ * amount. The same builder serves an agent's `header.season`, so this line is a strict subset of
+ * what every agent reads (A9).
+ */
+export interface GrandCandidateCard {
+  readonly venture: VentureId;
+  readonly creator: PrincipalId;
+  readonly creatorHandle: string;
+  /** The delegate that formed it in the creator's name under a grant (A6), or null. */
+  readonly formedBy: PrincipalId | null;
+  readonly formedByHandle: string | null;
+  readonly state: string;
+  readonly rolesFilled: number;
+  readonly rolesTotal: number;
+  readonly staked: Minor;
+  readonly sealedFills: number;
+  readonly slots: readonly GrandSlotCard[];
+}
+
+/**
+ * ★ **THE SEASON LINE** — where the world is in its season, and the season's exam question.
+ *
+ * The pixel signature (A13): a **FINALE countdown** in the chrome bar (`reckoningsLeft`), the grand
+ * venture's **crown on its stage** from the season's first tick (`grand.stage`), and during the
+ * FINALE each crew as a candidate card with its sockets filling and its stake rising. Every figure is
+ * a published constant, a pure function of the tick, or a `PUBLIC` venture fact.
+ */
+export interface SeasonLine {
+  readonly season: number;
+  /** Which Reckoning of the season, 1-based. */
+  readonly reckoning: number;
+  readonly of: number;
+  /** Reckonings still to settle, counting this one: 1 means tonight is the FINALE. */
+  readonly reckoningsLeft: number;
+  readonly finaleTick: number;
+  readonly inFinale: boolean;
+  readonly grand: {
+    readonly stage: SystemId | null;
+    readonly stageName: string | null;
+    readonly kind: string;
+    readonly baseYield: Minor;
+    readonly opensTick: number;
+    readonly closesTick: number;
+    readonly stakePerRole: Minor;
+    readonly openNow: boolean;
+    readonly candidates: readonly GrandCandidateCard[];
+    /** The candidate that carries the yield, once the delivery tick has decided it. */
+    readonly winner: VentureId | null;
+  };
+}
+
+/** One crew member's line on a closed season's record. */
+export interface SeasonCrewLine {
+  readonly label: string;
+  readonly principal: PrincipalId;
+  readonly handle: string;
+  readonly due: Minor;
+  readonly paid: Minor;
+  /** The delegate that stated the election on this share, or null when the creator did. */
+  readonly electedBy: PrincipalId | null;
+  readonly electedByHandle: string | null;
+}
+
+/**
+ * ★ **THE SEASON RECORD** — a closed season's FINALE and its champions. The Hall of Fame, by season.
+ *
+ * `PUBLIC`: read off the `season.closed` row, which is `PUBLIC` at birth, and every figure on it is
+ * a settled venture's payout, a public standing vector's difference, or a claim the season ended. Kept
+ * forever on the record; a frame carries the newest {@link MAX_FRAME_SEASONS}.
+ */
+export interface SeasonRecordLine {
+  readonly season: number;
+  readonly finaleTick: number;
+  readonly stage: SystemId | null;
+  /** `KEPT · BROKEN · UNCLAIMED · OUTSTANDING`. */
+  readonly outcome: string;
+  readonly venture: VentureId | null;
+  readonly creator: PrincipalId | null;
+  readonly creatorHandle: string | null;
+  readonly formedBy: PrincipalId | null;
+  readonly formedByHandle: string | null;
+  readonly proceeds: Minor;
+  readonly crew: readonly SeasonCrewLine[];
+  /** The season's titles — the Hall of Fame's four rules over the season's own play. */
+  readonly titles: readonly HallOfFameRow[];
+  /** How many Frontier claims the boundary ended (`SEASON_ENDED`). */
+  readonly seasonEndedClaims: number;
+  /** One line a stranger reads. ≤140 characters. */
+  readonly legend: string;
+}
+
 export interface ReckoningFrame {
   readonly reckoningIndex: number;
   readonly tick: number;
@@ -1558,15 +1744,171 @@ export interface ReckoningFrame {
   readonly map: readonly MapSystem[];
   /** ★ §16.12 #1's signature: **THE VERGE** — where each bloc's force stops, which is a border. */
   readonly swayLines: readonly SwayLine[];
+  /** ★ §4.2's signature: **THE RISE** — the constellations growth opened, and the meter toward the next. */
+  readonly growth: FrameGrowth | null;
   /** ★ A13's sixth named example: **THE CONVOY LINE** — the map's motion, without its manifest. */
   readonly convoyLines: readonly ConvoyLine[];
   /** ★ A13's second and third: **THE COMPACT LINK**, and the snap that scars both ends of it. */
   readonly compactLinks: readonly CompactLink[];
   readonly glyphs: readonly VentureGlyph[];
+  /** ★ **THE DEALING MARK** (41): who is dealing in each constellation, at its holding. */
+  readonly directoryLines: readonly DirectoryLine[];
+  /** ★ **THE PARLEY THREAD** (41): letters that declassified this Reckoning, sender to recipient. */
+  readonly parleyLines: readonly ParleyLine[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
   /** Tomorrow's docket, as the closing card. */
   readonly nextDocket: readonly DocketCard[];
+  /** ★ The season, its FINALE countdown and its grand venture (SPEC §5, §7.6, A13). */
+  readonly season: SeasonLine | null;
+  /** ★ Closed seasons, newest first — each FINALE and its champions (A10, §16 *Remembered*). */
+  readonly seasonRecords: readonly SeasonRecordLine[];
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ THE DEALING MARK and THE PARLEY THREAD (`RULES_VERSION` 41)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Directory rows a frame carries, across every constellation. Budgeted like every other line set. */
+export const MAX_FRAME_DIRECTORY_LINES = 16;
+/** Of which at most this many from any one constellation, so one busy stage cannot fill the panel. */
+export const MAX_FRAME_DIRECTORY_PER_CONSTELLATION = 4;
+/** Declassified parleys a frame carries. */
+export const MAX_FRAME_PARLEY_LINES = 12;
+/** Characters of a parley's text a thread carries. The ticker's own bound. */
+export const MAX_FRAME_PARLEY_EXCERPT = 140;
+
+/**
+ * ★ **THE DEALING MARK** — one principal that is dealing, drawn at its holding (A13).
+ *
+ * `say/directory.ts` builds it, the same builder `observe` publishes `ventures.directory` from, so a
+ * viewer and an agent can never be shown two different lists of who is dealing (A9 by construction).
+ * The pixel: a lit mark on the holding, with the offer's first words or the roles it is still
+ * recruiting for, and the record beside it — so a stranger reads *"vex wants three hands for a
+ * BUILD, and has kept its word to five counterparties"* off the map without opening a table.
+ *
+ * Every field is `PUBLIC` (`projection.ts` argues each one). What it may never carry — stores,
+ * escrow, cargo, hands, private words, a score — is refused by name in {@link assertFrameBudgets}.
+ */
+export interface DirectoryLine {
+  readonly principal: PrincipalId;
+  readonly constellation: string;
+  /** Where its HOLDING stands. */
+  readonly at: SystemId;
+  /** Its fresh offer, verbatim (already ≤140 chars by `publish_offer`), or null. */
+  readonly offering: string | null;
+  readonly offeredTick: number | null;
+  /** Forming ventures it is recruiting for: kind, how many roles are still open, of how many. */
+  readonly seeking: readonly {
+    readonly venture: VentureId;
+    readonly kind: VentureKind;
+    readonly open: number;
+    readonly roles: number;
+  }[];
+  /** Live roles held and live ventures run. */
+  readonly liveRoles: number;
+  /** The record beside the mark — §6.4's vectors, never a score. */
+  readonly kept: number;
+  readonly broke: number;
+  readonly counterparties: number;
+}
+
+/**
+ * ★ **THE PARLEY THREAD** — one letter between two principals, drawn from the tick it declassified.
+ *
+ * A thin dotted arc from the sender's holding to the recipient's, in the shape A13 already gave the
+ * DOSSIER THREAD and for the same reason: it is drawn **only from `revealsAtTick`**, the tick every
+ * agent and every viewer read the letter together, so it is a re-read of a `PUBLIC` fact and never an
+ * early disclosure. The text is the sender's own words and §11.2 publishes them (*"its text does
+ * publish"*); the thread carries the first {@link MAX_FRAME_PARLEY_EXCERPT} characters, which is what
+ * §14's receipt reel will quote back beside what the sender actually did.
+ */
+export interface ParleyLine {
+  readonly from: PrincipalId;
+  readonly to: PrincipalId;
+  /** The two holdings, or null for a principal no longer seated. */
+  readonly fromAt: SystemId | null;
+  readonly toAt: SystemId | null;
+  readonly act: string;
+  /** The situation that made the address legal — a reach rung. */
+  readonly why: string;
+  readonly sentTick: number;
+  readonly publishedTick: number;
+  /** True when this letter ANSWERED one (§4 of `say/parley.ts`). Drawn as the return stroke. */
+  readonly answering: boolean;
+  readonly excerpt: string;
+}
+
+/**
+ * The two contact line sets' budgets plus their refusals, with the one clause only a frame can check:
+ * a thread drawn on a frame whose tick is earlier than the letter's reveal would be the disclosure
+ * arriving early — A9 inverted, the `roleTags` shape — so the frame's own tick is the bound.
+ */
+function contactBudgetProblems(
+  frameTick: number,
+  directory: readonly DirectoryLine[],
+  parleys: readonly ParleyLine[],
+): readonly string[] {
+  const problems: string[] = [...contactProblems(directory, parleys)];
+  if (directory.length > MAX_FRAME_DIRECTORY_LINES) {
+    problems.push(`${String(directory.length)} directory lines, budget is ${String(MAX_FRAME_DIRECTORY_LINES)}`);
+  }
+  if (parleys.length > MAX_FRAME_PARLEY_LINES) {
+    problems.push(`${String(parleys.length)} parley threads, budget is ${String(MAX_FRAME_PARLEY_LINES)}`);
+  }
+  for (const line of parleys) {
+    if (line.publishedTick > frameTick) {
+      problems.push(
+        `parley thread ${line.from}→${line.to} publishes at ${String(line.publishedTick)} on a frame of tick ` +
+          `${String(frameTick)}: a letter is PARTIES until it declassifies, and drawing it earlier puts it in front ` +
+          'of a viewer before a non-party agent can read it (A9)',
+      );
+    }
+  }
+  return problems;
+}
+
+/** ★ The DEALING MARK's and the PARLEY THREAD's refusals, shared by both frames. */
+function contactProblems(directory: readonly DirectoryLine[], parleys: readonly ParleyLine[]): readonly string[] {
+  const problems: string[] = [];
+  for (const line of directory) {
+    for (const key of Object.keys(line)) {
+      if (/stores|escrow|balance|cargo|manifest|held|stock|reserve|hand|goods|score|reach|parley|message/i.test(key)) {
+        problems.push(
+          `directory line ${line.principal} carries "${key}". A dealing mark publishes who is dealing, what it ` +
+            'offers or seeks and its public record — never its stores or hands (SENSED), never a reader-specific ' +
+            'reach (that is the agent\'s own `observe`), never a score (§3)',
+        );
+      }
+    }
+    if (line.offering === null && line.seeking.length === 0 && line.liveRoles === 0) {
+      problems.push(`directory line ${line.principal} is listed with nothing to list; a mark asserts dealing`);
+    }
+    if (line.offering !== null && line.offering.length > 140) {
+      problems.push(`directory line ${line.principal} carries an offer over 140 characters`);
+    }
+  }
+  const perConstellation = new Map<string, number>();
+  for (const line of directory) {
+    perConstellation.set(line.constellation, (perConstellation.get(line.constellation) ?? 0) + 1);
+  }
+  for (const [constellation, n] of perConstellation) {
+    if (n > MAX_FRAME_DIRECTORY_PER_CONSTELLATION) {
+      problems.push(
+        `${String(n)} directory lines in ${constellation}, budget is ${String(MAX_FRAME_DIRECTORY_PER_CONSTELLATION)}`,
+      );
+    }
+  }
+  for (const line of parleys) {
+    if (line.publishedTick < line.sentTick) {
+      problems.push(`parley thread ${line.from}→${line.to} publishes before it was sent`);
+    }
+    if (line.excerpt.length > MAX_FRAME_PARLEY_EXCERPT) {
+      problems.push(`parley thread ${line.from}→${line.to} carries ${String(line.excerpt.length)} characters`);
+    }
+    if (line.from === line.to) problems.push(`parley thread ${line.from} is addressed to itself`);
+  }
+  return problems;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1781,8 +2123,14 @@ export interface LiveFrame {
   readonly saps: readonly SapLine[];
   /** ★ THE FRONT BAND — the cone, before landfall. */
   readonly frontBands: readonly FrontBand[];
+  /** ★ THE DEALING MARK, live: who is offering or recruiting right now, and their record. */
+  readonly directoryLines: readonly DirectoryLine[];
+  /** ★ THE PARLEY THREAD, drawn on the tick each letter declassifies and never before. */
+  readonly parleyLines: readonly ParleyLine[];
   /** The export surface, 140-char bounded, exactly as on the Reckoning frame. */
   readonly ticker: readonly string[];
+  /** ★ THE SEASON LINE, live: the FINALE countdown and the crews still forming. */
+  readonly season: SeasonLine | null;
 }
 
 export class FrameBudgetError extends Error {}
@@ -1862,6 +2210,55 @@ function compactProblems(links: readonly CompactLink[]): readonly string[] {
  * `test/frames/live.spec.ts` proves the key set is contained in `PUBLIC_FACT_KEYS`. A guard that
  * could not fail would be worse than no guard — see the mutation cases in that file.
  */
+/**
+ * ★ The season line's refusals, shared by both frames.
+ *
+ * The countdown must be a countdown (`1 ≤ reckoningsLeft ≤ of`), the candidate list is bounded, and
+ * no candidate card may carry a sealed stake as an amount — a crew's late stake is PARTIES-visible
+ * until settlement (§5.1), so the only honest public figure for it is a count.
+ */
+export function seasonProblems(line: SeasonLine | null, records: readonly SeasonRecordLine[]): readonly string[] {
+  const problems: string[] = [];
+  if (line !== null) {
+    if (line.season < 1) problems.push(`season ${String(line.season)} is not a season`);
+    if (line.reckoningsLeft < 1 || line.reckoningsLeft > line.of) {
+      problems.push(`reckoningsLeft ${String(line.reckoningsLeft)} is outside 1..${String(line.of)}`);
+    }
+    if (line.reckoning + line.reckoningsLeft !== line.of + 1) {
+      problems.push(`Reckoning ${String(line.reckoning)} with ${String(line.reckoningsLeft)} left does not add to ${String(line.of)}`);
+    }
+    if (line.inFinale !== (line.reckoningsLeft === 1)) problems.push('inFinale must be exactly reckoningsLeft === 1');
+    if (line.grand.candidates.length > MAX_FRAME_GRAND_CANDIDATES) {
+      problems.push(`${String(line.grand.candidates.length)} grand candidates exceed ${String(MAX_FRAME_GRAND_CANDIDATES)}`);
+    }
+    for (const c of line.grand.candidates) {
+      for (const key of Object.keys(c)) {
+        if (/sealed(Stake|Minor|Amount)|yourCrew/i.test(key)) {
+          problems.push(`grand candidate ${c.venture} carries "${key}": a sealed stake is PARTIES until settlement (§5.1)`);
+        }
+      }
+      if (c.rolesFilled > c.rolesTotal) problems.push(`grand candidate ${c.venture} has more roles filled than it has`);
+    }
+  }
+  if (records.length > MAX_FRAME_SEASONS) {
+    problems.push(`${String(records.length)} season records exceed ${String(MAX_FRAME_SEASONS)}`);
+  }
+  for (const [i, r] of records.entries()) {
+    const prev = records[i - 1];
+    if (prev !== undefined && r.season >= prev.season) problems.push('season records must run newest first');
+    if (r.legend.length === 0 || r.legend.length > 140) problems.push(`season ${String(r.season)}'s legend is not one ticker line`);
+    if (!['KEPT', 'BROKEN', 'UNCLAIMED', 'OUTSTANDING'].includes(r.outcome)) {
+      problems.push(`season ${String(r.season)} has an unknown outcome ${r.outcome}`);
+    }
+    // KEPT means every share was paid, and BROKEN means one was not. The record may never say
+    // otherwise of a real agent (A5′).
+    const unpaid = r.crew.filter((c) => c.paid < c.due).length;
+    if (r.outcome === 'KEPT' && unpaid > 0) problems.push(`season ${String(r.season)} reads KEPT with ${String(unpaid)} unpaid share(s)`);
+    if (r.outcome === 'BROKEN' && unpaid === 0) problems.push(`season ${String(r.season)} reads BROKEN with every share paid`);
+  }
+  return problems;
+}
+
 export function assertLiveFrameBudgets(frame: LiveFrame): void {
   const problems: string[] = [];
 
@@ -1910,6 +2307,7 @@ export function assertLiveFrameBudgets(frame: LiveFrame): void {
   }
 
   problems.push(...convoyProblems(frame.convoyLines), ...compactProblems(frame.compactLinks));
+  problems.push(...contactBudgetProblems(frame.tick, frame.directoryLines, frame.parleyLines));
 
   if (frame.ticksUntilReckoning < 1 || frame.ticksUntilReckoning > TICKS_PER_RECKONING) {
     problems.push(
@@ -1917,6 +2315,8 @@ export function assertLiveFrameBudgets(frame: LiveFrame): void {
         `1..${TICKS_PER_RECKONING}`,
     );
   }
+  // `?? null` so a frame written by an older build, with no season at all, still validates.
+  problems.push(...seasonProblems(frame.season ?? null, []));
 
   if (problems.length > 0) {
     throw new FrameBudgetError(
@@ -2243,6 +2643,25 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     if (line.occupants < 1) {
       problems.push(`${line.works} is drawn on ${line.system} with ${line.occupants} occupants`);
     }
+    // ── ★ DORMANT MUST AGREE WITH ITS OWN FIELDS (`RULES_VERSION` 41) ───────────────
+    //
+    // A DORMANT line extracts nothing, which the `!extracting` checks already refuse a share, a rent and a
+    // fuel figure for; these refuse the two ways the new fields could contradict the legend or the
+    // crowding — a dormant tick on a working WORKS, or more WORKS sharing than are standing.
+    const dormant = line.legend === 'DORMANT';
+    if (dormant !== (line.dormantSinceTick !== null)) {
+      problems.push(
+        `${line.works} reads "${line.legend}" with dormantSinceTick ${String(line.dormantSinceTick)} — the legend and the tick disagree`,
+      );
+    }
+    if (line.extractors < 0 || line.extractors > line.occupants) {
+      problems.push(
+        `${line.works} reports ${String(line.extractors)} extractors among ${String(line.occupants)} occupants`,
+      );
+    }
+    if (extracting && line.extractors < 1) {
+      problems.push(`${line.works} reads EXTRACTING at a system where nothing is dividing the yield`);
+    }
     // ── THE RENT SPLIT MUST ADD UP, ON SCREEN ────────────────────────────────
     //
     // `sharePerTick` is what the resident keeps and `rentPerTick` is what the landlord takes, so
@@ -2567,6 +2986,27 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     }
   }
 
+  // ── ★ THE RISE: EVERY HALO IS AROUND A SYSTEM THIS FRAME CAN PLACE ─────────
+  if (frame.growth !== null) {
+    const g = frame.growth;
+    if (g.opened.length > MAX_GROWN_CONSTELLATIONS) {
+      problems.push(`${String(g.opened.length)} grown constellations, ceiling is ${String(MAX_GROWN_CONSTELLATIONS)}`);
+    }
+    if (g.opened.length !== g.grown) {
+      problems.push(`the growth block says ${String(g.grown)} grown and lists ${String(g.opened.length)}`);
+    }
+    if (g.qualified < 0 || g.needed < 0 || g.systems < 1) {
+      problems.push(`the growth meter reads ${String(g.qualified)} of ${String(g.needed)} over ${String(g.systems)} systems`);
+    }
+    for (const c of g.opened) {
+      for (const id of [...c.systems, ...c.gate]) {
+        if (frame.map.length > 0 && !mapById.has(id)) {
+          problems.push(`grown constellation ${c.constellation} names ${id}, which is not on this frame's map`);
+        }
+      }
+    }
+  }
+
   // ── ★ THE VERGE: A FENCE WITH NO HOLES IN IT ─────────────────────────────
   //
   // The budget is a ceiling on the map rather than a selection (see `MAX_FRAME_SWAY_LINES`), and
@@ -2636,6 +3076,7 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     );
   }
   problems.push(...convoyProblems(frame.convoyLines), ...compactProblems(frame.compactLinks));
+  problems.push(...contactBudgetProblems(frame.tick, frame.directoryLines, frame.parleyLines));
 
   // ── ★ §14'S STRIP MUST BE ASSEMBLABLE FROM THE FRAME ALONE ────────────────
   //
@@ -2682,6 +3123,12 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
         problems.push(`convoy ${line.hand} names ${at}, which is not on this frame's map`);
       }
     }
+  }
+  // ★ The season: the countdown, the candidate cards, and the champions' record (A13, A5′).
+  problems.push(...seasonProblems(frame.season ?? null, frame.seasonRecords ?? []));
+  const grandStage = frame.season?.grand.stage ?? null;
+  if (grandStage !== null && frame.map.length > 0 && !mapById.has(grandStage)) {
+    problems.push(`the grand venture is staged at ${grandStage}, which is not on this frame's map`);
   }
 
   if (problems.length > 0) {

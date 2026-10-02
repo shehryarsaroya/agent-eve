@@ -48,6 +48,7 @@ export {
   tierOf,
   transitTicks,
   type Constellation,
+  type GrownConstellation,
   type Lane,
   type LaneKey,
   type LaneKind,
@@ -55,6 +56,27 @@ export {
   type Route,
   type WorldMap,
 } from './map.js';
+
+export {
+  anchorSafeSystems,
+  assertGrowthStructure,
+  describeReading,
+  GROWTH_CAPITAL_MINOR,
+  GROWTH_PLAN,
+  GROWTH_QUALIFIED_PER_SYSTEM,
+  GROWTH_STATEMENT,
+  GROWTH_SUMMARY,
+  GrowthError,
+  growthName,
+  growthReading,
+  isQualified,
+  MAX_GROWN_CONSTELLATIONS,
+  MAX_MAP_SYSTEMS,
+  openConstellation,
+  regrowMap,
+  type GrowthPort,
+  type GrowthReading,
+} from './growth.js';
 
 export {
   ARRIVAL_IS_PRESENT_SAME_TICK,

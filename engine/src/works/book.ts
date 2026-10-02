@@ -29,7 +29,7 @@ import {
   SnapshotError,
   type StateTable,
 } from '../tick/snapshot.js';
-import { WORKS_PER_PRINCIPAL_PER_SYSTEM, WORKS_SPINUP_TICKS } from './params.js';
+import { WORKS_DORMANT_AFTER_TICKS, WORKS_PER_PRINCIPAL_PER_SYSTEM, WORKS_SPINUP_TICKS } from './params.js';
 
 /** A WORKS id is content-derived from its place and the tick it was raised. */
 export type WorksId = string & { readonly __brand: 'WorksId' };
@@ -144,6 +144,30 @@ export class Book {
    * would keep the rent flowing on fuel that was burned for a different cycle.
    */
   private readonly hot = new Map<SystemId, number>();
+  /**
+   * ★ **The last tick an action of this principal's was ACCEPTED** — for every principal that has
+   * ever raised a WORKS here, and nobody else (`RULES_VERSION` 41).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE FACT THE DORMANT RULE READS, AND WHY IT LIVES IN THE WORLD AND NOT IN THE SEAT BOOK.** The
+   * seat lease (`api/seats.ts`) reads the same fact, but a seat is a host resource rebuilt at boot and
+   * read by nothing a tick does. A rule that decides how many goods enter the world must be a pure
+   * function of state the tick can see, captured in `state_hash`, and reproduced by replay — so the
+   * runtime folds the frozen window's queued actions in here once a tick (`Runtime.produceNow`),
+   * AFTER extraction, which is what makes a returning principal's WORKS resume **the tick after** it
+   * acts rather than the same tick: production at T reads the world as the window froze it.
+   *
+   * "Accepted" means what `POST /act` means by it: an action that entered the queue, any verb, social
+   * ones included, applied or refused when it resolved. A standing intent's own run never enters the
+   * queue, so it is not play — an order left running for a season must not keep a WORKS dividing a
+   * yield on behalf of nobody. A delegate's act is the delegate's play, not its grantor's, which is
+   * the seat lease's rule too.
+   *
+   * Bounded by the principals that ever raised a WORKS (INV-26): `raise` is the only door in, and a
+   * principal that never built has nothing for the rule to apply to.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private readonly played = new Map<PrincipalId, number>();
 
   /** Live WORKS at a system, canonical order. The order the share split depends on. */
   liveAt(system: SystemId): readonly WorksRecord[] {
@@ -228,6 +252,53 @@ export class Book {
     return this.liveAt(system).filter((w) => w.holder === holder).length;
   }
 
+  // ── ★ DORMANT (`RULES_VERSION` 41) ─────────────────────────────────────────
+
+  /**
+   * Record that an action of `principal`'s was accepted and resolved in `tick`. Monotone: an older
+   * tick never rewinds it. A principal that has never raised a WORKS is ignored — see {@link played}.
+   */
+  notePlayed(principal: PrincipalId, tick: number): void {
+    const last = this.played.get(principal);
+    if (last === undefined) return;
+    if (tick > last) this.played.set(principal, tick);
+  }
+
+  /** The last tick an action of this principal's was accepted, or null if it has never held a WORKS. */
+  lastPlayedTick(holder: PrincipalId): number | null {
+    return this.played.get(holder) ?? null;
+  }
+
+  /**
+   * The first tick at which this holder's WORKS is (or will be) DORMANT if it sends nothing more:
+   * {@link WORKS_DORMANT_AFTER_TICKS} after its last accepted action. Null if it has no record.
+   */
+  dormantFromTick(holder: PrincipalId): number | null {
+    const last = this.played.get(holder);
+    return last === undefined ? null : last + WORKS_DORMANT_AFTER_TICKS;
+  }
+
+  /**
+   * ★ **Is this holder DORMANT at `tick`?** No accepted action for a whole
+   * {@link WORKS_DORMANT_AFTER_TICKS} — the same predicate the seat lease applies.
+   *
+   * No record means NOT dormant, and that is the conservative reading rather than a gap: a holder
+   * with no row is one this book has never seen act (a fixture, or a capture written before the rule
+   * existed), and a rule that withholds goods must not read an absence of evidence as an absence.
+   */
+  isDormant(holder: PrincipalId, tick: number): boolean {
+    const last = this.played.get(holder);
+    return last !== undefined && tick - last >= WORKS_DORMANT_AFTER_TICKS;
+  }
+
+  /**
+   * WORKS at a system that are **actually dividing its yield** at `tick`: online and not DORMANT. What
+   * {@link sharesOf} divides by, published so a frame line can state its divisor.
+   */
+  extractorsAt(system: SystemId, tick: number): number {
+    return this.liveAt(system).filter((w) => tick >= w.onlineAtTick && !this.isDormant(w.holder, tick)).length;
+  }
+
   atCapacity(holder: PrincipalId, system: SystemId): boolean {
     return this.holdsAt(holder, system) >= WORKS_PER_PRINCIPAL_PER_SYSTEM;
   }
@@ -239,6 +310,10 @@ export class Book {
   }): WorksRecord {
     const id = worksId(args.system, args.tick, args.holder);
     if (this.rows.has(id)) throw new WorksError(`${id} already exists`);
+    // ★ Raising a WORKS is itself an accepted action of its holder's, so it opens the holder's row in
+    // the dormant clock (`RULES_VERSION` 41). The one door into {@link played}.
+    const last = this.played.get(args.holder);
+    if (last === undefined || args.tick > last) this.played.set(args.holder, args.tick);
     const row: WorksRecord = {
       id,
       system: args.system,
@@ -420,8 +495,12 @@ export class Book {
    * The set that actually pays rent, so the frame's `tenants` and the rent it prints beside it
    * can never disagree about who is in it (A13: a mark that contradicts its own numbers).
    */
-  tenantsAt(system: SystemId, claimant: PrincipalId): number {
-    return this.liveAt(system).filter((w) => w.holder !== claimant).length;
+  tenantsAt(system: SystemId, claimant: PrincipalId, tick?: number): number {
+    // ★ A DORMANT tenant pays no rent, because it extracts nothing (`RULES_VERSION` 41) — so it is not
+    // in the set this count promises to match. Without a tick the question is about standing WORKS.
+    return this.liveAt(system).filter(
+      (w) => w.holder !== claimant && (tick === undefined || !this.isDormant(w.holder, tick)),
+    ).length;
   }
 
   /**
@@ -453,9 +532,17 @@ export class Book {
     return this.sharesOf(system, fuelPerTick, tick);
   }
 
-  /** Divide any total across the ONLINE WORKS at a system, summing to it exactly. */
+  /**
+   * Divide any total across the ONLINE WORKS at a system, summing to it exactly.
+   *
+   * ★ **And not across a DORMANT holder's** (`RULES_VERSION` 41). A WORKS whose holder has had no action
+   * accepted for {@link WORKS_DORMANT_AFTER_TICKS} takes no share and does not dilute the others — the
+   * spin-up rule's own argument (*"it is not yet extracting, so counting it would let a principal
+   * suppress a rival's output"*) applied to a WORKS that has stopped. Σ shares still equals the total
+   * whenever anybody here is extracting, so INV-W1's cap and A15's map-bounded output are untouched.
+   */
   sharesOf(system: SystemId, total: Qty, tick: number): ReadonlyMap<WorksId, Qty> {
-    const online = this.liveAt(system).filter((w) => tick >= w.onlineAtTick);
+    const online = this.liveAt(system).filter((w) => tick >= w.onlineAtTick && !this.isDormant(w.holder, tick));
     const out = new Map<WorksId, Qty>();
     if (online.length === 0 || total <= 0) return out;
     // Equal weights: a WORKS is a WORKS. Weighting by anything a principal controls would
@@ -538,6 +625,11 @@ export class Book {
       hot: [...this.hot.entries()]
         .sort((a, b) => compareIds(a[0], b[0]))
         .map(([system, reckoning]) => ({ system, reckoning })),
+      // ★ Inside the hash (`RULES_VERSION` 41): two worlds that disagree about when a holder last acted
+      // disagree about whether its WORKS divides the yield next tick, which is a value movement.
+      played: [...this.played.entries()]
+        .sort((a, b) => compareIds(a[0], b[0]))
+        .map(([principal, tick]) => ({ principal, tick })),
     };
   }
 
@@ -545,6 +637,7 @@ export class Book {
     this.rows.clear();
     this.rent.clear();
     this.hot.clear();
+    this.played.clear();
     const root = readObject(captured, 'works');
     for (const [i, raw] of readArray(root['works'] ?? [], 'works.works').entries()) {
       const where = `works.works[${String(i)}]`;
@@ -600,6 +693,16 @@ export class Book {
       const system = readString(o, 'system', where) as SystemId;
       if (this.hot.has(system)) throw new SnapshotError(`${where}: duplicate hot row for ${system}`);
       this.hot.set(system, readInt(o, 'reckoning', where));
+    }
+
+    // `?? []` like `rent` and `hot`: a capture written before `RULES_VERSION` 41 has no clock, and an
+    // empty one reads every holder as NOT dormant — the conservative answer (`isDormant`).
+    for (const [i, raw] of readArray(root['played'] ?? [], 'works.played').entries()) {
+      const where = `works.played[${String(i)}]`;
+      const o = readObject(raw, where);
+      const principal = readString(o, 'principal', where) as PrincipalId;
+      if (this.played.has(principal)) throw new SnapshotError(`${where}: duplicate played row for ${principal}`);
+      this.played.set(principal, readInt(o, 'tick', where));
     }
   }
 }

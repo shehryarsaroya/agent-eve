@@ -60,6 +60,13 @@ const SETTLE_TICK = TICKS_PER_RECKONING - 1;
 const FREEZE_TICK = SETTLE_TICK - FREEZE_TICKS;
 /** The last tick on which a decision aimed at tonight can still be taken. */
 const LAST_ACTING_TICK = FREEZE_TICK - 1;
+/**
+ * The last OBSERVATION an `elect` can be sent from and still be taken: an act sent while the payload
+ * reads tick T resolves in T + 1, so the one that lands on {@link LAST_ACTING_TICK} is sent the tick
+ * before it. The menu used to keep offering `elect` one tick longer — on the observation whose act
+ * lands in the freeze, where `vElect` refuses it (`RULES_VERSION` 41's clock gate, AGT-S2).
+ */
+const LAST_OFFER_TICK = LAST_ACTING_TICK - 1;
 
 interface World {
   readonly runtime: Runtime;
@@ -160,13 +167,33 @@ function haul(w: World): VentureId {
   runtime.runTick();
   const hash = venture.termsHash;
   if (hash === null) throw new Error('no terms_hash');
-  submit(runtime, payer, 'sign', { venture: venture.id, terms_hash: hash }, 0);
+  // Only the counterparty signs: since `RULES_VERSION` 41 the payer's `create` was its countersignature.
   submit(runtime, hand, 'sign', { venture: venture.id, terms_hash: hash }, 1);
   runtime.runTick();
   runtime.runTick();
   const live = runtime.ventures.require(venture.id);
   if (live.state !== 'LIVE') throw new Error(`the venture is ${live.state}, not LIVE`);
   return venture.id;
+}
+
+/**
+ * A `HAUL` created by the payer with role 1 filled by the counterparty and nothing signed by it yet —
+ * the state in which the counterparty is the one principal a `sign` is still owed by.
+ */
+function filledByHand(w: World): ReturnType<Runtime['ventures']['require']> {
+  const { runtime, payer, hand, stage } = w;
+  submit(runtime, payer, 'create', { kind: 'HAUL', stage, value: 12_000 });
+  runtime.runTick();
+  const venture = runtime.ventures.all().find((v) => v.creator === payer && v.state === 'FORMING');
+  if (venture === undefined) throw new Error('create did not mint a venture');
+  const idle = [...runtime.world.hands.values()].find((h) => h.principal === hand && h.state === 'IDLE');
+  if (idle === undefined) throw new Error('the counterparty has no idle hand');
+  submit(runtime, hand, 'fill_role', { venture: venture.id, role: 1, hand: idle.id });
+  runtime.runTick();
+  if (venture.roles.find((r) => r.index === 1)?.filledByPrincipal !== hand) {
+    throw new Error('the counterparty did not take role 1');
+  }
+  return venture;
 }
 
 function observe(runtime: Runtime, principal: PrincipalId): readonly Affordance[] {
@@ -181,6 +208,20 @@ function observe(runtime: Runtime, principal: PrincipalId): readonly Affordance[
     correctionsDropped: 0,
     actionsRemaining: 4,
   }).affordances;
+}
+
+function header(runtime: Runtime, principal: PrincipalId): Readonly<Record<string, unknown>> {
+  return buildObservation({
+    runtime,
+    principal,
+    serverNowMs: 0,
+    fresh: true,
+    wakesRemaining: 16,
+    stale: false,
+    corrections: [],
+    correctionsDropped: 0,
+    actionsRemaining: 4,
+  }).header;
 }
 
 function briefing(runtime: Runtime, principal: PrincipalId): Readonly<Record<string, unknown>> {
@@ -223,7 +264,7 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     expect(String(a?.what_it_forecloses)).toContain('nothing, which is a decline');
   });
 
-  it('offers it on EVERY tick from signing to the last acting tick, not just once', () => {
+  it('offers it on EVERY tick from signing to the last one whose act can still land, not just once', () => {
     // "The elective half is a real choice *every time*, not a box you ticked when you
     // signed." An affordance offered once and then withdrawn would be the old behaviour
     // wearing the new verb's name.
@@ -239,7 +280,7 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     expect(act(w.runtime, w.payer, 'elect', { venture: id, role: 1, election: IN_FULL })).toBeNull();
     let offeredOn = 0;
     let missing = 0;
-    while (w.runtime.engine.tick < LAST_ACTING_TICK) {
+    while (w.runtime.engine.tick < LAST_OFFER_TICK) {
       w.runtime.runTick();
       const has = observe(w.runtime, w.payer).some((a) => a.verb === 'elect');
       if (has) offeredOn += 1;
@@ -247,16 +288,31 @@ describe('`elect` is a real verb, offered every tick until the freeze', () => {
     }
     expect(missing).toBe(0);
     expect(offeredOn).toBeGreaterThan(200);
-    // And it is still offered on the very last tick a restatement is legal.
+    // And it is still offered on the last observation whose act lands before the freeze — and the
+    // engine TAKES it there, which is the half of the promise a menu can break on its own: this test
+    // used to stop one tick later and assert an offer the engine refused.
+    expect(w.runtime.engine.tick).toBe(LAST_OFFER_TICK);
+    const last = observe(w.runtime, w.payer).filter((a) => a.verb === 'elect');
+    expect(last).toHaveLength(1);
+    expect(act(w.runtime, w.payer, 'elect', last[0]?.params ?? {}), 'the last offer is an act the engine takes').toBeNull();
     expect(w.runtime.engine.tick).toBe(LAST_ACTING_TICK);
-    expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(true);
   });
 
-  it('stops offering it inside the freeze, because there is nothing there to offer', () => {
+  it('stops offering it on the observation whose act lands in the freeze, and says why', () => {
     const w = world('freeze-offer');
     haul(w);
-    runTo(w.runtime, LAST_ACTING_TICK);
+    runTo(w.runtime, LAST_OFFER_TICK);
     expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(true);
+    w.runtime.runTick();
+    // Not in the freeze yet — but an `elect` sent now resolves in it, and `vElect` refuses there (the
+    // test below proves the refusal from exactly this tick). So the offer is gone, and the gap is named.
+    expect(w.runtime.engine.tick).toBe(LAST_ACTING_TICK);
+    expect(inFreeze(w.runtime.engine.tick)).toBe(false);
+    expect(inFreeze(w.runtime.engine.tick + 1)).toBe(true);
+    expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(false);
+    const withheld = header(w.runtime, w.payer)['withheld'] as { verbs: readonly string[]; reason: string };
+    expect(withheld.verbs, 'the absence is accounted for (PROP-O1)').toContain('elect');
+    expect(withheld.reason).toContain(`elect act(s) are not offered because an act sent now lands on tick ${String(FREEZE_TICK)}`);
     w.runtime.runTick();
     expect(inFreeze(w.runtime.engine.tick)).toBe(true);
     expect(observe(w.runtime, w.payer).some((a) => a.verb === 'elect')).toBe(false);
@@ -526,15 +582,14 @@ describe('the rules surface cannot disagree with the engine about how to elect',
     // reasonable person implements by accident, and it ends in a `DECLINED` default —
     // "a deliberate refusal" — permanently, against an agent that was trying to pay.
     // ══════════════════════════════════════════════════════════════════════
+    // The signer is the counterparty, because since `RULES_VERSION` 41 the creator's `create` IS its
+    // countersignature: a creator never owes a `sign`, so a sign from it is no test of this refusal.
     const w = world('sign-election');
-    submit(w.runtime, w.payer, 'create', { kind: 'HAUL', stage: w.stage, value: 12_000 });
-    w.runtime.runTick();
-    const venture = w.runtime.ventures.all().find((v) => v.creator === w.payer);
-    if (venture === undefined) throw new Error('no venture');
+    const venture = filledByHand(w);
     const hash = venture.termsHash;
     if (hash === null) throw new Error('no terms_hash');
 
-    const refusal = act(w.runtime, w.payer, 'sign', {
+    const refusal = act(w.runtime, w.hand, 'sign', {
       venture: venture.id,
       terms_hash: hash,
       election: IN_FULL,
@@ -544,22 +599,31 @@ describe('the rules surface cannot disagree with the engine about how to elect',
     // Neither half happened. A signature recorded with the election dropped would be the
     // exact failure this refusal exists to prevent.
     expect(refusal?.hint).toContain('Nothing was signed and nothing was elected');
-    expect(w.runtime.ventures.require(venture.id).countersigned.has(w.payer)).toBe(false);
-    expect(w.runtime.electionOn(venture.id, 0)).toBeUndefined();
+    expect(w.runtime.ventures.require(venture.id).countersigned.has(w.hand)).toBe(false);
+    expect(w.runtime.electionOn(venture.id, 1)).toBeUndefined();
   });
 
   it('never offers an `election` on a `sign` affordance', () => {
     const w = world('sign-affordance');
-    submit(w.runtime, w.payer, 'create', { kind: 'HAUL', stage: w.stage, value: 12_000 });
+    filledByHand(w);
     w.runtime.runTick();
-    w.runtime.runTick();
-    const signs = observe(w.runtime, w.payer).filter((a) => a.verb === 'sign');
-    expect(signs.length).toBeGreaterThan(0);
-    for (const a of signs) {
+    const signs = observe(w.runtime, w.hand).filter((a) => a.verb === 'sign');
+    expect(signs.length, 'the counterparty holding a role is the principal a `sign` is owed by').toBeGreaterThan(0);
+    for (const a of signs) expect(Object.keys(a.params)).not.toContain('election');
+  });
+
+  it('points the payer at `elect` from the act that binds it — which since 41 is `create`, not `sign`', () => {
+    // The payer's binding act has to say it does NOT decide the payment, or a payer reading only that
+    // string thinks binding was the whole decision and never elects — a `DECLINED` default it did not
+    // choose. That sentence lived on the creator's own `sign`; `RULES_VERSION` 41 made `create` the
+    // creator's countersignature, so it moved with the binding. `/`elect`/` and not `'elect'`, because
+    // every create string says "elective" and a substring check would pass on a sentence with no pointer.
+    const w = world('create-points-at-elect');
+    const creates = observe(w.runtime, w.payer).filter((a) => a.verb === 'create');
+    expect(creates.length, 'a funded payer is offered a create').toBeGreaterThan(0);
+    for (const a of creates) {
       expect(Object.keys(a.params)).not.toContain('election');
-      // And it points at the verb that does decide the payment, or a payer reading only
-      // this string would think signing was the whole decision.
-      expect(String(a.what_it_forecloses)).toContain('elect');
+      expect(String(a.what_it_forecloses)).toMatch(/`elect`/);
     }
   });
 

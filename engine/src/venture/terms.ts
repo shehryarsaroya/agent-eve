@@ -223,6 +223,16 @@ export interface TermsHashInput {
    * rewritten — or a later balance patch retroactively edits history.
    */
   readonly rulesVersion: number;
+  /**
+   * ★ The grand venture's marker (SPEC §7.6), or absent/null on every other venture.
+   *
+   * Inside the hash because the yield a crew divides **is a term**: the season's grand venture pays
+   * its published yield instead of the kind's, and two ventures with the same roles and different
+   * yields are different deals. Written into the canonical structure **only when present**, so every
+   * ordinary venture's `terms_hash` is byte-identical to what it was before the season existed —
+   * the golden files do not move and no signature already given goes stale.
+   */
+  readonly grand?: { readonly season: number; readonly baseYieldMinor: Minor } | null;
 }
 
 /**
@@ -274,6 +284,9 @@ export function termsCanonical(input: TermsHashInput): CanonicalValue {
         .sort((a, b) => compareIds(a.good, b.good))
         .map((m) => ({ good: m.good, unitPrice: m.unitPrice })),
     },
+    ...(input.grand === undefined || input.grand === null
+      ? {}
+      : { grand: { season: input.grand.season, baseYieldMinor: input.grand.baseYieldMinor } }),
   };
 }
 

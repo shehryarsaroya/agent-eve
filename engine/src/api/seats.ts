@@ -63,13 +63,49 @@ import type { PrincipalId } from '../core/types.js';
 import { compareIds } from '../ledger/index.js';
 
 /**
- * Seats in the world.
+ * ★ **The HOST's seat count at launch — decoupled from the WORLD's ceiling.** *(calibrate)*
  *
- * SPEC §15.6 sizes the house cast at 12–20 and the architecture note at 300
- * principals; 300 is therefore the cap, not an aspiration, and the number is
- * *(calibrate)*.
+ * Seats are a host resource (see the file header): how many principals this one box serves at once.
+ * `MAX_PRINCIPALS` is the world's ceiling — the population every book is dimensioned for — and this is
+ * deliberately below it, so a host can raise its seats with `COMPACT_SEATS` and no rules change.
+ *
+ * **Five hundred, and the number is set by MEMORY OVER A SEASON, not by CPU** (the Season 1 scale
+ * measurement, `docs/design/SCALE-2026-10-01.md`). CPU is not what binds: at 3,000 principals a steady
+ * tick is a fifth to a half of a second of a 300-second production tick and every principal observing
+ * on the tick after a Reckoning is ~13 s of one core. What binds is that the posting log, the batch log and
+ * the lots are held in memory for the world's whole life, growing ~0.5–0.8 KB per principal per tick
+ * (lower at higher populations). Over Season 1's 14 Reckonings (4,032 ticks) that is ~1.4 GB of heap
+ * at 500 principals, ~2.1 GB at 1,000 and ~5.4 GB at 3,000, against the 4 GiB slice
+ * `deploy/agenteve.service` ships — and RSS measured at two to four times the live heap. Five hundred
+ * leaves room for agents busier than the harness's synthetic cast, and it is also what the launch map
+ * stages at §4.2's 8–20 principals a system (30 systems).
+ *
+ * Raising it is configuration, not a rules change: `COMPACT_SEATS=1000` wants an 8 GiB slice and
+ * `--max-old-space-size=6144`; 3,000 wants ~16 GiB, or the in-memory journal paged out (the SCALE doc's
+ * open item). A default that can exhaust the slice mid-season is a halt nobody configured.
  */
-export const DEFAULT_SEATS = MAX_PRINCIPALS;
+export const DEFAULT_SEATS = 500;
+
+/**
+ * Read `COMPACT_SEATS`. Absent or empty is {@link DEFAULT_SEATS}; anything else must be a positive
+ * integer no larger than the world's ceiling, and anything that is not is refused at boot with the
+ * reason — a host that silently fell back to the default would be a host serving a number nobody set.
+ */
+export function seatCapacityFrom(raw: string | undefined): number {
+  if (raw === undefined || raw.trim() === '') return DEFAULT_SEATS;
+  const n = Number(raw.trim());
+  if (!Number.isSafeInteger(n) || n < 1) {
+    throw new Error(`COMPACT_SEATS must be a positive integer, got '${raw}'`);
+  }
+  if (n > MAX_PRINCIPALS) {
+    throw new Error(
+      `COMPACT_SEATS is ${String(n)}, above the world's ceiling of ${String(MAX_PRINCIPALS)} (core/time.ts:MAX_PRINCIPALS). ` +
+        'Every population-sized book is dimensioned for that ceiling, so seating more would let a cap bind on ' +
+        'legitimate play; raising it is a rules change, not a configuration one.',
+    );
+  }
+  return n;
+}
 
 /**
  * Ticks after a principal's last ACCEPTED action before its seat is recyclable.
@@ -78,6 +114,13 @@ export const DEFAULT_SEATS = MAX_PRINCIPALS;
  * so no reading of either document has a seat vanishing inside the guarantee — for
  * a principal that plays. What no longer moves this clock is a request that plays
  * nothing: see the file header.
+ *
+ * ★ **The world reads the same fact, separately** (`RULES_VERSION` 41): after the same
+ * four Reckonings without an accepted action a principal's WORKS goes DORMANT and stops
+ * dividing its system's yield (`works/params.ts:WORKS_DORMANT_AFTER_TICKS`). Two
+ * constants, because this one is a host resource the tick never reads and that one is a
+ * world rule inside `state_hash`; `test/works/dormant-works.spec.ts` pins that they
+ * agree, so the host and the world never disagree about when a principal stopped playing.
  */
 export const IDLE_SEAT_TICKS = TICKS_PER_RECKONING * 4;
 
@@ -159,6 +202,12 @@ export class SeatBook {
   ) {
     if (!Number.isSafeInteger(capacity) || capacity < 1) {
       throw new Error(`seat capacity must be a positive integer, got ${String(capacity)}`);
+    }
+    if (capacity > MAX_PRINCIPALS) {
+      throw new Error(
+        `seat capacity ${String(capacity)} is above the world's ceiling of ${String(MAX_PRINCIPALS)}; ` +
+          'see seatCapacityFrom',
+      );
     }
     if (!Number.isSafeInteger(idleTicks) || idleTicks < 1) {
       throw new Error(`the idle threshold must be a positive number of ticks, got ${String(idleTicks)}`);

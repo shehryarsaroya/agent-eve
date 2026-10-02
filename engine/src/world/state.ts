@@ -30,7 +30,24 @@ import { cmpStr, commonsSystems, mapHash, systemOf, type WorldMap } from './map.
 export class WorldError extends Error {}
 
 export interface WorldState {
-  readonly map: WorldMap;
+  /**
+   * The map as it stands now. **Not readonly since GROWTH** (`growth.ts`): a Reckoning may open a new
+   * constellation, which replaces this with a fresh, larger, still-immutable `WorldMap`. Read it at
+   * the point of use, never cache it across a tick — every memo in `world/` is keyed on the map
+   * OBJECT, so a reader that asks again gets the grown map's straits and lodes for free.
+   */
+  map: WorldMap;
+  /**
+   * The map the world was created on — the launch map, before any growth. A restore regrows from here
+   * (`regrowMap(baseMap, n)`), because the geography is a function of the base and the count alone.
+   */
+  readonly baseMap: WorldMap;
+  /**
+   * The tick each grown constellation opened at, aligned with `map.grown`. The record's half of a
+   * growth: the map knows WHAT opened and this knows WHEN, which is the half a replay needs to say
+   * so on the right Reckoning.
+   */
+  readonly openedAtTick: number[];
   readonly hands: Map<HandId, HandRecord>;
   readonly holdings: Map<HoldingId, HoldingRecord>;
   /** Enrolment order. Identity is never deleted, so this only ever grows (A10). */
@@ -42,6 +59,8 @@ export interface WorldState {
 export function createWorld(map: WorldMap): WorldState {
   return {
     map,
+    baseMap: map,
+    openedAtTick: [],
     hands: new Map<HandId, HandRecord>(),
     holdings: new Map<HoldingId, HoldingRecord>(),
     principalOrder: [],
@@ -170,7 +189,12 @@ function cargoCanonical(cargo: ReadonlyMap<GoodId, number>): CanonicalValue {
  * field happened to be set.
  */
 export function worldCanonical(state: WorldState): CanonicalValue {
+  // `openedAtTick` only once something has opened, so a world that never grew keeps the canonical
+  // form — and the hash — it has always had.
+  const grown: { readonly openedAtTick?: CanonicalValue } =
+    state.openedAtTick.length === 0 ? {} : { openedAtTick: [...state.openedAtTick] };
   return {
+    ...grown,
     map: mapHash(state.map),
     principals: [...state.principalOrder].sort(cmpStr),
     holdings: holdingsInOrder(state).map((h) => ({

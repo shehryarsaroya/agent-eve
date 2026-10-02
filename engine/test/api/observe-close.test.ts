@@ -55,7 +55,7 @@ function noPending(who: Agent, what: string): void {
   expect(pending.map((c) => `${c.verb}/${c.invariant}: ${c.hint}`), what).toEqual([]);
 }
 
-/** Stage a signed, fully-open DIG. Returns the creator and the record. */
+/** Stage a fully-open DIG, bound by its creator's own create. Returns the creator and the record. */
 async function stage(): Promise<{ readonly creator: Agent; readonly id: string; readonly stage: string }> {
   const creator = agent('vc');
   await enrol(h, creator);
@@ -64,11 +64,14 @@ async function stage(): Promise<{ readonly creator: Agent; readonly id: string; 
   await act(creator, 'create', aff(c1).find((a) => a['verb'] === 'create')?.['params']);
   tick(h, 1);
   noPending(creator, 'create must resolve');
+  // Since `RULES_VERSION` 41 the create IS the creator's countersignature, so there is no second act:
+  // the creator is never offered a `sign`, and the venture already counts it. The tick a `sign` used to
+  // spend is kept, so every window figure below is measured from the same tick it always was.
   const c2 = obs((await signed(h, creator, 'GET', PATHS.observe)).json);
-  await act(creator, 'sign', aff(c2).find((a) => a['verb'] === 'sign')?.['params']);
+  expect(aff(c2).filter((a) => a['verb'] === 'sign'), 'the creator is never offered its own sign').toEqual([]);
   tick(h, 1);
-  noPending(creator, "the creator's own sign must resolve");
   const v = h.runtime.ventures.all()[0];
+  expect(v?.countersigned.has(creator.principalId as never), 'the create bound its creator').toBe(true);
   return { creator, id: String(v?.id), stage: String(v?.stage) };
 }
 
