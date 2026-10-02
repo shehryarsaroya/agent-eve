@@ -151,7 +151,9 @@ echo "world tables emptied; cast memory and frames cleared"
 REMOTE
 UPDATES=("COMPACT_SEED=$SEED")
 if [ -n "$CAST" ]; then
-  UPDATES+=("COMPACT_CAST=$CAST" "COMPACT_CAST_CALLS_PER_RECKONING=$((CAST * 20))")
+  # 48,000 prompt characters cost GPT-6 Astra no latency (~137 s at 24k and at 48k, measured
+  # 2026-10-01) and at 24,000 the cast saw about half its affordances.
+  UPDATES+=("COMPACT_CAST=$CAST" "COMPACT_CAST_CALLS_PER_RECKONING=$((CAST * 20))" "COMPACT_CAST_MAX_PROMPT_CHARS=48000")
 fi
 [ -z "$SEATS" ] || UPDATES+=("COMPACT_SEATS=$SEATS")
 # Values here are validated above and never secret, so they may travel as arguments.

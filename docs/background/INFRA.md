@@ -38,6 +38,13 @@ provider's key `COMPACT_CAST_URL` points at). The key's vault copy is
 `/var/lib/agenteve/cast/` (mode 0700, never under `frames/`, which nginx serves).
 `/health` reports the cast's live, fallback and spend counts under `cast`. Turn it off
 with `COMPACT_CAST_LLM=0` and a restart; the world continues on heuristics.
+
+**Latency, measured October 1, 2026:** a real decision takes GPT-6 Astra about
+135 seconds — 24,000 and 48,000 prompt characters cost the same, and four calls at
+once take no longer than one. A tiny prompt takes ~19 s. Production's deadline is 3
+ticks (15 minutes), so this is safe there; a local test at `fast` (10 s ticks) needs
+`COMPACT_CAST_DEADLINE_TICKS=20` or every wake aborts and falls back silently, which
+is what a first attempt did. The cutover sets `COMPACT_CAST_MAX_PROMPT_CHARS=48000`.
 Commissioning used the accelerated clock and three explicitly named QA principals.
 
 Access uses `~/Projects/yc-gstack-kit/credentials/keys/ahmadecho_vps_ed25519`.
