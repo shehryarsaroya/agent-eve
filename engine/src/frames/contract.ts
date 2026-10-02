@@ -315,14 +315,21 @@ export interface AuthorityLine {
   readonly delegate: PrincipalId;
   /** Thickness ∝ the authority granted. This half is its max_direct_loss. */
   readonly granted: Minor;
-  /** How much of the direct worst case the delegate has drawn. */
+  /**
+   * How much of the direct worst case the delegate has drawn **and not been given back** — the draw
+   * journal net of the release journal, which is the figure INV-22 recomputes and the grant's own
+   * headroom is measured from. So it never exceeds {@link granted}. It was the gross sum of draws until
+   * 2026-10-02, and a delegate whose ventures were all abandoned and refunded read `spent 14400` of a
+   * `10000` limit (`frames/authority.ts`).
+   */
   readonly spent: Minor;
   /** The other half of the authority granted: its max_contingent_liability. */
   readonly grantedContingent: Minor;
   /**
-   * How much of the contingent worst case the delegate has drawn — value the GRANTOR is
-   * asked for at settlement and defaults on by staying silent. Visible exposure that
-   * moves no coin until the Reckoning, which is exactly why it has to be on screen.
+   * How much of the contingent worst case the delegate has drawn and not been given back — value the
+   * GRANTOR is asked for at settlement and defaults on by staying silent. Visible exposure that moves
+   * no coin until the Reckoning, which is exactly why it has to be on screen. Net of releases, like
+   * {@link spent}, so it never exceeds {@link grantedContingent}.
    */
   readonly spentContingent: Minor;
   /**
@@ -391,9 +398,10 @@ export interface AuthorityLine {
    */
   readonly dossiers: readonly AuthorityDossier[];
   /**
-   * UNUSED nothing drawn on EITHER limit · DRAWN some headroom used · EXHAUSTED no
-   * headroom left on either limit · REVOKED ending next tick · ★ EXPIRED the term ran out, and this
-   * line is on the frame only because something else on it names this grant.
+   * UNUSED nothing outstanding on EITHER limit (no draw, or every draw given back when its venture
+   * retired unbound — {@link boundVentures} still counts those) · DRAWN some headroom used ·
+   * EXHAUSTED no headroom left on either limit · REVOKED ending next tick · ★ EXPIRED the term ran
+   * out, and this line is on the frame only because something else on it names this grant.
    */
   readonly state: AuthorityLineState;
 }
@@ -1755,7 +1763,10 @@ export interface ReckoningFrame {
   readonly directoryLines: readonly DirectoryLine[];
   /** ★ **THE PARLEY THREAD** (41): letters that declassified this Reckoning, sender to recipient. */
   readonly parleyLines: readonly ParleyLine[];
-  /** One line, 140 chars, tick-stamped. The export surface. */
+  /**
+   * One line, 140 chars. The export surface. ★ **NEWEST FIRST** — `ticker[0]` is the latest line — on
+   * this frame and on the live one, by {@link publishedTicker}.
+   */
   readonly ticker: readonly string[];
   /** Tomorrow's docket, as the closing card. */
   readonly nextDocket: readonly DocketCard[];
@@ -2127,13 +2138,55 @@ export interface LiveFrame {
   readonly directoryLines: readonly DirectoryLine[];
   /** ★ THE PARLEY THREAD, drawn on the tick each letter declassifies and never before. */
   readonly parleyLines: readonly ParleyLine[];
-  /** The export surface, 140-char bounded, exactly as on the Reckoning frame. */
+  /** The export surface, 140-char bounded and ★ NEWEST FIRST, exactly as on the Reckoning frame. */
   readonly ticker: readonly string[];
   /** ★ THE SEASON LINE, live: the FINALE countdown and the crews still forming. */
   readonly season: SeasonLine | null;
+  /**
+   * ★ **THE MAP, BEFORE THE FIRST RECKONING SETTLES** — the same rows {@link ReckoningFrame.map}
+   * carries, from the same builder; **empty once {@link lastReckoning} is set**, when `latest.json`
+   * carries it.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **A NEW SEASON HAD NO MAP FOR ITS FIRST DAY.** `deploy/new-season-standalone.sh` clears the frames,
+   * and the topology rode only the nightly frame, so for the first 288 ticks — 24 hours at production
+   * speed — there was no `latest.json`, the site drew *"NO MAP UNTIL THE FIRST RECKONING"*, and the MCP
+   * bridge's rundown and dossier tools answered NOT_YET. Publishing an early `r-000000.json` would have
+   * put a Reckoning in the archive that never settled; so the live frame carries the map instead, for
+   * exactly as long as no settled frame can.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * A client reads `ReckoningFrame.map` when it has one and falls back to this. Empty rather than
+   * absent after the first settlement, because an absent key and an empty one read the same to a
+   * client, and the per-tick artifact should not pay for a topology the nightly one already carries.
+   */
+  readonly map: readonly MapSystem[];
 }
 
 export class FrameBudgetError extends Error {}
+
+/**
+ * ★ **THE TICKER AS BOTH FRAMES PUBLISH IT: NEWEST FIRST**, every line ≤140 characters.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **EVERY READER TOOK THE HEAD OF A LIST WHOSE HEAD WAS THE OLDEST LINE.** The world keeps the ticker
+ * in a 32-line FIFO (`runtime.ts:raidTicker`, a `Ring`), oldest first, and both frames published it in
+ * that order — while the client's map strip took `slice(0, 6)`, the RECORD panel numbered from the
+ * head, and the MCP bridge's `eve_map` — described as *"the latest ticker lines"* — took
+ * `take(frame.ticker, 12)`. So every surface that showed a few lines showed the oldest few, and a raid
+ * that had just landed was the one line nobody could see.
+ *
+ * One order, decided here, so the two frames cannot disagree and a new reader that takes the head is
+ * right by default. Newest first is the order every other time-ordered list on these frames already
+ * uses (`parleyLines`, `ruins`, `seasonRecords`). The lines carry no tick, so the order is the only
+ * recency a reader has — which is why it is a contract rather than a habit.
+ *
+ * The input is the world's own order, OLDEST FIRST, as the ring produces it.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export function publishedTicker(producedOldestFirst: readonly string[]): readonly string[] {
+  return [...producedOldestFirst].reverse().filter((t) => t.length <= 140);
+}
 
 /**
  * ★ THE CONVOY LINE's refusals. Shared by both frames, because both draw the line.
@@ -2191,6 +2244,66 @@ function compactProblems(links: readonly CompactLink[]): readonly string[] {
     }
     if (link.atStake < 0 || link.electiveBps < 0 || link.parties < 1) {
       problems.push(`compact ${link.venture} renders a negative quantity or no parties at all`);
+    }
+  }
+  return problems;
+}
+
+/**
+ * ★ **THE PINCH's refusals** — a strait must be a lane, and must have two ends — for any frame that
+ * carries the map. Shared by both frames because both can: the nightly frame always, the live frame
+ * until the first Reckoning settles (`LiveFrame.map`).
+ *
+ * A pinch drawn on a lane that is not there, or on one half of a lane, is a border a viewer
+ * learns and an agent cannot plan against — and `world/sway.ts` charges a real toll at exactly
+ * these edges, so a frame that disagreed with the engine here would be scar #1 with territory on
+ * it. Both checks are cheap and both have a failure that renders as something plausible.
+ */
+function mapProblems(map: readonly MapSystem[]): readonly string[] {
+  const problems: string[] = [];
+  const mapById = new Map(map.map((sys) => [sys.id, sys] as const));
+  for (const sys of map) {
+    for (const edge of sys.straits) {
+      if (!sys.lanes.includes(edge.to)) {
+        problems.push(
+          `${sys.id} draws a STRAIT to ${edge.to} with no lane between them — a pinch is a property of a ` +
+            'lane and cannot exist without one',
+        );
+        continue;
+      }
+      const other = mapById.get(edge.to);
+      if (other === undefined) {
+        problems.push(`${sys.id} draws a STRAIT to ${edge.to}, which is not on this frame's map`);
+        continue;
+      }
+      const back = other.straits.find((e) => e.to === sys.id);
+      if (back === undefined) {
+        problems.push(
+          `${sys.id}~${edge.to} is a STRAIT from one end only; a renderer drawing the pinch from ${edge.to} ` +
+            'would draw an ordinary lane over the same gate',
+        );
+      } else if (back.detourHops !== edge.detourHops || back.severs !== edge.severs || back.severed !== edge.severed) {
+        problems.push(
+          `${sys.id}~${edge.to} reports different numbers at each end (${edge.detourHops}/${edge.severed} vs ` +
+            `${back.detourHops}/${back.severed}); one lane is one fact`,
+        );
+      }
+      if (edge.severs !== (edge.detourHops === 0)) {
+        problems.push(
+          `${sys.id}~${edge.to} reports severs=${String(edge.severs)} with detourHops=${edge.detourHops}; a ` +
+            'lane either has a way around it or it does not',
+        );
+      }
+      // A8, on the surface a viewer reads. The engine refuses this at map construction
+      // (`assertStraits`), and it is checked again here because the frame is a second rules
+      // surface: a pinch drawn on a civic route teaches a viewer that the Commons can be
+      // blockaded, which §16.1 MUST-3 promises it cannot.
+      if (sys.tier === 'COMMONS' || other.tier === 'COMMONS') {
+        problems.push(
+          `${sys.id}~${edge.to} draws a STRAIT touching the COMMONS (${sys.tier}/${other.tier}); the Commons ` +
+            'keeps a protected civic route and A8 is a floor, not a default',
+        );
+      }
     }
   }
   return problems;
@@ -2317,6 +2430,22 @@ export function assertLiveFrameBudgets(frame: LiveFrame): void {
   }
   // `?? null` so a frame written by an older build, with no season at all, still validates.
   problems.push(...seasonProblems(frame.season ?? null, []));
+
+  // ── ★ THE GENESIS MAP: ONLY UNTIL A RECKONING HAS SETTLED, AND THE SAME GRAPH RULES ──────────
+  //
+  // The topology rides this frame for exactly as long as no `latest.json` can carry it. Past that it
+  // is the per-tick artifact paying, every tick and for every viewer, for bytes the nightly frame
+  // already serves — so a map beside a `lastReckoning` is refused rather than tolerated. And a map
+  // carried here is held to the nightly frame's own graph rules ({@link mapProblems}), because one
+  // topology on two artifacts must never be drawable two ways. `?? []` for a frame from an older build.
+  const liveMap = frame.map ?? [];
+  if (liveMap.length > 0 && frame.lastReckoning !== null) {
+    problems.push(
+      `a live frame carries the map after Reckoning ${String(frame.lastReckoning)} settled; the topology ` +
+        'rides it only until the first settlement, and latest.json carries it from then on',
+    );
+  }
+  problems.push(...mapProblems(liveMap));
 
   if (problems.length > 0) {
     throw new FrameBudgetError(
@@ -2936,55 +3065,10 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
 
   // ── ★ THE PINCH: A STRAIT MUST BE A LANE, AND MUST HAVE TWO ENDS ─────────
   //
-  // A pinch drawn on a lane that is not there, or on one half of a lane, is a border a viewer
-  // learns and an agent cannot plan against — and `world/sway.ts` charges a real toll at exactly
-  // these edges, so a frame that disagreed with the engine here would be scar #1 with territory on
-  // it. Both checks are cheap and both have a failure that renders as something plausible.
+  // Checked by {@link mapProblems}, which the live frame runs too: the live frame carries the map
+  // until the first settlement, so one topology can sit on two artifacts and must obey one rule set.
   const mapById = new Map(frame.map.map((sys) => [sys.id, sys] as const));
-  for (const sys of frame.map) {
-    for (const edge of sys.straits) {
-      if (!sys.lanes.includes(edge.to)) {
-        problems.push(
-          `${sys.id} draws a STRAIT to ${edge.to} with no lane between them — a pinch is a property of a ` +
-            'lane and cannot exist without one',
-        );
-        continue;
-      }
-      const other = mapById.get(edge.to);
-      if (other === undefined) {
-        problems.push(`${sys.id} draws a STRAIT to ${edge.to}, which is not on this frame's map`);
-        continue;
-      }
-      const back = other.straits.find((e) => e.to === sys.id);
-      if (back === undefined) {
-        problems.push(
-          `${sys.id}~${edge.to} is a STRAIT from one end only; a renderer drawing the pinch from ${edge.to} ` +
-            'would draw an ordinary lane over the same gate',
-        );
-      } else if (back.detourHops !== edge.detourHops || back.severs !== edge.severs || back.severed !== edge.severed) {
-        problems.push(
-          `${sys.id}~${edge.to} reports different numbers at each end (${edge.detourHops}/${edge.severed} vs ` +
-            `${back.detourHops}/${back.severed}); one lane is one fact`,
-        );
-      }
-      if (edge.severs !== (edge.detourHops === 0)) {
-        problems.push(
-          `${sys.id}~${edge.to} reports severs=${String(edge.severs)} with detourHops=${edge.detourHops}; a ` +
-            'lane either has a way around it or it does not',
-        );
-      }
-      // A8, on the surface a viewer reads. The engine refuses this at map construction
-      // (`assertStraits`), and it is checked again here because the frame is a second rules
-      // surface: a pinch drawn on a civic route teaches a viewer that the Commons can be
-      // blockaded, which §16.1 MUST-3 promises it cannot.
-      if (sys.tier === 'COMMONS' || other.tier === 'COMMONS') {
-        problems.push(
-          `${sys.id}~${edge.to} draws a STRAIT touching the COMMONS (${sys.tier}/${other.tier}); the Commons ` +
-            'keeps a protected civic route and A8 is a floor, not a default',
-        );
-      }
-    }
-  }
+  problems.push(...mapProblems(frame.map));
 
   // ── ★ THE RISE: EVERY HALO IS AROUND A SYSTEM THIS FRAME CAN PLACE ─────────
   if (frame.growth !== null) {

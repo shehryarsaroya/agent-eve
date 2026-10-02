@@ -31,6 +31,7 @@ import type { GrantId, Handle, PrincipalId, VentureId,
 import { minor, qty, type Minor, type Qty } from '../core/units.js';
 import { compareIds } from '../ledger/order.js';
 import { rankAuthorityLines } from './authority.js';
+import { counterpartiesOf, settledParties, type SettledPayee } from './motion.js';
 import {
   MAX_AUTHORITY_LINES,
   MAX_DOCKET_CARDS,
@@ -59,6 +60,7 @@ import {
   MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_FRAME_SYNDICATE_LINES,
+  publishedTicker,
   type FrameGrowth,
   type MapSystem,
   type SwayLine,
@@ -102,7 +104,10 @@ export interface FrameSource {
    * record, which is a claim about a real agent that nothing supports.
    */
   readonly standings?: ReadonlyMap<PrincipalId, Standing>;
-  /** Ticker lines already produced by the world (140 chars, tick-stamped). */
+  /**
+   * Ticker lines already produced by the world (140 chars), **oldest first** — the order the world's
+   * ring keeps them in. The frame publishes them NEWEST first (`contract.ts:publishedTicker`).
+   */
   readonly ticker: readonly string[];
   /** What is scheduled for the next Reckoning, for the closing card. */
   readonly tomorrow: readonly UpcomingView[];
@@ -252,6 +257,27 @@ export interface SettledView {
    * ══════════════════════════════════════════════════════════════════════════
    */
   readonly withheld?: Minor;
+  /**
+   * ★ **EACH PAYEE'S ELECTIVE HALF AT SETTLEMENT** — due, paid and shortfall, per principal, in id
+   * order ({@link payeesOf} over the same `st.payouts` {@link withheld} is summed from). **A5′.**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE DEED NAMED A FILLER PAID IN FULL AS THE VICTIM.** {@link withheld} made the accusation's
+   * AMOUNT right and left its OBJECT to `parties.find(p => p !== creator)` — the first role-holder in
+   * id order. A blind playtest's `v:932`: `varrow` was elected 100 of 169 due, `severin` was paid in
+   * full, and the frame read *"s1blind-bo's 225 was riding on **severin's** dig. s1blind-bo walked
+   * away from 69 of the 225 it had promised."* — while the same frame's compact link drew to varrow.
+   * The total was carried and the split was not, so the sentence could not know whom it was about.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * With this the deed names the SHORTED party (or parties) on a default and the party with the most
+   * DUE otherwise, by `motion.ts:counterpartiesOf` — the rule the compact link reads — and counts only
+   * what passed between the payer and OTHER principals: a role the payer filled itself is neither a
+   * promise kept to anyone nor one broken, which is `venture/settlement.ts`'s own `selfDealt` rule for
+   * standing. Optional, so fixtures and `emptyFrame` stay valid; absent means the sentence falls back
+   * to {@link atStake} and {@link withheld} and the first other party, as it always did.
+   */
+  readonly payees?: readonly SettledPayee[];
   readonly defaulted: boolean;
   readonly deferred: boolean;
   /** Parties, in id order. The renderer never re-sorts by anything unstable. */
@@ -403,19 +429,107 @@ function characterLine(src: FrameSource, principal: PrincipalId): string {
   return parts.slice(0, 3).join(' \u00b7 ');
 }
 
+function chipOf(src: FrameSource, p: PrincipalId): CastChip {
+  return {
+    principal: p,
+    handle: handleOf(src, p),
+    line: characterLine(src, p),
+    modelBadge: src.modelBadges?.get(p) ?? null,
+  };
+}
+
 function chipsFor(src: FrameSource, parties: readonly PrincipalId[]): readonly CastChip[] {
   return [...parties]
     .sort(compareIds)
     .slice(0, MAX_LABELS_PER_FRAME)
-    .map((p) => {
-      const badge = src.modelBadges?.get(p) ?? null;
-      return {
-        principal: p,
-        handle: handleOf(src, p),
-        line: characterLine(src, p),
-        modelBadge: badge,
-      };
-    });
+    .map((p) => chipOf(src, p));
+}
+
+/**
+ * ★ A settlement beat's cast: **the payer first**, then whoever the deed names, then the other
+ * role-holders in id order — de-duplicated, then cut to the label budget.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE AGENT THE DEED IS ABOUT WAS NOT IN ITS OWN CAST.** `parties` are role-holders
+ * (`venture.partiesOf`), and the creator who pays usually holds no role — so on the playtest's `v:932`
+ * the chips were `severin` and `varrow` and the principal whose broken promise the sentence reported,
+ * `s1blind-bo`, had no chip, no character line and no crest. Two readers had learned to work round it
+ * (`follow/recap.ts` and the client's agent page both match the deed's opening possessive). The order is
+ * the argument for the cap: a cut can only ever drop a bystander, never the subject or the victim.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function settlementCast(src: FrameSource, v: SettledView): readonly CastChip[] {
+  const named = deedSplit(v)?.named ?? [];
+  const seen = new Set<PrincipalId>();
+  const order: PrincipalId[] = [];
+  for (const p of [v.creator, ...named, ...[...v.parties].sort(compareIds)]) {
+    if (seen.has(p)) continue;
+    seen.add(p);
+    order.push(p);
+  }
+  return order.slice(0, MAX_LABELS_PER_FRAME).map((p) => chipOf(src, p));
+}
+
+/**
+ * The deed's arithmetic, over the payer's COUNTERPARTIES — every payee but the payer itself.
+ *
+ * Null when the caller carried no {@link SettledView.payees}; the sentences then fall back to the
+ * totals, exactly as before the split existed, rather than inventing one.
+ */
+interface DeedSplit {
+  /** Σ elective DUE to other principals — what the payer had promised someone. */
+  readonly promised: Minor;
+  /** Σ elective PAID to other principals. */
+  readonly paid: Minor;
+  /** Σ elective SHORTFALL to other principals — the accusation, when there is one. */
+  readonly withheld: Minor;
+  /** What the payer withheld from a role it filled ITSELF. A default on the record; a promise to nobody. */
+  readonly selfWithheld: Minor;
+  /** Every counterparty, in `counterpartiesOf` order (most shorted, then most due, then id). */
+  readonly counterparties: readonly PrincipalId[];
+  /** Whom the headline names: the shorted ones on a default, else the first counterparty. */
+  readonly named: readonly PrincipalId[];
+}
+
+function deedSplit(v: SettledView): DeedSplit | null {
+  if (v.payees === undefined) return null;
+  let promised = 0;
+  let paid = 0;
+  let withheld = 0;
+  let selfWithheld = 0;
+  for (const p of v.payees) {
+    if (p.principal === v.creator) {
+      selfWithheld += p.electiveShortfall;
+      continue;
+    }
+    promised += p.electiveDue;
+    paid += p.electivePaid;
+    withheld += p.electiveShortfall;
+  }
+  const ordered = counterpartiesOf(v.creator, settledParties(v.payees));
+  const shorted = ordered.filter((c) => c.shorted > 0).map((c) => c.principal);
+  return {
+    promised: minor(promised),
+    paid: minor(paid),
+    withheld: minor(withheld),
+    selfWithheld: minor(selfWithheld),
+    counterparties: ordered.map((c) => c.principal),
+    named: v.defaulted && shorted.length > 0 ? shorted : ordered.slice(0, 1).map((c) => c.principal),
+  };
+}
+
+/**
+ * Handles as one possessive noun phrase: `varrow's` · `varrow and severin's` · `a, b and c's` ·
+ * `a, b and 2 others'`. At most four roles exist on any kind, so the last form is the ceiling.
+ */
+function possessiveOf(src: FrameSource, who: readonly PrincipalId[]): string {
+  const h = who.map((p) => String(handleOf(src, p)));
+  if (h.length === 0) return "nobody's";
+  if (h.length <= 3) {
+    const head = h.slice(0, -1);
+    return `${head.length === 0 ? '' : `${head.join(', ')} and `}${h[h.length - 1] ?? ''}'s`;
+  }
+  return `${h[0] ?? ''}, ${h[1] ?? ''} and ${String(h.length - 2)} others'`;
 }
 
 function glyphFor(v: SettledView): VentureGlyph {
@@ -443,9 +557,19 @@ function glyphFor(v: SettledView): VentureGlyph {
  */
 function headlineFor(src: FrameSource, v: SettledView): string {
   const payer = handleOf(src, v.creator);
-  const other = v.parties.find((p) => p !== v.creator);
-  const counterparty = other === undefined ? 'nobody' : handleOf(src, other);
-  return `${payer}'s ${money(v.atStake)} was riding on ${counterparty}'s ${v.kind.toLowerCase()}.`;
+  const kind = v.kind.toLowerCase();
+  const split = deedSplit(v);
+  if (split === null) {
+    // A caller that carried no payees (fixtures, older sources): the first other party in id order, as
+    // before. Every production caller carries them (`Runtime.reckoningFrame`).
+    const other = v.parties.find((p) => p !== v.creator);
+    const counterparty = other === undefined ? 'nobody' : handleOf(src, other);
+    return `${payer}'s ${money(v.atStake)} was riding on ${counterparty}'s ${kind}.`;
+  }
+  // ★ On a default, the agents it was broken TO; otherwise the one with the most due. One rule with the
+  // compact link (`motion.ts:counterpartiesOf`), so the sentence and the snap cannot name two agents.
+  if (split.counterparties.length === 0) return `${payer}'s ${kind} had no counterparty.`;
+  return `${payer}'s ${money(split.promised)} was riding on ${possessiveOf(src, split.named)} ${kind}.`;
 }
 
 /**
@@ -511,16 +635,35 @@ function tensionFor(src: FrameSource, u: UpcomingView): string {
 function consequenceFor(src: FrameSource, v: SettledView): string {
   const payer = handleOf(src, v.creator);
   if (v.deferred) return `${payer}'s ${v.kind.toLowerCase()} did not resolve. It carries to tomorrow.`;
+  const split = deedSplit(v);
   if (v.defaulted) {
+    // ── ★ COUNTED OVER THE COUNTERPARTIES, WHEN THE CALLER CARRIED THEM ────────────
+    //
+    // A role the payer filled itself is a promise to nobody: `venture/settlement.ts` records the
+    // shortfall as a default and moves no standing for it (`selfDealt`). So the accusation counts what
+    // was withheld from OTHER principals, out of what was promised to them — and a default whose whole
+    // shortfall was on the payer's own role says exactly that rather than reading as a betrayal.
+    if (split !== null && split.withheld === 0 && split.selfWithheld > 0) {
+      return split.counterparties.length === 0
+        ? `${payer} withheld ${String(split.selfWithheld)} from a role it filled itself.`
+        : `${payer} paid every counterparty in full and withheld ${String(split.selfWithheld)} from a role it filled itself.`;
+    }
     // `undefined` means the caller did not measure it — fall back to the whole promise rather than
     // print a split nobody computed. Every production caller measures it (`Runtime.reckoningFrame`).
-    const withheld = v.withheld ?? v.atStake;
+    const promised = split !== null && split.withheld > 0 ? split.promised : v.atStake;
+    const withheld = split !== null && split.withheld > 0 ? split.withheld : (v.withheld ?? v.atStake);
     // A default that took everything reads as one clause: naming "1,440 of the 1,440" invites a
     // reader to look for a remainder that is not there.
-    if (withheld >= v.atStake) return `${payer} walked away from all ${String(v.atStake)} it had promised.`;
-    return `${payer} walked away from ${String(withheld)} of the ${money(v.atStake)} it had promised.`;
+    if (withheld >= promised) return `${payer} walked away from all ${String(promised)} it had promised.`;
+    return `${payer} walked away from ${String(withheld)} of the ${money(promised)} it had promised.`;
   }
-  return `${payer} paid ${money(v.atStake)} it could have kept.`;
+  // ── ★ "COULD HAVE KEPT" IS ABOUT OTHER PRINCIPALS ───────────────────────────
+  //
+  // Paying a role it filled itself is moving money between its own pockets, and the sentence used to
+  // count it as a promise kept. Paid to counterparties only, when the payees are known.
+  if (split === null) return `${payer} paid ${money(v.atStake)} it could have kept.`;
+  if (split.counterparties.length === 0) return `${payer} owed nothing to anyone but itself.`;
+  return `${payer} paid ${money(split.paid)} it could have kept.`;
 }
 
 /**
@@ -575,7 +718,8 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       magnitude: v.atStake,
       magnitudeUnit: 'MINOR' as const,
       venture: v.venture,
-      cast: chipsFor(src, v.parties),
+      // ★ The payer first, then whom the deed names — see `settlementCast`.
+      cast: settlementCast(src, v),
       publicLine: v.publicLine,
       sealVerdict: v.sealVerdict,
       // Named only where there is something to name. `undefined` is dropped by the canonical
@@ -964,7 +1108,8 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
       )
       .slice(0, MAX_FRAME_CLAIM_LINES),
     glyphs: byStakesAscending.map(glyphFor),
-    ticker: src.ticker.filter((t) => t.length <= 140),
+    // ★ NEWEST FIRST, by the one rule both frames publish with — every reader takes the head.
+    ticker: publishedTicker(src.ticker),
     nextDocket: docket,
     season: src.season ?? null,
     seasonRecords: src.seasonRecords ?? [],

@@ -77,6 +77,23 @@ test('MCP agents enroll, sign, act, retry, reject impersonation and resume ident
     });
     const start = (await call(builder, 'eve_status')).report.tick;
     for (let i = 0; i < 30 && (await call(builder, 'eve_status')).report.tick <= start; i++) await delay(200);
+    await t.test('before the first Reckoning the spectator tools read live.json, which the engine now serves', async () => {
+      // A ticking world has written live.json, and no Reckoning can have settled (turbo is 2 s a tick,
+      // 288 ticks to the first one). The engine's own /frames route refused `live.json` as "no frame",
+      // so on a local world eve_map fell through to latest.json and every spectator tool said NOT_YET.
+      // MUTATION: drop `|| name === LIVE` from the engine's framesHandler — eve_map is NOT_YET again.
+      const map = await call(observer, 'eve_map');
+      assert.equal(typeof map.tick, 'number', `eve_map read the live frame: ${JSON.stringify(map)}`);
+      assert.equal(typeof map.phase, 'string');
+      const rundown = await call(observer, 'eve_rundown');
+      assert.equal(rundown.reckoning, null, JSON.stringify(rundown));
+      assert.match(rundown.status, /No Reckoning has settled in this world yet/);
+      assert.equal(typeof rundown.ticksUntilReckoning, 'number');
+      const dossier = await call(observer, 'eve_dossier', { handle: 'qa-builder' });
+      assert.equal(dossier.handle, 'qa-builder');
+      assert.match(dossier.status, /No Reckoning has settled/);
+      assert.equal(dossier.standing, null);
+    });
     let observations;
     await t.test('each agent obtains its own signed observation', async () => {
       observations = await Promise.all([builder, trader, observer].map(c => call(c, 'eve_observe')));

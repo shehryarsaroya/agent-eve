@@ -55,6 +55,7 @@ import {
   FRAME_INDEX,
   frameFileName,
   LATEST,
+  LIVE,
   publishFrame,
   publishLiveFrame,
   publishReplayedFrame,
@@ -970,13 +971,19 @@ export function createApp(options: ApiOptions): CreatedApp {
   // per-Reckoning archive as not served. It was served the whole time — the audit fetched `r-15.json`
   // and the file is `r-000015.json`."* So the archive spelling is served here through
   // {@link frameFileName}, never by pasting a pattern.
+  //
+  // ★ **`live.json` too.** `agent.md` §8 names it first — *"`GET /frames/live.json` (rewritten every
+  // tick — motion)"* — and this route refused it as `no frame live.json` while serving the two files
+  // beside it, so on a local or self-hosted world the frame that moves was the one an agent (and the
+  // MCP bridge's `eve_map`) could not read. Production nginx serves it off disk, which is why nobody
+  // there noticed. Before a world's first Reckoning it is the only frame there is.
   // ══════════════════════════════════════════════════════════════════════════
   const framesHandler = (req: Request, res: Response): void => {
     guard(res, () => {
       const name = String(req.params['name']);
       const archive = /^r-(\d+)\.json$/.exec(name);
       const wanted =
-        name === LATEST || name === FRAME_INDEX
+        name === LATEST || name === FRAME_INDEX || name === LIVE
           ? name
           : archive === null
             ? null
@@ -987,9 +994,9 @@ export function createApp(options: ApiOptions): CreatedApp {
           404,
           refusal(
             WIRE_REASON.NO_SUCH_ROUTE,
-            `no frame ${scrub(name)}. The frames are GET /frames/${LATEST} (the last settled ` +
-              `Reckoning), /frames/${FRAME_INDEX} (every one so far), and ` +
-              `/frames/${frameFileName(1)} for one by number — six digits, zero-padded.`,
+            `no frame ${scrub(name)}. The frames are GET /frames/${LIVE} (rewritten every tick), ` +
+              `/frames/${LATEST} (the last settled Reckoning), /frames/${FRAME_INDEX} (every one so far), ` +
+              `and /frames/${frameFileName(1)} for one by number — six digits, zero-padded.`,
           ),
         );
         return;
@@ -1002,7 +1009,8 @@ export function createApp(options: ApiOptions): CreatedApp {
             WIRE_REASON.NO_SUCH_ROUTE,
             `the frames route EXISTS and this world is not writing frames: COMPACT_FRAMES_DIR is unset, ` +
               `so nothing has been published to ${scrub(name)}. Set it and the file appears at the next ` +
-              `settled Reckoning. In production nginx serves this path off disk, which is why \`agent.md\` ` +
+              (wanted === LIVE ? 'tick' : 'settled Reckoning') +
+              `. In production nginx serves this path off disk, which is why \`agent.md\` ` +
               `§8 sends you here; nothing about your request or your identity is wrong.`,
           ),
         );
@@ -1017,9 +1025,13 @@ export function createApp(options: ApiOptions): CreatedApp {
           404,
           refusal(
             WIRE_REASON.NO_SUCH_ROUTE,
-            `the frames route EXISTS and ${scrub(wanted)} has not been written yet — no Reckoning has ` +
-              `settled since this world started, or that one is outside the retained window. ` +
-              `/frames/${FRAME_INDEX} lists every frame that does exist.`,
+            wanted === LIVE
+              ? `the frames route EXISTS and ${LIVE} has not been written yet — this world has not ` +
+                  'published a tick since it started. It is rewritten every tick from the first one.'
+              : `the frames route EXISTS and ${scrub(wanted)} has not been written yet — no Reckoning has ` +
+                  `settled since this world started, or that one is outside the retained window. ` +
+                  `/frames/${LIVE} carries the map until the first one does, and ` +
+                  `/frames/${FRAME_INDEX} lists every frame that does exist.`,
           ),
         );
         return;

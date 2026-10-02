@@ -14,8 +14,10 @@
  *     frame.authorityLines      =  12 of 41 live (cap 12)
  *     frame states              = UNUSED=12
  *
- * The **field** had already been fixed once — `runtime.ts` reads gross draws out of the journal
- * rather than the live row cache, with a comment naming the exact defect it closed. The fix was
+ * The **field** had already been fixed once — `runtime.ts` read draws out of the journal rather than
+ * the live row cache, with a comment naming the exact defect it closed. (That read was GROSS, and it
+ * has since been made net of the release journal — ★ see {@link AuthorityLinesArgs.releases}: a gross
+ * sum is not bounded by the LIMIT, and it published `spent 14400` of a `10000` grant.) The fix was
  * right and insufficient, because **nothing had fixed the SELECTION**: `render.ts` ranked authority
  * lines by `granted + grantedContingent` and by nothing else, so it was the only line set in the
  * file with no term for *whether anything happened*. `raidLines` puts live first, `battleLines` puts
@@ -99,16 +101,29 @@ export interface AuthorityDrawRead {
 
 export interface AuthorityLinesArgs {
   readonly grants: readonly AuthorityGrantRead[];
-  /**
-   * The **gross** draw journal, every row, unfiltered.
-   *
-   * Gross rather than the live per-row counter, and the distinction is the one `runtime.ts` records:
-   * the counter is *outstanding* charge and since `RULES_VERSION` 26 it FALLS when an abandoned
-   * venture returns its draw. A delegate that opened three ventures in its grantor's name and let
-   * their windows close would render `UNUSED` on a grant it had spent all cycle drawing on. The
-   * line's question is *"what has this delegate done"*, and only the journal can answer it.
-   */
+  /** The draw journal, every row, unfiltered (`GrantBook.allSpends`). */
   readonly draws: readonly AuthorityDrawRead[];
+  /**
+   * ★ **The release journal, every row** (`GrantBook.allReleases`) — draws given back when the venture
+   * they were drawn for retired without binding anybody. **Subtracted**, exactly as INV-22 and the row
+   * cache subtract it (`GrantBook.netSpendOf`).
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **THE LINE PUBLISHED A DELEGATE SPENDING MORE THAN ITS LIMIT ALLOWS.** This builder summed the
+   * draw journal GROSS, on the argument that the outstanding figure FALLS when an abandoned venture
+   * returns its draw, so a delegate that opened ventures and let them lapse would render `UNUSED`. But
+   * a draw that was given back is headroom the LIMIT has again — the delegate can draw it a second
+   * time — so the gross sum is not bounded by the limit at all: a grant whose ventures were all
+   * ABANDONED and refunded showed **`spent 14400` of a `10000` limit, `DRAWN`**, which on a public
+   * frame reads as a delegate overrunning the authority it was given (A5′), while the book, INV-22 and
+   * the delegate's own headroom all said nothing was outstanding. `contract.ts` defines `DRAWN` as
+   * *"some headroom used"*, and none was.
+   *
+   * What the delegate DID stays on the line: `boundVentures` counts every venture it bound in the
+   * grantor's name, released or not, and ranks second only to an outstanding draw.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  readonly releases: readonly AuthorityDrawRead[];
   /** Live headroom on both LIMITS. A different question from the draws, and it needs the current answer. */
   readonly headroom: (grant: GrantId) => { readonly direct: Minor; readonly contingent: Minor };
   /** How many ventures each grant has bound in its grantor's name, counted once over the book. */
@@ -128,18 +143,32 @@ export interface AuthorityLinesArgs {
   readonly limit?: number;
 }
 
-/** Gross draws per grant, folded in ONE pass. See the header on why this is not per-grant. */
-function drawsByGrant(
+/**
+ * What each grant has OUTSTANDING — Σ draws − Σ releases — folded in one pass over each journal. See the
+ * header on why this is not per-grant, and {@link AuthorityLinesArgs.releases} on why it is net.
+ *
+ * The arithmetic is `GrantBook.netSpendOf`'s, which is the figure INV-22 recomputes and the row cache
+ * holds, so the line, the invariant and the delegate's own headroom are one number. Floored at zero
+ * per limit, as `netDrawOf` floors it: a release can never exceed its draw (`releaseSpend` refuses), so
+ * the floor only ever meets a malformed journal, where it fails toward "nothing outstanding" rather than
+ * publishing a negative spend.
+ */
+function outstandingByGrant(
   draws: readonly AuthorityDrawRead[],
+  releases: readonly AuthorityDrawRead[],
 ): ReadonlyMap<GrantId, { direct: number; contingent: number }> {
   const out = new Map<GrantId, { direct: number; contingent: number }>();
-  for (const row of draws) {
-    const acc = out.get(row.grant);
-    if (acc === undefined) out.set(row.grant, { direct: row.direct, contingent: row.contingent });
-    else {
-      acc.direct += row.direct;
-      acc.contingent += row.contingent;
-    }
+  const fold = (row: AuthorityDrawRead, sign: 1 | -1): void => {
+    const acc = out.get(row.grant) ?? { direct: 0, contingent: 0 };
+    acc.direct += sign * row.direct;
+    acc.contingent += sign * row.contingent;
+    out.set(row.grant, acc);
+  };
+  for (const row of draws) fold(row, 1);
+  for (const row of releases) fold(row, -1);
+  for (const acc of out.values()) {
+    acc.direct = Math.max(0, acc.direct);
+    acc.contingent = Math.max(0, acc.contingent);
   }
   return out;
 }
@@ -161,11 +190,12 @@ function isNamedPointer(line: AuthorityLine): boolean {
 }
 
 /**
- * **Has this authority been used?** The term the previous comparator did not have.
+ * **Is any of this authority in use?** The term the previous comparator did not have.
  *
  * Read off the published fields rather than recomputed, so what decides the ranking is exactly what
  * a viewer can see on the line — a sort keyed on a fact the frame does not carry is a selection
- * nobody can check.
+ * nobody can check. Those fields are OUTSTANDING draws (net of releases), so a delegate whose ventures
+ * all retired unbound ranks next by `boundVentures`, which still counts them.
  */
 function wasDrawn(line: AuthorityLine): boolean {
   return line.spent > 0 || line.spentContingent > 0;
@@ -210,7 +240,7 @@ export function rankAuthorityLines(lines: readonly AuthorityLine[]): readonly Au
  * computed correctly in one place and thrown away by a sort in another.
  */
 export function authorityLinesFor(args: AuthorityLinesArgs): readonly AuthorityLine[] {
-  const gross = drawsByGrant(args.draws);
+  const outstanding = outstandingByGrant(args.draws, args.releases);
   const retain = args.retain ?? new Set<GrantId>();
   const lines: AuthorityLine[] = [];
   for (const g of args.grants) {
@@ -218,8 +248,11 @@ export function authorityLinesFor(args: AuthorityLinesArgs): readonly AuthorityL
     // something else on this frame names it — see the header, and `assertFrameBudgets`' pointer check.
     const expired = g.expiresTick < args.tick;
     if (expired && !retain.has(g.id)) continue;
-    const drawn = gross.get(g.id) ?? { direct: 0, contingent: 0 };
+    const drawn = outstanding.get(g.id) ?? { direct: 0, contingent: 0 };
     const headroom = args.headroom(g.id);
+    // ★ What is OUTSTANDING decides it — `DRAWN` is *"some headroom used"* (`contract.ts`), and a draw
+    // given back uses none. A delegate whose every venture retired unbound renders `UNUSED`, with its
+    // `boundVentures` still counting what it did.
     const anyDraw = drawn.direct > 0 || drawn.contingent > 0;
     // BOTH limits decide the state. Reading `spentDirect` alone rendered the A6 attack as `UNUSED`:
     // an un-escrowable venture created on a grantor's behalf moves no escrow, so the direct counter

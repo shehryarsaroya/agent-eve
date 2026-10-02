@@ -57,6 +57,7 @@ import {
   MAX_FRAME_PARLEY_LINES,
   MAX_RAID_LINES,
   assertLiveFrameBudgets,
+  publishedTicker,
   type AuthorityLine,
   type BattleLine,
   type ClaimLine,
@@ -64,6 +65,7 @@ import {
   type ConvoyLine,
   type DirectoryLine,
   type LiveFrame,
+  type MapSystem,
   type ParleyLine,
   type LivePhase,
   type RaidLine,
@@ -111,9 +113,15 @@ export interface LiveSource {
   readonly directoryLines?: readonly DirectoryLine[];
   /** ★ 41 — letters that have declassified, newest first. */
   readonly parleyLines?: readonly ParleyLine[];
+  /** The world's ticker, OLDEST first as its ring keeps it; published newest first. */
   readonly ticker?: readonly string[];
   /** ★ THE SEASON LINE, live — the countdown and the crews still forming. */
   readonly season?: SeasonLine;
+  /**
+   * ★ THE MAP — supplied only while no Reckoning has settled (`lastReckoning === null`), from the one
+   * builder the nightly frame uses (`Runtime.frameMap`). See `LiveFrame.map`.
+   */
+  readonly map?: readonly MapSystem[];
 }
 
 /**
@@ -216,8 +224,13 @@ export function renderLiveFrame(src: LiveSource): LiveFrame {
     // Pass-throughs: ordered by their builders, capped here because the budget is the renderer's.
     directoryLines: (src.directoryLines ?? []).slice(0, MAX_FRAME_DIRECTORY_LINES),
     parleyLines: (src.parleyLines ?? []).slice(0, MAX_FRAME_PARLEY_LINES),
-    ticker: (src.ticker ?? []).filter((t) => t.length <= 140),
+    // ★ NEWEST FIRST, by the rule the nightly frame publishes with (`contract.ts:publishedTicker`).
+    ticker: publishedTicker(src.ticker ?? []),
     season: src.season ?? null,
+    // ★ THE MAP before the first settlement, sorted as the nightly frame sorts it so the two files
+    // are diffable; present and empty after it, when `latest.json` carries it. Never truncated, for
+    // the nightly frame's reason: a partial map is a map with holes in it.
+    map: [...(src.map ?? [])].sort((a, b) => compareIds(a.id, b.id)),
   };
 
   assertLiveFrameBudgets(frame);
@@ -285,6 +298,15 @@ export const LIVE_FACT_KEYS: readonly (keyof LiveSource)[] = Object.freeze([
   // ★ The season line. On `PUBLIC_FACT_KEYS` with its argument; its one clock-tier field — a crew's
   // stake committed inside the commitment window — is carried as a count and never as an amount.
   'season',
+  // ── ★ THE MAP, UNTIL THE FIRST RECKONING SETTLES ────────────────────────────
+  //
+  // On `PUBLIC_FACT_KEYS`, where it needed *"the least argument of anything here"*: the topology, the
+  // lode and the straits are pure functions of the fixed map and published constants, and every field
+  // is one any agent reads out of its own `observe`. Nothing on it declassifies on a clock, so carrying
+  // it on a mid-Reckoning artifact is a re-read and not an early disclosure. It is here because a new
+  // season clears the frames and publishes no `latest.json` for 288 ticks, and a show with no map for
+  // its first day has nothing for a stranger to look at (A13: the map is the only agreed representation).
+  'map',
 ]);
 
 export class LiveProjectionError extends Error {}

@@ -10,7 +10,21 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
-## ⏱ 2026-10-02 (latest) — §5.2's max share, branch `season1-levy-cap` off `season1-voices`
+## ⏱ 2026-10-02 (latest) — four surface fixes, branch `season1-frames-fixes` off `0aafdf6`
+
+*Not merged, not deployed. Projections only — frames, client, MCP bridge — so still `RULES_VERSION` 41, verbs
+40/40, observe keys 11/11, kinds 8/8. `TRACKER.md`'s STATUS carries the account.*
+
+| | reading, 2026-10-02 |
+|---|---|
+| `tsc` · lint · audits · vitest (`npm run gate0`) | 0 · 0 · DET-8 and PROP-O3 pass · **380 files, 4,408 passed, 1 skipped, 0 failed** (537 s) |
+| the world | `sim --seed s1` and `s2`, 900 ticks, 12 members: the `state_hash` stream byte-identical to `0aafdf6` (`cmp`), the summary identical but for `elapsed_ms` |
+| MCP bridge (`cd mcp && npm test`, engine rebuilt) | 16 passed, 0 failed |
+| client | one asset version, `?v=42`; the map draws at tick 100 of a fresh season (headless, 30 systems) where it drew "0 CHARTED SYSTEMS" |
+
+---
+
+## ⏱ 2026-10-02 — §5.2's max share, branch `season1-levy-cap` off `season1-voices`
 
 *Not merged, not deployed. Owner call (3) decided: no line of a docket's remainder pool above
 `LEVY_MAX_SHARE_MULTIPLE` (3) × its even share. `TRACKER.md`'s STATUS carries the account, the per-seed table

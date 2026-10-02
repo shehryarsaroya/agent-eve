@@ -728,21 +728,25 @@ var MapView = (function () {
         S('ellipse', { cx: cx0, cy: cy0, rx: r0 * 3.2, ry: r0 * 2.2, fill: 'none', stroke: '#0d2830', 'stroke-width': 2 }),
         S('ellipse', { cx: cx0, cy: cy0, rx: r0 * 2.1, ry: r0 * 1.45, fill: 'none', stroke: '#0d2830', 'stroke-width': 2 }),
         S('ellipse', { cx: cx0, cy: cy0, rx: r0 * 0.72, ry: r0 * 0.5, fill: 'none', stroke: '#20363c', 'stroke-width': 2, 'stroke-dasharray': '5 6' }),
+        // \u2605 Reachable now only when NO frame carrying the lane graph has been
+        // read: the live frame carries it until the first Reckoning settles
+        // (`LiveFrame.map`), and the Reckoning frame from then on. It used to
+        // be the whole first day of every new season.
         S('text', {
           x: cx0, y: cy0 - 14, 'text-anchor': 'middle', fill: '#4e9db2',
           style: 'font:600 15px "Roboto Condensed",sans-serif;letter-spacing:.24em',
-          text: 'NO MAP UNTIL THE FIRST RECKONING',
+          text: 'NO MAP YET',
         }),
         S('text', {
           x: cx0, y: cy0 + 12, 'text-anchor': 'middle', fill: '#6f8288',
           style: 'font:12px ui-monospace,monospace',
-          text: 'the lane graph is published at settlement, once per 288 ticks',
+          text: 'the lane graph arrives with the first frame that carries it',
         }),
         S('text', {
           x: cx0, y: cy0 + 32, 'text-anchor': 'middle', fill: '#3f5158',
           style: 'font:11px ui-monospace,monospace',
-          text: 'the live frame carries motion, not topology' +
-            (L ? '  \u00b7  ' + L.ticksUntilReckoning + ' ticks to go' : ''),
+          text: (L ? 'the live frame was read without one' : 'no frame has been read yet') +
+            (L ? '  \u00b7  ' + L.ticksUntilReckoning + ' ticks to the Reckoning' : ''),
         }),
       ]));
       return;

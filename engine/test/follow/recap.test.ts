@@ -212,7 +212,13 @@ describe('the night’s events', () => {
     expect(r.events[0]).toBe("vale drew 1,500 more on orison's grant and vale bound orison to 2 more ventures in its name.");
     // Absent last night is NOT proof it is new — the list is capped — so no "tonight" is claimed.
     const fresh = buildRecap({ frame: frame(3, { ...base, authorityLines: [grant] as never }), previous: frame(2, base), handle: 'vale' });
-    expect(fresh.events[0]).toBe('orison has given vale authority to act in its name, up to 10,000 of direct loss and 2,000 of contingent liability; 0 drawn so far.');
+    expect(fresh.events[0]).toBe('orison has given vale authority to act in its name, up to 10,000 of direct loss and 2,000 of contingent liability; none of it drawn.');
+    // ★ BOTH limits. The A6 attack moves no escrow, so a sentence reading `spent` alone mailed a
+    // delegate holding 1,800 of contingent liability over its grantor as "0 drawn so far".
+    // MUTATION: print `fmt(a.spent)` again and this reads "0 of it drawn" / "none of it drawn" — RED.
+    const contingentOnly = { ...grant, spentContingent: 1_800, state: 'DRAWN' };
+    const attack = buildRecap({ frame: frame(3, { ...base, authorityLines: [contingentOnly] as never }), previous: frame(2, base), handle: 'orison' });
+    expect(attack.events[0]).toBe('orison has given vale authority to act in its name, up to 10,000 of direct loss and 2,000 of contingent liability; 1,800 of it drawn.');
   });
 
   it('tomorrow’s docket, when it names this principal', () => {
