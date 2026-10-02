@@ -384,10 +384,15 @@ describe('a refused fill reaches its agent, with the invariant and what to do in
     tick(w.runtime);
     w.runtime.takeCorrections(ALPHA);
     // … and PAYER, which already holds role 0, tries role 1's neighbour with a spare hand.
+    const filledAt = w.runtime.ventures.require(id).roles[1]?.filledAtTick;
     const spare = idleHandsOf(w.runtime, PAYER)[0];
     const refusal = act(w.runtime, PAYER, 'fill_role', { venture: id, role: 1, hand: spare });
     expect(refusal?.verb).toBe('fill_role');
-    expect(refusal?.hint).toContain(FILL_REFUSAL_NOTE.LOST_CONTEST);
+    // ★ ALPHA took role 1 a tick EARLIER, so no contest was held: this asserted "Another principal took
+    // this slot in the same tick", the sentence item 8 of the surface fixes removed from exactly this
+    // case (`runtime.ts:lostContestNote`). The same-tick contest above still reads LOST_CONTEST.
+    expect(refusal?.hint).not.toContain(FILL_REFUSAL_NOTE.LOST_CONTEST);
+    expect(refusal?.hint).toContain(`already filled at tick ${String(filledAt)}`);
   });
 
   it('cites the client_sequence the agent actually sent, not the queue’s length', () => {
