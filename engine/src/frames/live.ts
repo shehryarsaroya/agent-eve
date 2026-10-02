@@ -64,6 +64,7 @@ import {
   type LivePhase,
   type RaidLine,
   type SapLine,
+  type SeasonLine,
   type VentureGlyph,
 } from './contract.js';
 
@@ -103,6 +104,8 @@ export interface LiveSource {
   readonly saps?: readonly SapLine[];
   readonly frontBands?: readonly FrontBand[];
   readonly ticker?: readonly string[];
+  /** ★ THE SEASON LINE, live — the countdown and the crews still forming. */
+  readonly season?: SeasonLine;
 }
 
 /**
@@ -203,6 +206,7 @@ export function renderLiveFrame(src: LiveSource): LiveFrame {
     saps: src.saps ?? [],
     frontBands: (src.frontBands ?? []).slice(0, MAX_FRAME_FRONT_BANDS),
     ticker: (src.ticker ?? []).filter((t) => t.length <= 140),
+    season: src.season ?? null,
   };
 
   assertLiveFrameBudgets(frame);
@@ -258,6 +262,9 @@ export const LIVE_FACT_KEYS: readonly (keyof LiveSource)[] = Object.freeze([
   'saps',
   'frontBands',
   'ticker',
+  // ★ The season line. On `PUBLIC_FACT_KEYS` with its argument; its one clock-tier field — a crew's
+  // stake committed inside the commitment window — is carried as a count and never as an amount.
+  'season',
 ]);
 
 export class LiveProjectionError extends Error {}

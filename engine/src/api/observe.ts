@@ -111,6 +111,7 @@ import {
 // is the one gate both it and the verb ask. Only the two published constants are imported, so a
 // `withheld` sentence quoting the allowance cannot quote a different number than the engine charges.
 import { PARLEYS_PER_RECKONING } from '../say/parley.js';
+import { GRAND_BASE_YIELD_MINOR, GRAND_KIND, GRAND_RESIDUAL_PERCENT, GRAND_ROLE_STAKE_MINOR } from '../season/index.js';
 import { MAX_LIVE_INTENTS_PER_PRINCIPAL } from '../tick/intent.js';
 import { MAX_REACH_ROWS } from '../say/reach.js';
 // ── COMBAT (SPEC §9A) ───────────────────────────────────────────────────────
@@ -739,6 +740,15 @@ export function buildObservation(input: ObserveInput): Observation {
       // mention of it in an observation was the `withheld` line that fires when it hits zero, so an
       // agent learned the resource existed by exhausting it.
       campaign_clock: runtime.campaignClock(tick),
+      // ── ★ THE SEASON (SPEC §5, §7.6, A10) — THE THIRD HORIZON, AND ITS EXAM QUESTION ──
+      //
+      // On `header` for `raid_schedule`'s and `campaign_clock`'s reason: §17's observe budget is at
+      // eleven of eleven and a world-wide published clock belongs on `header`. It carries the season,
+      // the Reckonings left, the FINALE's tick, and the grand venture — published from the season's
+      // first tick, so the time to move hands toward its stage is visible thirteen Reckonings before
+      // it opens. Built by `Runtime.seasonBlock`, the same builder the frame's season line calls with
+      // no viewer (A9): this principal additionally reads its own crew's sealed stake, nothing more.
+      season: runtime.seasonBlock(tick, principal),
       /**
        * ★ **GROWTH (SPEC §4.2) — HOW CLOSE THE REGION IS TO OPENING ITS NEXT CONSTELLATION.**
        *
@@ -2852,6 +2862,7 @@ function affordancesFor(
   let rowsWithNoHand = 0;
   let rowsOutOfReach = 0;
   let alternateHands = 0;
+  const grandFillWithheld: string[] = [];
   let firstFill = true;
   const unreachedStages = new Set<SystemId>();
   // ── ★ AND THE GATES IN FRONT OF THE HANDLER, ASKED ONCE ─────────────────────
@@ -2877,6 +2888,21 @@ function affordancesFor(
         unreachedStages.add(row.stage);
       }
       continue;
+    }
+    // ── ★ A GRAND ROLE IS PRESENCE AND EARNED CAPITAL (SPEC §7.6, A15) ────────────
+    //
+    // The hand is already at the stage (the filter above); a grand role also stakes at least
+    // `GRAND_ROLE_STAKE_MINOR` out of `market.transferable_minor`, and a principal may be party to one
+    // candidate at a time. Asked through `Runtime.grandFillRefusal`, the gate the verb runs, so a row
+    // the engine would refuse is COUNTED in `withheld` with its sentence rather than offered (AGT-S2).
+    const grandVenture = runtime.ventures.get(row.venture);
+    const isGrand = grandVenture !== undefined && grandVenture.grand !== null;
+    if (isGrand) {
+      const refused = runtime.grandFillRefusal(principal, grandVenture, idle, GRAND_ROLE_STAKE_MINOR);
+      if (refused !== null) {
+        grandFillWithheld.push(`${row.venture} role ${String(row.role)}: ${refused.hint}`);
+        continue;
+      }
     }
     // Every other present idle hand *at this stage* is an equally legal fill of this slot.
     alternateHands += atStage.length - 1;
@@ -2969,20 +2995,29 @@ function affordancesFor(
         ? ''
         : ` ${row.creator} was bound to this by a delegate under grant ${row.creator_bound_by_grant}, ` +
           'not by its own signature.');
+    const grandNote = isGrand
+      ? ` THIS IS THE SEASON'S GRAND VENTURE: the stake below is the least a grand role may name ` +
+        `(${String(GRAND_ROLE_STAKE_MINOR)}, out of earned cash), the crew whose roles staked the most carries ` +
+        `the yield at delivery and every other candidate delivers nothing, and your share is ELECTIVE — ` +
+        `${row.creator} decides at the FINALE whether to pay it. Read header.season.grand before you commit.`
+      : '';
     eligible.push({
       verb: 'fill_role',
-      params: { venture: row.venture, role: row.role, hand: idle.id, stake: 0 },
+      params: { venture: row.venture, role: row.role, hand: idle.id, stake: isGrand ? GRAND_ROLE_STAKE_MINOR : 0 },
       cost: 1,
-      max_direct_loss: 0,
+      // A grand role's stake is the most this act can cost you: it is forfeit to the crew if you
+      // withdraw (§7.3), and returned at settlement otherwise. Exact, as `max_direct_loss` must be (A2).
+      max_direct_loss: isGrand ? GRAND_ROLE_STAKE_MINOR : 0,
       max_contingent_liability: 0,
-      what_it_forecloses: first
+      what_it_forecloses: (first
         ? `hand ${idle.id} cannot fill another role while it is committed to this one, and you may hold at ` +
           `most one role in ${row.venture}. ${offer} ${stakeNote} FILLING IS NOT CLOSING: the fill is ` +
           `allocated at tick close and the venture stays FORMING until every party has countersigned the ` +
           `same terms_hash. ${close} Unsigned by tick ${String(row.expires_tick)} and the window closes, ` +
           'the venture retires ABANDONED, and nothing you spent comes back.'
         : `hand ${idle.id} is committed until this resolves, and you may hold at most one role in ` +
-          `${row.venture}. ${offer} ${close} Unsigned by tick ${String(row.expires_tick)}: retired ABANDONED.`,
+          `${row.venture}. ${offer} ${close} Unsigned by tick ${String(row.expires_tick)}: retired ABANDONED.`) +
+        grandNote,
       expires_tick: row.expires_tick,
       quote_id: quoteId(principal, tick, 'fill_role', { venture: row.venture, role: row.role }),
     });
@@ -3073,6 +3108,50 @@ function affordancesFor(
       expires_tick: tick + QUOTE_PIN_TICKS,
       quote_id: quoteId(principal, tick, 'create', { kind, stage: seat }),
     });
+  }
+
+  // 5a. ★ **Form the season's grand venture** (SPEC §7.6) — offered only during the FINALE, only to a
+  //     principal the verb would accept, and priced at the worst case the creator can be asked for.
+  //
+  //     ══════════════════════════════════════════════════════════════════════
+  //     BUILD is legally un-escrowable, so nothing is locked (`max_direct_loss` 0) and the whole of it
+  //     is a promise: every share of the yield lands with the creator and is paid only by its election.
+  //     `max_contingent_liability` is therefore every share at the top of the yield's band — the same
+  //     ceiling a delegated create is charged against a grant. Outside the window it is not offered and
+  //     not counted: that is a clock, published in `header.season.grand`, not a refusal of this reader.
+  //     ══════════════════════════════════════════════════════════════════════
+  let grandCreateWithheld: string | null = null;
+  {
+    const seasonNow = runtime.seasonBlock(tick, principal);
+    const grand = seasonNow.grand;
+    if (grand.open_now && grand.stage !== null) {
+      const refused = runtime.grandCreateRefusal(principal, tick);
+      if (refused === null) {
+        const ceiling = runtime.grandElectiveCeiling(seasonNow.season);
+        eligible.push({
+          verb: 'create',
+          params: { kind: GRAND_KIND, stage: grand.stage, grand: true },
+          cost: 1,
+          max_direct_loss: 0,
+          max_contingent_liability: ceiling,
+          what_it_forecloses:
+            `THE SEASON ${String(seasonNow.season)} GRAND VENTURE, staged at ${grand.stage}: a ${GRAND_KIND} ` +
+            `yielding ${String(GRAND_BASE_YIELD_MINOR)} (±${String(GRAND_RESIDUAL_PERCENT)}%) at a full fill, ` +
+            'settling at the FINALE (tick ' +
+            `${String(grand.finale_tick)}). Nothing is escrowed — the yield lands with YOU and every share of it ` +
+            `is elective, so you are asked for up to ${String(ceiling)} at the FINALE and staying silent is a ` +
+            'permanent public default on each share you leave unpaid. Its four roles must be filled by hands ' +
+            `standing at ${grand.stage}, each staking at least ${String(GRAND_ROLE_STAKE_MINOR)} of earned cash; ` +
+            'if another crew stakes more, your candidate delivers nothing and nobody owes anybody anything. You ' +
+            'may be party to one candidate this season. ' +
+            countersignWarning(tick),
+          expires_tick: Math.min(grand.closes_tick, tick + QUOTE_PIN_TICKS),
+          quote_id: quoteId(principal, tick, 'create', { kind: GRAND_KIND, stage: grand.stage, grand: true }),
+        });
+      } else {
+        grandCreateWithheld = refused.hint;
+      }
+    }
   }
 
   // 5b. **Leave the Commons.** The one affordance on this list that cannot be undone.
@@ -4661,6 +4740,9 @@ function affordancesFor(
         'creator you hold no grant over are unaffected',
     });
   }
+  // ★ The grand venture's two gates, each counted with the engine's own sentence (PROP-O1).
+  for (const why of grandFillWithheld) reasons.push({ verb: 'fill_role', text: why });
+  if (grandCreateWithheld !== null) reasons.push({ verb: 'create', text: grandCreateWithheld });
   if (rowsWithNoHand > 0) {
     reasons.push({
       verb: 'fill_role',
@@ -5016,6 +5098,8 @@ function affordancesFor(
         rowsGated +
         createsGated +
         boardBarred.slots +
+        grandFillWithheld.length +
+        (grandCreateWithheld === null ? 0 : 1) +
         boardDropped +
         crossingWithheld +
         crossingAnchored +
@@ -6177,6 +6261,10 @@ function promptFor(
   // opportunity, the ladder's own rule. See {@link chargePressure}.
   const charge = chargePressure(runtime, principal, tick);
   if (charge !== null) return charge;
+  // ★ The season's exam question outranks an ordinary slot in the two Reckonings it is live — see
+  // {@link grandPressure}. Below every obligation above, because those are promises already made.
+  const grand = grandPressure(runtime, principal, tick);
+  if (grand !== null) return grand;
   if (board.length > 0) {
     const first = board[0];
     // ══════════════════════════════════════════════════════════════════════════
@@ -6269,6 +6357,57 @@ function promptFor(
     : 'you are outside the Commons, where an idle hand is also an exposed one — it can be raided ' +
       'where it stands, and nothing out here makes hostile action invalid.';
   return `Nothing is waiting on you and ${String(idle)} of your hands are idle; an idle hand earns nothing, and ${where}`;
+}
+
+/**
+ * ★ **The season's grand venture, in the two Reckonings it is the most consequential thing on the
+ * map** (SPEC §7.6) — the penultimate, when hands must already be travelling to its stage, and the
+ * FINALE, when crews form and the yield is carried.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * A mechanism an agent is never told about in the sentence it reads first is a mechanism that does
+ * not happen — this repo has shipped that shape seventeen times. The announcement is on
+ * `header.season.grand` from the season's first tick; this is the briefing pointing at it on the two
+ * Reckonings when acting on it is possible. It says nothing to a Commons-bound principal before the
+ * window opens, because a Commons-bound hand cannot reach a Frontier stage at all and a sentence it
+ * cannot act on is noise.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+function grandPressure(runtime: Runtime, principal: PrincipalId, tick: number): string | null {
+  const season = runtime.seasonBlock(tick, principal);
+  const g = season.grand;
+  if (g.stage === null || season.reckonings_left > 2) return null;
+  const tag = `Season ${String(season.season)}`;
+  const mine = g.candidates.find((c) => c.creator === principal || c.slots.some((s) => s.holder === principal));
+  if (mine !== undefined) {
+    const yours = mine.your_crew_staked ?? mine.staked;
+    return (
+      `${tag} FINALE: you are party to grand candidate ${mine.venture} at ${g.stage} — ` +
+      `${String(mine.roles_filled)} of ${String(mine.roles_total)} roles filled, ${String(yours)} staked by its ` +
+      'crew. Every role must be filled and every party must sign before it can go LIVE, and at delivery the ' +
+      'live candidate with the largest stake carries the yield while the rest deliver nothing. Its shares are ' +
+      `elective: ${mine.creator} decides at the FINALE (tick ${String(g.finale_tick)}) whether the crew is paid.`
+    );
+  }
+  if (g.open_now) {
+    return (
+      `${tag} FINALE is tonight: the grand venture at ${g.stage} yields ${String(g.base_yield)} ` +
+      `(±${String(GRAND_RESIDUAL_PERCENT)}%) at a full fill and ` +
+      `settles at tick ${String(g.finale_tick)}. Form a candidate with create {"kind":"${g.kind}","stage":` +
+      `"${g.stage}","grand":true}, or fill one of the ${String(g.candidates.length)} candidate(s) on the board — ` +
+      `every role is a hand standing at ${g.stage} staking at least ${String(g.stake_per_role)} of earned cash, ` +
+      `and the crew that stakes the most carries it. The last tick to form one is ${String(g.closes_tick)}.`
+    );
+  }
+  if (tick < g.opens_tick && !principalIsCommonsBound(runtime.world, principal)) {
+    return (
+      `The FINALE is the next Reckoning: ${tag}'s grand venture at ${g.stage} opens at tick ` +
+      `${String(g.opens_tick)} and yields ${String(g.base_yield)} (±${String(GRAND_RESIDUAL_PERCENT)}%) at a full ` +
+      'fill. Its roles are filled only by hands standing ' +
+      `at ${g.stage}, so a hand that is not on its way by then will not be in a crew.`
+    );
+  }
+  return null;
 }
 
 /**

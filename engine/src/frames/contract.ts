@@ -1556,6 +1556,120 @@ export interface ReceiptLine {
  * A settled Reckoning, rendered. Immutable once written — a settled tick never
  * changes — which is why nginx may cache frame JSON as `immutable`.
  */
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ THE SEASON — the FINALE countdown, the grand venture, and the season's champions (A13)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** At most this many grand candidates on a frame, largest public stake first. */
+export const MAX_FRAME_GRAND_CANDIDATES = 6;
+/** At most this many closed seasons on a frame, newest first. */
+export const MAX_FRAME_SEASONS = 8;
+
+/** One crew slot on a grand candidate card. */
+export interface GrandSlotCard {
+  readonly label: string;
+  /** The slot's share of the yield, in bps. */
+  readonly shareBps: number;
+  readonly holder: PrincipalId | null;
+  readonly holderHandle: string | null;
+}
+
+/**
+ * ★ **THE GRAND CANDIDATE** — one crew contesting the season's grand venture.
+ *
+ * `PUBLIC`, every field: a venture's creator, its role-holders and its formation are `PUBLIC` rows
+ * (`venture.formed`, the fills), and `formedBy` is the actor column of that same row. `staked` is
+ * the PUBLIC part of the crew's stake only — fills committed inside the FINALE's commitment window
+ * are PARTIES-visible until settlement (§5.1) and appear here as a count, `sealedFills`, never as an
+ * amount. The same builder serves an agent's `header.season`, so this line is a strict subset of
+ * what every agent reads (A9).
+ */
+export interface GrandCandidateCard {
+  readonly venture: VentureId;
+  readonly creator: PrincipalId;
+  readonly creatorHandle: string;
+  /** The delegate that formed it in the creator's name under a grant (A6), or null. */
+  readonly formedBy: PrincipalId | null;
+  readonly formedByHandle: string | null;
+  readonly state: string;
+  readonly rolesFilled: number;
+  readonly rolesTotal: number;
+  readonly staked: Minor;
+  readonly sealedFills: number;
+  readonly slots: readonly GrandSlotCard[];
+}
+
+/**
+ * ★ **THE SEASON LINE** — where the world is in its season, and the season's exam question.
+ *
+ * The pixel signature (A13): a **FINALE countdown** in the chrome bar (`reckoningsLeft`), the grand
+ * venture's **crown on its stage** from the season's first tick (`grand.stage`), and during the
+ * FINALE each crew as a candidate card with its sockets filling and its stake rising. Every figure is
+ * a published constant, a pure function of the tick, or a `PUBLIC` venture fact.
+ */
+export interface SeasonLine {
+  readonly season: number;
+  /** Which Reckoning of the season, 1-based. */
+  readonly reckoning: number;
+  readonly of: number;
+  /** Reckonings still to settle, counting this one: 1 means tonight is the FINALE. */
+  readonly reckoningsLeft: number;
+  readonly finaleTick: number;
+  readonly inFinale: boolean;
+  readonly grand: {
+    readonly stage: SystemId | null;
+    readonly stageName: string | null;
+    readonly kind: string;
+    readonly baseYield: Minor;
+    readonly opensTick: number;
+    readonly closesTick: number;
+    readonly stakePerRole: Minor;
+    readonly openNow: boolean;
+    readonly candidates: readonly GrandCandidateCard[];
+    /** The candidate that carries the yield, once the delivery tick has decided it. */
+    readonly winner: VentureId | null;
+  };
+}
+
+/** One crew member's line on a closed season's record. */
+export interface SeasonCrewLine {
+  readonly label: string;
+  readonly principal: PrincipalId;
+  readonly handle: string;
+  readonly due: Minor;
+  readonly paid: Minor;
+  /** The delegate that stated the election on this share, or null when the creator did. */
+  readonly electedBy: PrincipalId | null;
+  readonly electedByHandle: string | null;
+}
+
+/**
+ * ★ **THE SEASON RECORD** — a closed season's FINALE and its champions. The Hall of Fame, by season.
+ *
+ * `PUBLIC`: read off the `season.closed` row, which is `PUBLIC` at birth, and every figure on it is
+ * a settled venture's payout, a public standing vector's difference, or a closed claim. Kept forever
+ * on the record; a frame carries the newest {@link MAX_FRAME_SEASONS}.
+ */
+export interface SeasonRecordLine {
+  readonly season: number;
+  readonly finaleTick: number;
+  readonly stage: SystemId | null;
+  /** `KEPT · BROKEN · UNCLAIMED · OUTSTANDING`. */
+  readonly outcome: string;
+  readonly venture: VentureId | null;
+  readonly creator: PrincipalId | null;
+  readonly creatorHandle: string | null;
+  readonly formedBy: PrincipalId | null;
+  readonly formedByHandle: string | null;
+  readonly proceeds: Minor;
+  readonly crew: readonly SeasonCrewLine[];
+  /** The season's titles — the Hall of Fame's four rules over the season's own play. */
+  readonly titles: readonly HallOfFameRow[];
+  readonly closedClaims: number;
+  /** One line a stranger reads. ≤140 characters. */
+  readonly legend: string;
+}
+
 export interface ReckoningFrame {
   readonly reckoningIndex: number;
   readonly tick: number;
@@ -1639,6 +1753,10 @@ export interface ReckoningFrame {
   readonly ticker: readonly string[];
   /** Tomorrow's docket, as the closing card. */
   readonly nextDocket: readonly DocketCard[];
+  /** ★ The season, its FINALE countdown and its grand venture (SPEC §5, §7.6, A13). */
+  readonly season: SeasonLine | null;
+  /** ★ Closed seasons, newest first — each FINALE and its champions (A10, §16 *Remembered*). */
+  readonly seasonRecords: readonly SeasonRecordLine[];
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1855,6 +1973,8 @@ export interface LiveFrame {
   readonly frontBands: readonly FrontBand[];
   /** The export surface, 140-char bounded, exactly as on the Reckoning frame. */
   readonly ticker: readonly string[];
+  /** ★ THE SEASON LINE, live: the FINALE countdown and the crews still forming. */
+  readonly season: SeasonLine | null;
 }
 
 export class FrameBudgetError extends Error {}
@@ -1934,6 +2054,55 @@ function compactProblems(links: readonly CompactLink[]): readonly string[] {
  * `test/frames/live.spec.ts` proves the key set is contained in `PUBLIC_FACT_KEYS`. A guard that
  * could not fail would be worse than no guard — see the mutation cases in that file.
  */
+/**
+ * ★ The season line's refusals, shared by both frames.
+ *
+ * The countdown must be a countdown (`1 ≤ reckoningsLeft ≤ of`), the candidate list is bounded, and
+ * no candidate card may carry a sealed stake as an amount — a crew's late stake is PARTIES-visible
+ * until settlement (§5.1), so the only honest public figure for it is a count.
+ */
+export function seasonProblems(line: SeasonLine | null, records: readonly SeasonRecordLine[]): readonly string[] {
+  const problems: string[] = [];
+  if (line !== null) {
+    if (line.season < 1) problems.push(`season ${String(line.season)} is not a season`);
+    if (line.reckoningsLeft < 1 || line.reckoningsLeft > line.of) {
+      problems.push(`reckoningsLeft ${String(line.reckoningsLeft)} is outside 1..${String(line.of)}`);
+    }
+    if (line.reckoning + line.reckoningsLeft !== line.of + 1) {
+      problems.push(`Reckoning ${String(line.reckoning)} with ${String(line.reckoningsLeft)} left does not add to ${String(line.of)}`);
+    }
+    if (line.inFinale !== (line.reckoningsLeft === 1)) problems.push('inFinale must be exactly reckoningsLeft === 1');
+    if (line.grand.candidates.length > MAX_FRAME_GRAND_CANDIDATES) {
+      problems.push(`${String(line.grand.candidates.length)} grand candidates exceed ${String(MAX_FRAME_GRAND_CANDIDATES)}`);
+    }
+    for (const c of line.grand.candidates) {
+      for (const key of Object.keys(c)) {
+        if (/sealed(Stake|Minor|Amount)|yourCrew/i.test(key)) {
+          problems.push(`grand candidate ${c.venture} carries "${key}": a sealed stake is PARTIES until settlement (§5.1)`);
+        }
+      }
+      if (c.rolesFilled > c.rolesTotal) problems.push(`grand candidate ${c.venture} has more roles filled than it has`);
+    }
+  }
+  if (records.length > MAX_FRAME_SEASONS) {
+    problems.push(`${String(records.length)} season records exceed ${String(MAX_FRAME_SEASONS)}`);
+  }
+  for (const [i, r] of records.entries()) {
+    const prev = records[i - 1];
+    if (prev !== undefined && r.season >= prev.season) problems.push('season records must run newest first');
+    if (r.legend.length === 0 || r.legend.length > 140) problems.push(`season ${String(r.season)}'s legend is not one ticker line`);
+    if (!['KEPT', 'BROKEN', 'UNCLAIMED', 'OUTSTANDING'].includes(r.outcome)) {
+      problems.push(`season ${String(r.season)} has an unknown outcome ${r.outcome}`);
+    }
+    // KEPT means every share was paid, and BROKEN means one was not. The record may never say
+    // otherwise of a real agent (A5′).
+    const unpaid = r.crew.filter((c) => c.paid < c.due).length;
+    if (r.outcome === 'KEPT' && unpaid > 0) problems.push(`season ${String(r.season)} reads KEPT with ${String(unpaid)} unpaid share(s)`);
+    if (r.outcome === 'BROKEN' && unpaid === 0) problems.push(`season ${String(r.season)} reads BROKEN with every share paid`);
+  }
+  return problems;
+}
+
 export function assertLiveFrameBudgets(frame: LiveFrame): void {
   const problems: string[] = [];
 
@@ -1989,6 +2158,8 @@ export function assertLiveFrameBudgets(frame: LiveFrame): void {
         `1..${TICKS_PER_RECKONING}`,
     );
   }
+  // `?? null` so a frame written by an older build, with no season at all, still validates.
+  problems.push(...seasonProblems(frame.season ?? null, []));
 
   if (problems.length > 0) {
     throw new FrameBudgetError(
@@ -2794,6 +2965,12 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
         problems.push(`convoy ${line.hand} names ${at}, which is not on this frame's map`);
       }
     }
+  }
+  // ★ The season: the countdown, the candidate cards, and the champions' record (A13, A5′).
+  problems.push(...seasonProblems(frame.season ?? null, frame.seasonRecords ?? []));
+  const grandStage = frame.season?.grand.stage ?? null;
+  if (grandStage !== null && frame.map.length > 0 && !mapById.has(grandStage)) {
+    problems.push(`the grand venture is staged at ${grandStage}, which is not on this frame's map`);
   }
 
   if (problems.length > 0) {

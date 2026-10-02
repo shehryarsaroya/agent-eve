@@ -177,8 +177,14 @@ export type EngagementState = 'MUSTER' | 'CONTACT' | 'CONTEST' | 'BREAK' | 'AFTE
  * world taking the claim and slashing the bond, a cession is the holder choosing to let go
  * and salvaging part of it. One is a cliff; the other is the story the collapse arc exists
  * to make possible.
+ *
+ * ★ `CLOSED` is the third ending and it is nobody's act: **the season ended it** (A10 — *"Frontier
+ * claims … settle and re-open on a season boundary"*). Neither of the other two words could carry
+ * it without lying on the record: `LAPSED` publishes *"BOND SLASHED"* and a default-shaped beat, and
+ * `CEDED` says the holder chose to let go. A closed claim was paid up, slashed nothing, and its
+ * system is open to the next season's anchor — so it gets its own word, and the bond is untouched.
  */
-export type ClaimState = 'SUPPLIED' | 'STRAINED' | 'CONTESTED' | 'LAPSED' | 'CEDED';
+export type ClaimState = 'SUPPLIED' | 'STRAINED' | 'CONTESTED' | 'LAPSED' | 'CEDED' | 'CLOSED';
 
 // ── Campaigns ───────────────────────────────────────────────────────────────
 

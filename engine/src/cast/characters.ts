@@ -38,24 +38,11 @@
  * illegal act from `brannock` exactly as it refuses one from a stranger.
  */
 
-import { Rng } from '../core/rng.js';
 import { CAST_NAMES, CAST_ROLES, type CastMember, type CastRole } from './heuristic.js';
 
-/**
- * How hard a member leans on its creed this world.
- *
- * Four values, named rather than numeric, because they are printed into a prompt and
- * into the report an operator reads — and because a 0–3 integer in a prompt is a number
- * a model will invent its own meaning for.
- */
-export type CastStance = 'PATIENT' | 'OPPORTUNIST' | 'ZEALOT' | 'MERCENARY';
-
-export const CAST_STANCES: readonly CastStance[] = Object.freeze([
-  'PATIENT',
-  'OPPORTUNIST',
-  'ZEALOT',
-  'MERCENARY',
-]);
+// The stance and its draw live in `stance.ts`, below both this file and `heuristic.ts` — see its header.
+export { CAST_STANCES, type CastStance } from './stance.js';
+import { stanceFor, type CastStance } from './stance.js';
 
 /** What each stance means, in the words the model is given. One sentence each. */
 export const STANCE_CREED: Readonly<Record<CastStance, string>> = Object.freeze({
@@ -237,10 +224,9 @@ export function characterOf(member: CastMember, seed: string): CastCharacter | n
   if (index < 0) return null;
   const row = CHARACTERS[index];
   if (row === undefined) return null;
-  // Its own sub-stream: adding a name must not move an existing member's stance.
-  const draw = Rng.fromSeed(`${seed}:cast:stance:${member.handle}`).int(CAST_STANCES.length);
-  const stance = CAST_STANCES[draw];
-  if (stance === undefined) return null;
+  // Its own sub-stream: adding a name must not move an existing member's stance. One home: `stance.ts`.
+  const stance = stanceFor(member.handle, seed);
+  if (stance === null) return null;
   return { handle: member.handle, role: member.role, title: row.title, creed: row.creed, stance };
 }
 

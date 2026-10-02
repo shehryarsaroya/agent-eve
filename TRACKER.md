@@ -82,6 +82,51 @@
 > `COMPACT_SEATS` raises it. Open: page the journal out; consolidate lots (interacts with
 > `MAX_SEIZE_LOTS`); per-constellation drama budgets; the parley ring's lifetime refusal.
 
+> ### 2026-10-01 — SEASON 1: THE SEASON CLOCK, THE GRAND VENTURE AND THE A10 BOUNDARY (branch `season1-season-and-grand-venture`, `RULES_VERSION` 41, not merged, not deployed)
+>
+> **§7.6 names two mechanisms that make defection ever rational in a permanent-ledger world — a
+> season horizon and one grand venture — and the engine had neither.** Nothing ended. (COMPLETION's
+> Phase 1 line listed "season boundary" as built; `c771ece` had no season code, only comments.)
+> Cut at 41 for a fresh Season 1; no verb (40/40), no kind (8/8), no observe key (11/11).
+>
+> - **The clock** — `SEASON_RECKONINGS` = **14** *(calibrate)*: two calendar weeks at production pace
+>   (the FINALE lands on the weekday and hour the season opened), four renewal links of a
+>   3-Reckoning grant, two 5-Reckoning campaigns, ~11 h at `fast`. Below A10's 4–8 weeks on purpose
+>   and owner-visible: it is one constant. `header.season` in every observation; a season line on
+>   both frames.
+> - **The grand venture** — `create {"kind":"BUILD","stage":<stage>,"grand":true}`. Staged at the
+>   Frontier system farthest from the Commons, rotating by season (S1 Grist `sys-23`, S2 Keelrow
+>   `sys-27`); formed only in the FINALE; yields **320,000 (±10%)** = 40 × the measured 8,000
+>   median delivery, issued once from civic procurement; every role a hand at the stage staking
+>   ≥ **10,000 of `freeCash`** (zero for a fresh key — A15); one crew per principal; of every LIVE
+>   crew at the shared delivery tick the largest stake carries it, the rest deliver nothing and owe
+>   nothing. BUILD is un-escrowable, so every share is elective: the creator — or a treasurer or
+>   steward under a grant — decides, and the season record names who stated each share (A6).
+> - **The boundary (A10)** — at the FINALE's settlement every Frontier claim becomes `CLOSED` (bond
+>   untouched; the ANCHOR is the slice that bought one season) and campaigns on them end `MOOT`
+>   with bonds returned. Identity, standing, holdings, hands, stores, grants, syndicates, WORKS and
+>   Marches claims are byte-identical across it (`test/season/boundary.spec.ts`). A `PUBLIC`
+>   `season.closed` row carries the record; THE SEASONS renders it.
+> - **The cast plays it** — musters a hand from two Reckonings out, forms one crew only when four
+>   can stand at the stage (without that gate it left fourteen ABANDONED candidates), stakes a fifth
+>   of `freeCash`, and the creator answers by its public creed: MERCENARY keeps the yield, PATIENT
+>   appoints a treasurer, the rest pay.
+> - **Measured** — two 12-member worlds from genesis (`fs-a`, `fs-b`): all 14 Reckonings, 0
+>   violations, one crew carried ~293,000, KEPT. The FINALE probes draw both answers (`cf-a` KEPT;
+>   `cf-b` BROKEN, three defaults on the creator). E2E-28 pins a whole season (813–987 s on a loaded box).
+>   `npm ci && npm run gate0`: tsc 0 · lint 0 · both audits pass · **344 files, 4,205 passed, 1
+>   skipped** (3,745 s on a box shared with three other agents).
+>
+> **For the owner:** (1) 14 Reckonings against A10's 4–8 weeks; (2) "largest stake carries it" is
+> A4-safe (no arrival race) but rewards capital, and is this branch's call rather than the canon's;
+> (3) §18 #3, how much a season resets, is answered minimally (Frontier claims and their wars);
+> (4) a delegate can never pay itself, so grant betrayal here is routing and withholding, not
+> theft; (5) settlement's default rows still do not name an electing delegate (the season record
+> does); (6) 41 may collide with sibling Season 1 branches — renumber at merge.
+>
+> Also: `test/follow/integration.spec.ts` flaked under load on `c771ece` itself (4 of 4) — a dead
+> keep-alive socket against its mock Resend after a synchronous 288-tick run; test-only fix.
+>
 > ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
 >
 > **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'

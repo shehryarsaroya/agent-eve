@@ -184,6 +184,7 @@ import type {
   LiveFrame,
   TributeLine,
   ReckoningFrame,
+  SeasonLine,
 } from '../frames/contract.js';
 import { authorityLinesFor } from '../frames/authority.js';
 import {
@@ -281,6 +282,7 @@ import {
   filledIndices,
   IN_FULL,
   isEscrowable,
+  isFullyCountersigned,
   isFullyFilled,
   isLive,
   kindSpec,
@@ -302,7 +304,9 @@ import {
   ventureEscrowRatioBps,
   VentureBook,
   VENTURE_KINDS,
+  yieldBasisOf,
   type Election,
+  type GrandMarker,
   type FillRequest,
   type Refused,
   type SettlementAccounts,
@@ -604,6 +608,7 @@ import {
   type Rejection,
   type SwaySeats,
   type TransitLot,
+  type WorldMap,
   type WorldResult,
   type WorldState,
 } from '../world/index.js';
@@ -2387,6 +2392,48 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * adopt a 41 checkpoint on `RULES_VERSION_MISMATCH`, which is the cheap door, and a replay of a 40
  * record under 41 diverges at its first self-created venture.
  *
+ * ── 41 · THE SEASON AND THE GRAND VENTURE ──────────────────────────────────
+ *
+ * ★ **THE SEASON AND THE GRAND VENTURE (SPEC §5, §7.6, A10).**
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE WORLD HAD NO ENDING, AND §7.6 SAYS AN ENDING IS WHAT MAKES DEFECTION EVER RATIONAL.** The
+ * season horizon and the grand venture are the two mechanisms §7.6 names; neither existed. This
+ * version adds both, and the boundary A10 describes.
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * **What moved, table by table:**
+ *
+ *   - **A new captured table, `season`** (`src/season/book.ts`): the grand verdict, the standing
+ *     baseline a season's titles are measured from, `closedThrough`, and the closed seasons. In
+ *     `CHECKPOINT_REQUIRED_TABLES` in the same change. Its presence alone moves every tick's hash
+ *     from genesis — the 20 → 22 campaign book's signature.
+ *   - **`venture` rows MAY carry `grand`** (season + yield), inside `terms_hash`. Written only when
+ *     present: every ordinary venture captures and hashes the bytes it always did.
+ *   - **`election` rows MAY carry the delegate that stated them** (`electionActors`). Written only
+ *     when a delegate elected: a world with no delegated election captures what it always did.
+ *   - **`ClaimState` gains `CLOSED`** — the season's ending, neither the world's verdict (`LAPSED`)
+ *     nor the holder's choice (`CEDED`). At the FINALE's settlement every FRONTIER claim closes; the
+ *     bond is untouched; campaigns aimed at a closed claim end `MOOT` with the bond returned.
+ *   - **Three new PUBLIC event kinds** — `grand.verdict` (at the delivery tick the crews share), and
+ *     `claim.closed` and `season.closed` (the boundary).
+ *   - **`create` takes `grand: true`**, `fill_role` on a grand candidate requires presence at the stage
+ *     and a stake of earned capital, and a grand candidate delivers the season's yield or nothing.
+ *   - **`observe.header.season`** — the clock, the grand venture and the last season. No twelfth key.
+ *   - The heuristic cast's decision ladder gains grand branches. They return null outside a season's
+ *     last two Reckonings and draw no RNG, so by construction they add no action before the first
+ *     muster — for a fresh world, the thirteenth Reckoning.
+ *
+ * **Verbs spent: none (40 of 40). Venture kinds: none (8 of 8). Observe keys: none (11 of 11).**
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * `SNAPSHOT_HASH_MISMATCH` **at tick 0**: the `season` table is new, so the very first snapshot
+ * hashes differently. This version is cut for a **fresh Season 1** (owner decision: a new seed and a
+ * new record), so no live journal is replayed under it and the operator door is not needed for the
+ * launch. A deploy over an existing journal would need `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>`
+ * like every other version; the machinery is unchanged and the preflight prints the exact string.
+ *
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const RULES_VERSION = 41;
@@ -2503,7 +2550,42 @@ import {
   type WithheldRisk,
 } from '../risk/index.js';
 import { frontBands, type FrontTake } from '../risk/lines.js';
+import { seasonLineFor, seasonRecordLinesFor } from '../frames/season.js';
 import { riskStateTable } from '../risk/book.js';
+// ── ★ THE SEASON (SPEC §5, §7.6, A10) ───────────────────────────────────────
+//
+// The third horizon and the grand venture, through one barrel. Pure rules and one hashed book; this
+// file only gathers facts, asks, and moves value where the venture machinery already moves it.
+import {
+  baselineFrom,
+  checkSeasonInvariants,
+  chooseGrandWinner,
+  finaleLine,
+  finaleTickOf,
+
+  grandCreateRejection,
+  grandFillRejection,
+  grandMarkerFor,
+  grandResultFrom,
+  grandStageFor,
+  grandWindowOf,
+  isSeasonBoundaryTick,
+  MAX_FRAME_SEASON_RECORDS,
+  SeasonBook,
+  seasonBlockFor,
+  seasonDeltaStandings,
+  seasonFirstTick,
+  seasonOf,
+  seasonStateTable,
+  seasonTitlesFrom,
+  type ClosedClaim,
+  type GrandVerdict,
+  type GrandWindow,
+  type SeasonBlock,
+  type SeasonRecord,
+  type SeasonViewPort,
+  type VerdictTally,
+} from '../season/index.js';
 import {
   electCover,
   publishCover,
@@ -3322,6 +3404,10 @@ export function ventureStateTable(
         // restore the venture at all. That is the correct direction: a row whose actor the world
         // cannot reproduce is a row the world must not publish.
         actedBy: v.actedBy,
+        // ★ The season's grand venture marker (SPEC §7.6). Written only when present, so every ordinary
+        // venture captures the bytes it always did; inside `terms_hash` too, so the witness below
+        // refuses a restore that dropped or altered it.
+        ...(v.grand === null ? {} : { grand: { season: v.grand.season, baseYieldMinor: v.grand.baseYieldMinor } }),
         roles: v.roles.map((r) => ({
           index: r.index,
           label: r.label,
@@ -3415,6 +3501,7 @@ function readVenture(raw: CanonicalValue, where: string): VentureRecord {
     // field and then the signature set separately would be two homes for one fact.
     boundByGrant: snapStringOrNull(o, 'boundByGrant', where) as GrantId | null,
     actedBy: snapStringOrNull(o, 'actedBy', where) as PrincipalId | null,
+    grand: readGrandMarker(o['grand'], `${where}.grand`),
   });
   if (!made.ok) {
     throw new VentureRestoreError(`${where}: ${made.invariant} ${made.hint}`);
@@ -3459,6 +3546,13 @@ function readVenture(raw: CanonicalValue, where: string): VentureRecord {
     role.settledElectiveMinor = minor(snapInt(row, 'settledElectiveMinor', at));
   }
   return venture;
+}
+
+/** A captured grand marker, or null when the row has none (every ordinary venture). */
+function readGrandMarker(raw: CanonicalValue | undefined, where: string): GrandMarker | null {
+  if (raw === undefined || raw === null) return null;
+  const g = snapObject(raw, where);
+  return { season: snapInt(g, 'season', where), baseYieldMinor: minor(snapInt(g, 'baseYieldMinor', where)) };
 }
 
 /** Every state a venture row may hold. `core/types.ts` owns the union; this is its list. */
@@ -3662,6 +3756,30 @@ export class Runtime {
   get risk(): RiskBook {
     return this.riskBookRef;
   }
+  /**
+   * ★ The SEASON book — the grand verdict, the standing baseline, the closed seasons (SPEC §5, §7.6).
+   *
+   * Behind a getter for `risk`'s reason: a restore replaces the book, and a reader holding the old
+   * object would read a season the world no longer holds.
+   */
+  private seasonBookRef = new SeasonBook();
+  get seasons(): SeasonBook {
+    return this.seasonBookRef;
+  }
+  /**
+   * ★ **Who stated an election, when it was a delegate** — `electionKey → {delegate, grant}`.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * §8.1: *"every delegated act names both actor and principal on the receipt."* A delegated `elect`
+   * named neither: the election book holds only the value, settlement attributes a default to the
+   * venture's `actedBy` (which only a delegated CREATE sets), and so a treasurer that elected its
+   * grantor into a default at the FINALE left its own name on no row at all — the grand venture's
+   * whole A6 shape, invisible. This map is the one home for the fact, captured beside the elections
+   * (`electionsStateTable`), cleared when the payer restates in its own name, and released with them.
+   * The grand venture's season record reads it; the settlement's default rows are a named follow-up.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private readonly electionActors = new Map<string, { readonly delegate: PrincipalId; readonly grant: GrantId }>();
   /** The only writer of standing (§6.4, INV-21). */
   readonly standing = new StandingBook();
   /**
@@ -3946,6 +4064,15 @@ export class Runtime {
       chargeByTier: CHARGE_BY_TIER,
       ticksPerReckoning: TICKS_PER_RECKONING,
     });
+    // ── ★ THE SEASON'S CLOCK, CHECKED AT CONSTRUCTION ──────────────────────────
+    //
+    // A grand window whose last create would settle in the NEXT season, or a map with no Frontier to
+    // stage the grand venture on, is a season whose exam question cannot be asked. Refused here, like
+    // every other schedule, rather than discovered on the FINALE in front of an audience.
+    assertSeasonSchedule(this.world.map);
+    // The season the world's first tick falls in. A world started mid-history counts every earlier
+    // season as closed and puts none of them on the record, because it saw nothing happen in them.
+    this.seasonBookRef.openAt(seasonOf(Math.max(0, (options.startTick ?? -1) + 1)));
     this.ledger = new Ledger();
     // `options.hazards` is deliberately NOT stored — see `RuntimeOptions.hazards`. It had no reader for
     // the project's whole life, and the `HAZARD` phase it claimed to gate now runs unconditionally.
@@ -3992,6 +4119,11 @@ export class Runtime {
           (restored) => {
             this.elections.clear();
             for (const [key, election] of restored) this.elections.set(key, election);
+          },
+          () => this.electionActors,
+          (restored) => {
+            this.electionActors.clear();
+            for (const [key, actor] of restored) this.electionActors.set(key, actor);
           },
         ),
         // The Levy is inside `state_hash` and inside the abort path, and both halves
@@ -4137,6 +4269,18 @@ export class Runtime {
           () => this.riskBookRef,
           (book) => {
             this.riskBookRef = book;
+          },
+        ),
+        // ── ★ THE SEASON BOOK, REGISTERED IN THE SAME CHANGE THAT ADDED IT ─────
+        //
+        // With its `CHECKPOINT_REQUIRED_TABLES` entry, for the reason every book above gives. What an
+        // adopted world would lose here is the grand verdict two ticks before the yield it decided is
+        // paid, the baseline the season's titles are measured from, and `closedThrough` — so a
+        // resumed boundary could close a season twice and re-open every Frontier claim's record.
+        seasonStateTable(
+          () => this.seasonBookRef,
+          (book) => {
+            this.seasonBookRef = book;
           },
         ),
         // ══════════════════════════════════════════════════════════════════════
@@ -4474,12 +4618,23 @@ export class Runtime {
           // than an incidental one: the Levy's goods first, then sovereignty's territory.
           this.assessChargeNow(ctx);
           this.settleChargeNow(ctx);
+          // ── ★ THE SEASON BOUNDARY (A10), AND ITS POSITION IS THE RULE ───────────
+          //
+          // LAST of the Reckoning's obligations, on the FINALE's settlement tick: after the Reckoning batch
+          // re-read the balances it froze (so closing a claim or returning a campaign bond moves no
+          // figure the settlement was computed from), after the Levy's sweep and the Charge's verdicts
+          // (so SOV-6 has the FINALE's verdict on every claim it closes), and before DERIVE (so every
+          // row it writes is inside the hash it claims to be in). Only growth follows it, and growth
+          // reads none of what it moves except a returned campaign bond, which is what the Reckoning
+          // actually left — so the gate counts it.
+          this.closeSeasonNow(ctx);
           // ── ★ GROWTH, LAST OF ALL, AND ONLY ON THE SETTLEMENT TICK (`world/growth.ts`) ──
           //
-          // After every Reckoning obligation has settled, so the gate reads the standing, the stores
-          // and the stakes the Reckoning actually left — and so a constellation that opens tonight
-          // cannot move a figure any settlement above was computed from. Before DERIVE, so the grown
-          // map is inside the `state_hash` this tick publishes.
+          // After every Reckoning obligation has settled — the season boundary included, on a FINALE —
+          // so the gate reads the standing, the stores and the stakes the Reckoning actually left, and
+          // so a constellation that opens tonight cannot move a figure any settlement above was
+          // computed from. Before DERIVE, so the grown map is inside the `state_hash` this tick
+          // publishes.
           this.growNow(ctx);
         },
         // ── DERIVE, and the slot is the rule ────────────────────────────────
@@ -4534,6 +4689,10 @@ export class Runtime {
         // halt. INV-R3 and INV-R8 are A5′ (Σ indemnity across a chain may never exceed the real loss)
         // and INV-R5 is INV-17's own standard applied to a risk default.
         (tick) => this.riskViolations(tick),
+        // ★ SSN-1..5. The season and the grand venture, merged into the same ASSERT pass and halting on
+        // the same terms. SSN-2 is A10 itself: a live Frontier claim older than the season is a
+        // boundary that did not run.
+        (tick) => this.seasonViolations(tick),
       ],
       invariantInputs: (tick) => this.invariantInputs(tick),
     },
@@ -7656,8 +7815,419 @@ export class Runtime {
    * the band itself, and the affordance's own text says so.
    */
   deliveryBandOf(venture: VentureRecord): { readonly low: Minor; readonly high: Minor } {
-    const band = proceedsBand(venture.kind, allRoleIndices(venture), NEUTRAL_STAGE_BPS);
+    const band = proceedsBand(venture.kind, allRoleIndices(venture), NEUTRAL_STAGE_BPS, yieldBasisOf(venture));
+    // ★ A grand candidate delivers the season's yield only if it carries the verdict, and NOTHING
+    // otherwise (`season/grand.ts:chooseGrandWinner`). So its honest band starts at zero: a seal
+    // copied out of the affordance stays keepable whichever crew wins, and a crew that is outstaked
+    // is not also marked CONTRADICTED for a contest it could not see the end of.
+    if (venture.grand !== null) return { low: minor(0), high: band.p90 };
     return { low: band.p10, high: band.p90 };
+  }
+
+  /**
+   * ★ The live grand candidate of `season` this principal is party to — creator or role-holder — or
+   * null. `except` is the candidate being acted on, so filling a second role of one's OWN candidate
+   * is still refused by the venture's one-role rule rather than by this one.
+   */
+  grandPartyOf(principal: PrincipalId, season: number, except: VentureId | null): VentureId | null {
+    for (const v of this.ventures.live()) {
+      if (v.grand === null || v.grand.season !== season || v.id === except) continue;
+      if (v.creator === principal || v.roles.some((r) => r.filledByPrincipal === principal)) return v.id;
+    }
+    return null;
+  }
+
+  /**
+   * ★ Why this principal may not fill a role of grand venture `venture` with `hand` at `stake`, or
+   * null. **The one home for the facts** `season/grand.ts:grandFillRejection` judges — the verb asks
+   * it and the `fill_role` affordance asks it, so the menu never offers a grand fill the verb refuses
+   * (AGT-S2).
+   */
+  grandFillRefusal(
+    principal: PrincipalId,
+    venture: VentureRecord,
+    hand: { readonly state: string; readonly location: SystemId },
+    stake: Minor,
+  ): Rejection | null {
+    if (venture.grand === null) return null;
+    return grandFillRejection({
+      stage: venture.stage,
+      handAt: hand.state === 'IN_TRANSIT' ? null : hand.location,
+      stake,
+      freeCash: freeCash(this.ledger, principal),
+      partyTo: this.grandPartyOf(principal, venture.grand.season, venture.id),
+    });
+  }
+
+  /**
+   * ★ Why this principal may not form the season's grand venture now, or null — the same gate
+   * `vCreate` runs, for the affordance. `null` also when the window is shut: that is not a refusal of
+   * this principal but a clock, and `header.season.grand` publishes it.
+   */
+  grandCreateRefusal(principal: PrincipalId, tick: number): Rejection | null {
+    const season = seasonOf(tick);
+    const stage = grandStageFor(this.world.map, season);
+    if (stage === null) return null;
+    return grandCreateRejection({
+      tick,
+      kind: 'BUILD',
+      stage,
+      expectedStage: stage,
+      window: grandWindowAt(season),
+      creatorFreeCash: freeCash(this.ledger, principal),
+      creatorPartyTo: this.grandPartyOf(principal, season, null),
+      sentTerms: false,
+    });
+  }
+
+  /** The most a grand venture's creator can be asked for on the elective half: every share at p90. */
+  grandElectiveCeiling(season: number): Minor {
+    const marker = grandMarkerFor(season);
+    const roles = kindSpec('BUILD').roles.map((_, i) => i);
+    return proceedsBand('BUILD', roles, NEUTRAL_STAGE_BPS, marker.baseYieldMinor).p90;
+  }
+
+  /**
+   * ★ The soonest idle hand's route to this season's grand stage, or null — the `march` the raid view
+   * publishes, aimed at the grand venture instead of a standoff. The same legality on both ends: the
+   * next gate must be one this hand may cross, and the stage must be somewhere it may stand, so a
+   * Commons-bound principal is never routed at a Frontier stage it can never reach.
+   */
+  grandMarchFor(principal: PrincipalId, tick: number): MarchRoute | null {
+    const stage = grandStageFor(this.world.map, seasonOf(tick));
+    if (stage === null) return null;
+    let best: MarchRoute | null = null;
+    for (const hand of handsOf(this.world, principal)) {
+      if (hand.state !== 'IDLE' || !isPresent(hand, tick)) continue;
+      if (hand.location === stage) continue;
+      const path = route(this.world.map, hand.location, stage);
+      if (path === null) continue;
+      const next = path.path[1];
+      if (next === undefined) continue;
+      if (commonsBoundRejection(this.world, hand, next) !== null) continue;
+      if (commonsBoundRejection(this.world, hand, stage) !== null) continue;
+      const candidate: MarchRoute = {
+        hand: hand.id,
+        from: hand.location,
+        next,
+        hops: path.path.length - 1,
+        arrives_tick: tick + path.ticks,
+      };
+      if (best === null || candidate.arrives_tick < best.arrives_tick) best = candidate;
+    }
+    return best;
+  }
+
+  /** Every grand venture of `season` still in the venture book, in id order. Any state. */
+  grandVenturesOf(season: number): readonly VentureRecord[] {
+    return this.ventures
+      .all()
+      .filter((v) => v.grand !== null && v.grand.season === season)
+      .sort((a, b) => compareIds(a.id, b.id));
+  }
+
+  /** The stake one role locked at fill, read off the ledger's lock. Zero when it staked nothing. */
+  roleStakeOf(role: { readonly stakeEncumbranceId: string | null }): Minor {
+    if (role.stakeEncumbranceId === null) return minor(0);
+    if (!this.ledger.encumbrances.isOpen(role.stakeEncumbranceId)) return minor(0);
+    const lock = this.ledger.encumbrances.get(role.stakeEncumbranceId);
+    return lock === undefined ? minor(0) : minor(lock.amountMinor);
+  }
+
+  /** Σ of the stakes a candidate's roles locked. What decides the verdict. */
+  grandStakeOf(venture: VentureRecord): Minor {
+    let total = 0;
+    for (const role of venture.roles) total += this.roleStakeOf(role);
+    return minor(total);
+  }
+
+  /**
+   * Will this candidate be LIVE when the delivery loop reaches it this tick? Exactly `activate`'s
+   * conditions, so the verdict counts the same set the loop delivers — a candidate that fills its
+   * last role and is countersigned on the delivery tick activates and delivers in one pass.
+   */
+  private liveAtDelivery(venture: VentureRecord, tick: number): boolean {
+    if (venture.state === 'LIVE') return true;
+    return (
+      venture.state === 'FORMING' &&
+      isFullyFilled(venture) &&
+      isFullyCountersigned(venture) &&
+      tick <= venture.windowClosesTick
+    );
+  }
+
+  /**
+   * ★ **THE VERDICT** — decided once, at the first grand delivery of the season, for every candidate.
+   *
+   * Every candidate resolves at the FINALE and so shares one delivery tick; the verdict is taken at
+   * the first of them in the loop, over every candidate that is or will be live this tick, and every
+   * later delivery in the same loop reads the same answer. Recorded in the hashed book, so an aborted
+   * tick takes it back with everything else.
+   */
+  private grandVerdictAt(tick: number, season: number, stateVersion: number): GrandVerdict {
+    const existing = this.seasonBookRef.verdictFor(season);
+    if (existing !== null) return existing;
+    const tallies: VerdictTally[] = [];
+    for (const v of this.grandVenturesOf(season)) {
+      if (v.state !== 'FORMING' && v.state !== 'LIVE') continue;
+      tallies.push({ venture: v.id, creator: v.creator, staked: this.grandStakeOf(v), live: this.liveAtDelivery(v, tick) });
+    }
+    const winner = chooseGrandWinner(tallies);
+    const electedBy: { index: number; delegate: PrincipalId; grant: GrantId }[] = [];
+    const won = winner === null ? undefined : this.ventures.get(winner);
+    if (won !== undefined) {
+      for (const role of won.roles) {
+        const actor = this.electionActors.get(electionKey(won.id, role.index));
+        if (actor !== undefined) electedBy.push({ index: role.index, delegate: actor.delegate, grant: actor.grant });
+      }
+    }
+    const verdict: GrandVerdict = { season, decidedAtTick: tick, winner, tallies, electedBy };
+    this.seasonBookRef.recordVerdict(verdict);
+    this.appendPublic({
+      tick,
+      kind: 'grand.verdict',
+      actor: winner === null || won === undefined ? null : won.creator,
+      family: `season::${String(season)}`,
+      payload: {
+        season,
+        winner,
+        tallies: tallies.map((t) => ({ venture: t.venture, creator: t.creator, staked: t.staked, live: t.live })),
+        rule: 'of every live candidate, the one whose roles staked the most carries the yield; the rest deliver nothing',
+      },
+      actedOnStateVersion: stateVersion,
+    });
+    this.raidTicker.push(
+      (winner === null || won === undefined
+        ? `SEASON ${String(season)}: no grand candidate went live, and the yield goes unclaimed.`
+        : `SEASON ${String(season)}: ${this.nameOf(won.creator)}'s crew carries the grand venture ` +
+          `(${String(this.grandStakeOf(won))} staked).`
+      ).slice(0, 140),
+    );
+    return verdict;
+  }
+
+  /** A principal's public name — its holding's — or its id when it has none. Never a guess. */
+  private nameOf(principal: PrincipalId): string {
+    const holding = this.world.holdingByPrincipal.get(principal);
+    if (holding === undefined) return String(principal);
+    return String(this.world.holdings.get(holding)?.name ?? principal);
+  }
+
+  /**
+   * ★ **THE SEASON BOUNDARY** (A10) — what resets, what never does, and the record it leaves.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * A10: *"Identity, standing, relationships, grudges, holdings, hands and legend **never** reset.
+   * Frontier claims and a named slice of Frontier-deployed capital settle and re-open."* So this
+   * method touches exactly two things and names the slice:
+   *
+   *   1. **Every live FRONTIER CLAIM closes** — state `CLOSED`, its system open to the next season's
+   *      anchor. The named slice of Frontier-deployed capital is the **ANCHOR**: the goods destroyed to
+   *      raise the claim bought sovereignty for the rest of its season and no longer. Nothing is
+   *      slashed and no money moves: the claimant's BOND is its continuous credit rating (§6.4) and
+   *      stays posted, its arrears are cleared with the claim, and RENT and FUEL stop because there is
+   *      no live claim to collect or burn for. MARCHES claims are untouched, as A10 says.
+   *   2. **Every campaign aimed at a closed claim ends MOOT**, bond returned in full — the war's
+   *      objective is gone and nobody failed at anything (`campaign/pulse.ts`'s own MOOT rule, run now
+   *      rather than lazily at the next pulse, so a war cannot outlive the season that held its prize).
+   *
+   * Nothing else is read for writing. Identity, standing, holdings, hands, stores, grants, syndicates,
+   * WORKS, hulls and the record are not touched — and `test/season/boundary.spec.ts` asserts each of
+   * those is byte-identical across the boundary rather than trusting this paragraph.
+   * ══════════════════════════════════════════════════════════════════════════
+   *
+   * Idempotent through the hashed book (`closedThrough`), never through a runtime flag: a guard on
+   * the runtime survives an abort and resume, so a resumed boundary could close a season twice.
+   */
+  private closeSeasonNow(ctx: PhaseContext): void {
+    if (!isSeasonBoundaryTick(ctx.tick)) return;
+    const season = seasonOf(ctx.tick);
+    if (this.seasonBookRef.closedThrough >= season) return;
+    ctx.step();
+    const reckoning = reckoningOf(ctx.tick);
+
+    // ── 1. FRONTIER CLAIMS CLOSE ─────────────────────────────────────────────
+    const closed: ClosedClaim[] = [];
+    for (const claim of this.sovereignty.liveClaims()) {
+      ctx.step();
+      if (tierOf(this.world.map, claim.system) !== 'FRONTIER') continue;
+      const claimant = claim.claimant;
+      this.sovereignty.end(claim.system, 'CLOSED', reckoning, null);
+      this.sovereignty.clearMisses(claim.system);
+      closed.push({ system: claim.system, claimant });
+      this.appendPublic({
+        tick: ctx.tick,
+        kind: 'claim.closed',
+        actor: null,
+        family: `claim::${claim.id}`,
+        payload: {
+          claim: claim.id,
+          system: claim.system,
+          claimant,
+          season,
+          // Said on the row so no reader has to infer it: nothing was taken from anybody.
+          bondSlashed: 0,
+          identityTaken: false,
+          holdingTaken: false,
+          standingTaken: false,
+          handsTaken: false,
+          why:
+            `season ${String(season)} ended: every Frontier claim closes and its system re-opens (A10). The ` +
+            'anchor bought one season; the bond is untouched.',
+        },
+        actedOnStateVersion: ctx.frozenStateVersion,
+      });
+      this.raidTicker.push(
+        claimTickerLine({ kind: 'CLOSED', system: claim.system, claimant, other: null, amount: 0 }),
+      );
+    }
+
+    // ── 2. A WAR WHOSE OBJECTIVE THE SEASON CLOSED ENDS MOOT ─────────────────
+    const closedSystems = new Set<string>(closed.map((c) => c.system));
+    const mooted: string[] = [];
+    for (const campaign of this.campaigns.live()) {
+      if (!closedSystems.has(campaign.objective)) continue;
+      ctx.step();
+      this.settleCampaign(
+        ctx.tick,
+        campaign,
+        {
+          state: 'MOOT',
+          tick: ctx.tick,
+          forfeited: minor(0),
+          returned: campaign.bond,
+          lapseObjective: false,
+          why:
+            `season ${String(season)} closed the claim on ${campaign.objective}, so the campaign's objective is ` +
+            'gone and its bond returns in full — the season ended the war, nobody lost it',
+        },
+        ctx.frozenStateVersion,
+      );
+      mooted.push(campaign.id);
+    }
+
+    // ── 3. THE GRAND VENTURE'S OUTCOME, READ OFF THE SETTLEMENT THAT RAN ─────
+    const verdict = this.seasonBookRef.verdictFor(season);
+    const won = verdict?.winner === null || verdict === null ? undefined : this.ventures.get(verdict.winner);
+    const grand = grandResultFrom({
+      verdict,
+      winner:
+        won === undefined
+          ? null
+          : {
+              venture: won.id,
+              creator: won.creator,
+              formedBy: won.actedBy,
+              grant: won.boundByGrant,
+              state: won.state,
+              proceedsMinor: this.deliveryOf(won.id)?.proceeds ?? minor(0),
+            },
+      settlement: won === undefined ? null : (this.outcome?.settlements.find((s) => s.venture === won.id) ?? null),
+      electedBy: (index) => verdict?.electedBy.find((e) => e.index === index)?.delegate ?? null,
+    });
+
+    // ── 4. THE SEASON'S TITLES: THE HALL OF FAME'S RULES OVER ONE SEASON ─────
+    const rows = this.standing.rows();
+    const titles = seasonTitlesFrom(
+      seasonDeltaStandings(rows, (p) => this.seasonBookRef.baselineOf(p), seasonFirstTick(season)),
+    );
+
+    // ── 5. THE RECORD ────────────────────────────────────────────────────────
+    const record: SeasonRecord = {
+      season,
+      firstTick: seasonFirstTick(season),
+      finaleTick: finaleTickOf(season),
+      stage: grandStageFor(this.world.map, season),
+      baseYieldMinor: grandMarkerFor(season).baseYieldMinor,
+      grand,
+      titles,
+      closedClaims: closed,
+      mootedCampaigns: mooted,
+    };
+    this.seasonBookRef.closeSeason(record, baselineFrom(rows));
+    this.appendPublic({
+      tick: ctx.tick,
+      kind: 'season.closed',
+      actor: null,
+      family: `season::${String(season)}`,
+      payload: {
+        season,
+        firstTick: record.firstTick,
+        finaleTick: record.finaleTick,
+        stage: record.stage,
+        baseYield: record.baseYieldMinor,
+        grand: {
+          outcome: grand.outcome,
+          venture: grand.venture,
+          creator: grand.creator,
+          formedBy: grand.formedBy,
+          grant: grand.grant,
+          proceeds: grand.proceedsMinor,
+          staked: grand.stakedMinor,
+          candidates: grand.candidates,
+          crew: grand.crew.map((c) => ({
+            index: c.index,
+            label: c.label,
+            principal: c.principal,
+            due: c.dueMinor,
+            paid: c.paidMinor,
+            electedBy: c.electedBy,
+          })),
+        },
+        titles: titles.map((t) => ({ title: t.title, principal: t.principal, value: t.value, clause: t.clause })),
+        closedClaims: closed.map((c) => ({ system: c.system, claimant: c.claimant })),
+        mootedCampaigns: mooted,
+      },
+      actedOnStateVersion: ctx.frozenStateVersion,
+    });
+    this.raidTicker.push(finaleLine(season, grand, (p) => this.nameOf(p)));
+  }
+
+  /** SSN-1..5 over the live world. */
+  private seasonViolations(tick: number): readonly InvariantViolation[] {
+    const season = tick < 0 ? 1 : seasonOf(tick);
+    const grandVentures = [...this.grandVenturesOf(season), ...(season > 1 ? this.grandVenturesOf(season - 1) : [])];
+    return checkSeasonInvariants({
+      tick,
+      book: this.seasonBookRef,
+      map: this.world.map,
+      slackTicks: GRAND_SLACK_TICKS,
+      grandVentures,
+      liveClaims: this.sovereignty.liveClaims().map((c) => ({ system: c.system, takenAtTick: c.takenAtTick })),
+      deliveredProceeds: (v) => this.deliveryOf(v.id)?.proceeds ?? null,
+    });
+  }
+
+  /**
+   * ★ `header.season` and the frame's season line, from one builder (A9).
+   *
+   * `viewer` null is the public version the frame carries; a principal gets the same block plus its
+   * own crew's sealed stake. The ONE reader of the season for both readerships.
+   */
+  seasonBlock(tick: number, viewer: PrincipalId | null): SeasonBlock {
+    const season = tick < 0 ? 1 : seasonOf(tick);
+    const port: SeasonViewPort = {
+      tick,
+      stage: grandStageFor(this.world.map, season),
+      window: grandWindowAt(season),
+      candidates: this.grandVenturesOf(season),
+      stakeOf: (role) => this.roleStakeOf(role),
+      verdict: this.seasonBookRef.verdictFor(season),
+      last: this.seasonBookRef.last(),
+    };
+    return seasonBlockFor(port, viewer);
+  }
+
+  /** THE SEASON LINE for a frame: the public season block, re-spelled for the client. */
+  private seasonLine(tick: number): SeasonLine {
+    return seasonLineFor(this.seasonBlock(tick, null), this.frameHandles(), (id) =>
+      this.world.map.systems.get(id)?.name ?? null,
+    );
+  }
+
+  /** The closed seasons a frame carries, newest first, bounded. */
+  seasonRecordsForFrame(): readonly SeasonRecord[] {
+    return [...this.seasonBookRef.records()].reverse().slice(0, MAX_FRAME_SEASON_RECORDS);
   }
 
   /**
@@ -7982,7 +8552,45 @@ export class Runtime {
           `${creatorIsHouse ? ', because a syndicate has no hands of its own — you act with yours' : ''}.`,
       );
     }
-    const value = readInt(req.params, ['value', 'value_minor']) ?? kindSpec(kind).baseYieldMinor;
+    // ── ★ THE GRAND VENTURE (SPEC §7.6) — A PARAMETER ON `create`, NOT A NINTH KIND ──────────
+    //
+    // `grand: true` asks for the season's grand venture. Everything `create` already guarantees
+    // still applies — the countersignature, the hash, the escrow arithmetic (zero: BUILD is
+    // un-escrowable), the delegated create that binds its grantor — and `season/grand.ts` adds the
+    // clock, the place, the shape and the A15 price. Present-but-unreadable is a refusal, never an
+    // absence: `"grand": "yes"` quietly creating an ordinary BUILD would bind the creator to a deal
+    // it did not mean, which is the `elective_bps` defect one parameter over.
+    const grandRaw = req.params['grand'];
+    if (grandRaw !== undefined && grandRaw !== null && typeof grandRaw !== 'boolean') {
+      return reject(
+        'A2',
+        `grand is the boolean true (or absent) — you sent a ${typeof grandRaw}. It is not coerced: ` +
+          '"grand": "true" and "grand": true would be the same act with only one of them on the record. ' +
+          'Nothing was created.',
+      );
+    }
+    const grandSeason = grandRaw === true ? seasonOf(ctx.tick) : null;
+    if (grandSeason !== null) {
+      const refused = grandCreateRejection({
+        tick: ctx.tick,
+        kind,
+        stage: here,
+        expectedStage: grandStageFor(this.world.map, grandSeason),
+        window: grandWindowAt(grandSeason),
+        // The CREATOR's earned capital — whoever's name the yield will land in — never the acting
+        // delegate's: a delegate cannot launder a fresh grantor's empty record through its own.
+        creatorFreeCash: freeCash(this.ledger, creator),
+        creatorPartyTo: this.grandPartyOf(creator, grandSeason, null),
+        sentTerms: ['value', 'value_minor', 'elective_bps', 'electiveBps', 'escrow_bps', 'escrowBps'].some(
+          (k) => req.params[k] !== undefined,
+        ),
+      });
+      if (refused !== null) return refused;
+    }
+    const value =
+      grandSeason !== null
+        ? grandMarkerFor(grandSeason).baseYieldMinor
+        : (readInt(req.params, ['value', 'value_minor']) ?? kindSpec(kind).baseYieldMinor);
     if (value <= 0 || value > 1_000_000_000) {
       return reject('PROP-V5', `value must be a positive amount under 1000000000, got ${String(value)}.`);
     }
@@ -8109,6 +8717,8 @@ export class Runtime {
       // halves disagreeing, so there is no shape of this call that records a delegated formation
       // the record cannot attribute.
       actedBy: grant === null ? null : req.principal,
+      // ★ SPEC §7.6. The season and the yield, pinned inside `terms_hash` at formation.
+      grand: grandSeason === null ? null : grandMarkerFor(grandSeason),
     });
     if (!made.ok) return made;
 
@@ -8322,6 +8932,10 @@ export class Runtime {
         elective: electiveTotal(made.value),
         electiveCeiling: elective,
         termsHash: made.value.termsHash,
+        // ★ The grand venture's marker, on the record at formation (SPEC §7.6).
+        ...(made.value.grand === null
+          ? {}
+          : { grand: { season: made.value.grand.season, baseYield: made.value.grand.baseYieldMinor } }),
         ...(delegated && grant !== null
           ? {
               creator,
@@ -8542,6 +9156,15 @@ export class Runtime {
             '(§7.3), and it is what outbids a rival for a contested slot. Name a smaller stake, or 0.',
         );
       }
+    }
+    // ── ★ THE GRAND VENTURE'S ROLES ARE PRESENCE, AND EARNED CAPITAL (SPEC §7.6, A15) ──────
+    //
+    // `season/grand.ts:grandFillRejection` carries the argument. Checked here, synchronously, so the
+    // refusal reaches the agent with its numbers; re-checked at tick close in `resolveFills`, because
+    // value can leave between VALIDATE and VENTURES and two fills in one tick can each pass alone.
+    if (venture.grand !== null) {
+      const refused = this.grandFillRefusal(req.principal, venture, hand, minor(stake));
+      if (refused !== null) return refused;
     }
     // A request, not a grant (PROP-V8). Resolved once at VENTURES, from the set.
     this.pendingFills.push({
@@ -8800,6 +9423,10 @@ export class Runtime {
       });
     }
     this.elections.set(key, raw);
+    // ★ Who stated it, when it was a delegate (§8.1: "every delegated act names both actor and
+    // principal"). The payer restating in its own name takes the delegate's name off it.
+    if (grant !== null) this.electionActors.set(key, { delegate: req.principal, grant: grant.id });
+    else this.electionActors.delete(key);
     return { ok: true, value: null };
   }
 
@@ -10547,7 +11174,51 @@ export class Runtime {
       // agent loses one slot instead of every agent losing the tick.
       // ══════════════════════════════════════════════════════════════════════════
       const stakeFailures: Refused[] = [];
+      // ── ★ THE GRAND RE-CHECK, AT THE ONE MOMENT IT CAN BE TRUE ────────────────────
+      //
+      // `vFillRole` priced a grand fill against the world at VALIDATE. Two things can make that
+      // answer stale by VENTURES, and both are A15 holes if they slip through: two fills in one tick
+      // into two different candidates each passed "party to one candidate at a time" alone, and value
+      // that left between the phases can leave a stake larger than the filler's EARNED capital — the
+      // lock would then be paid out of the withheld endowment, which is the free identity's money.
+      const grandTaken = new Set<string>();
+      const grandRefused = new Set<object>();
       for (const grant of allocated.granted) {
+        const venture = this.ventures.get(grant.request.venture);
+        if (venture === undefined || venture.grand === null) continue;
+        const hand = this.world.hands.get(grant.request.hand);
+        const seasonKey = `${String(venture.grand.season)}::${grant.request.principal}`;
+        const refused =
+          grandTaken.has(seasonKey)
+            ? reject(
+                'A15',
+                'two grand roles were asked for in one tick and a principal may be party to one candidate ' +
+                  'at a time; the first in canonical order was taken and this one was not.',
+              )
+            : grandFillRejection({
+                stage: venture.stage,
+                handAt: hand === undefined || hand.state === 'IN_TRANSIT' ? null : hand.location,
+                stake: minor(grant.request.stake),
+                freeCash: freeCash(this.ledger, grant.request.principal),
+                partyTo: this.grandPartyOf(grant.request.principal, venture.grand.season, venture.id),
+              });
+        if (refused === null) {
+          grandTaken.add(seasonKey);
+          continue;
+        }
+        vacateRole(venture, grant.request.roleIndex);
+        this.ventures.indexRelease(grant.request.hand);
+        if (hand !== undefined) releaseHand(hand);
+        grandRefused.add(grant);
+        stakeFailures.push({
+          request: grant.request,
+          reason: 'ROLE_RULE',
+          invariant: refused.invariant,
+          hint: `the grand role was not taken at tick close: ${refused.hint}`,
+        });
+      }
+      for (const grant of allocated.granted) {
+        if (grandRefused.has(grant)) continue;
         if (grant.request.stake <= 0) continue;
         try {
           lockFillStake(this.ledger, {
@@ -10670,11 +11341,21 @@ export class Runtime {
    */
   private deliver(ctx: PhaseContext, venture: VentureRecord): void {
     const filled = filledIndices(venture);
+    // ★ SPEC §7.6. A grand candidate is divided against the season's yield if it carries the verdict
+    // and against NOTHING if it does not — the rest deliver nothing and owe nothing. Every other
+    // venture is divided against its kind's yield, exactly as before.
+    const basis =
+      venture.grand === null
+        ? yieldBasisOf(venture)
+        : this.grandVerdictAt(ctx.tick, venture.grand.season, ctx.frozenStateVersion).winner === venture.id
+          ? venture.grand.baseYieldMinor
+          : minor(0);
     const proceeds = computeProceeds({
       kind: venture.kind,
       filled,
       stageBps: NEUTRAL_STAGE_BPS,
       residualSignedBps: drawResidual(venture.kind, venture.id, ctx.rng),
+      baseYieldMinor: basis,
     }).proceeds;
     const holders = venture.roles
       .map((r) => r.filledByPrincipal)
@@ -16803,6 +17484,7 @@ export class Runtime {
     const roles = record?.roles.length ?? 0;
     for (let index = 0; index < Math.max(roles, 1); index += 1) {
       this.elections.delete(electionKey(venture, index));
+      this.electionActors.delete(electionKey(venture, index));
     }
   }
 
@@ -17046,6 +17728,8 @@ export class Runtime {
       saps: this.sapLines(tick),
       frontBands: this.frontBandLines(tick),
       ticker: this.raidTicker.all,
+      // ★ THE SEASON LINE, from the block every agent's `header.season` is built by, with no viewer.
+      season: this.seasonLine(Math.max(0, tick)),
     };
     // The same boundary `reckoningFrame` crosses, with one clause of its own: a live frame is
     // published BEFORE settlement, so it is the one artifact on which a `PARTIES`, `SENSED` or
@@ -17475,6 +18159,10 @@ export class Runtime {
       // of its own rather than an absence in `worksLines`.
       convoyLines: this.convoyLines(outcome.tick),
       compactLinks: this.compactLinks(settledRecords),
+      // ★ THE SEASON LINE and THE SEASON RECORD (SPEC §5, §7.6, A10, A13). On the FINALE's frame the
+      // record already carries the season that just closed, because the boundary ran in this tick.
+      season: this.seasonLine(outcome.tick),
+      seasonRecords: seasonRecordLinesFor(this.seasonRecordsForFrame(), this.frameHandles()),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped
@@ -17680,6 +18368,64 @@ export function assertSealSchedule(
 }
 
 /**
+ * ★ The grand window's slack: how long before the FINALE's settlement the last grand `create` must
+ * land. The formation window plus the delivery lead — exactly the arithmetic `vCreate` uses to pick
+ * a venture's settlement, so the window the season publishes is the window the verb enforces.
+ */
+export const GRAND_SLACK_TICKS = FORMATION_WINDOW_TICKS + DELIVERY_LEAD_TICKS;
+
+/** The grand window for `season`, with this runtime's own slack. One home for both callers. */
+export function grandWindowAt(season: number): GrandWindow {
+  return grandWindowOf(season, GRAND_SLACK_TICKS);
+}
+
+/**
+ * ★ The season's clock, asserted at construction (SPEC §5, §7.6).
+ *
+ * Three facts the grand venture rests on, each of which a recalibration could quietly break:
+ *
+ *   1. **There is a Frontier to stage it on.** A map with none has no least-lawful space, and a
+ *      grand venture with nowhere to be is an announcement nobody can answer.
+ *   2. **A create on the window's last tick settles at the FINALE**, and one a tick later does not.
+ *      Otherwise the window the season publishes and the settlement `create` computes disagree, and
+ *      a crew formed on the last published tick would settle in the next season.
+ *   3. **Every candidate delivers outside the freeze**, on one shared tick, so the verdict is decided
+ *      once from facts every candidate fixed before it (A4).
+ *
+ * Parameters are injected with the real defaults for `assertSealSchedule`'s reason: a guard no test
+ * can make fire is a guard no test can bite on.
+ */
+export function assertSeasonSchedule(
+  map: WorldMap,
+  formation: number = FORMATION_WINDOW_TICKS,
+  lead: number = DELIVERY_LEAD_TICKS,
+): void {
+  if (grandStageFor(map, 1) === null) {
+    throw new EngineError('the map has no FRONTIER system, so the season has nowhere to stage its grand venture');
+  }
+  const window = grandWindowOf(1, formation + lead);
+  const settlesAt = (createTick: number): number => nextSettlementAtOrAfter(createTick + formation + lead);
+  if (settlesAt(window.closes_tick) !== window.finale_tick) {
+    throw new EngineError(
+      `a grand create on the window's last tick (${String(window.closes_tick)}) settles at ` +
+        `${String(settlesAt(window.closes_tick))}, not the FINALE at ${String(window.finale_tick)}`,
+    );
+  }
+  if (settlesAt(window.closes_tick + 1) === window.finale_tick) {
+    throw new EngineError(
+      `the grand window closes too early: a create at ${String(window.closes_tick + 1)} would still settle at the FINALE`,
+    );
+  }
+  if (window.opens_tick > window.closes_tick) {
+    throw new EngineError('the grand window is empty: the FINALE is shorter than its formation slack');
+  }
+  const delivery = window.finale_tick - lead;
+  if (inFreeze(delivery) || isSettlementTick(delivery)) {
+    throw new EngineError(`the grand venture would deliver at ${String(delivery)}, inside the freeze`);
+  }
+}
+
+/**
  * The election book's key.
  *
  * `::`, like every other composite key in this codebase. Three agents have reached for a
@@ -17728,16 +18474,26 @@ export function electionKey(venture: VentureId, roleIndex: number): string {
 export function electionsStateTable(
   read: () => Map<string, Election>,
   write: (restored: Map<string, Election>) => void,
+  readActors: () => ReadonlyMap<string, { readonly delegate: PrincipalId; readonly grant: GrantId }> = () =>
+    new Map(),
+  writeActors: (restored: Map<string, { readonly delegate: PrincipalId; readonly grant: GrantId }>) => void = () =>
+    undefined,
 ): StateTable {
   return {
     name: 'election',
     capture: (): CanonicalValue =>
-      [...read().keys()]
-        .sort(compareIds)
-        .map((key) => ({ key, election: read().get(key) ?? null })),
+      [...read().keys()].sort(compareIds).map((key) => {
+        const actor = readActors().get(key);
+        // ★ The delegate that stated it, written only when there is one — so a world with no
+        // delegated election captures the bytes it always did.
+        return actor === undefined
+          ? { key, election: read().get(key) ?? null }
+          : { key, election: read().get(key) ?? null, delegate: actor.delegate, grant: actor.grant };
+      }),
     restore: (captured: CanonicalValue): void => {
       const rows = snapArray(captured, 'election');
       const restored = new Map<string, Election>();
+      const actors = new Map<string, { readonly delegate: PrincipalId; readonly grant: GrantId }>();
       for (const row of rows) {
         const record = snapObject(row, 'election row');
         const key = snapString(record, 'key', 'election row');
@@ -17748,8 +18504,16 @@ export function electionsStateTable(
         // due is a different statement from IN_FULL.
         if (raw === IN_FULL) restored.set(key, IN_FULL);
         else restored.set(key, minor(snapInt(record, 'election', `election ${key}`)));
+        const delegate = record['delegate'];
+        if (delegate !== undefined && delegate !== null) {
+          actors.set(key, {
+            delegate: snapString(record, 'delegate', `election ${key}`) as PrincipalId,
+            grant: snapString(record, 'grant', `election ${key}`) as GrantId,
+          });
+        }
       }
       write(restored);
+      writeActors(actors);
     },
   };
 }

@@ -112,6 +112,9 @@ export function claimLegend(state: ClaimState, misses: number, charge?: LegendCh
       return 'LAPSED · BOND SLASHED';
     case 'CEDED':
       return 'CEDED';
+    case 'CLOSED':
+      // The season's ending, never the holder's or the world's verdict on it: nothing was slashed.
+      return 'CLOSED · SEASON ENDED';
   }
 }
 
@@ -482,7 +485,7 @@ export function claimLinesFor(args: {
  * would reintroduce the gauge one line at a time.
  */
 export function claimTickerLine(args: {
-  readonly kind: 'TAKEN' | 'ARREARS' | 'CONTESTED' | 'LAPSED' | 'CEDED' | 'FOR_SALE' | 'RESCUED';
+  readonly kind: 'TAKEN' | 'ARREARS' | 'CONTESTED' | 'LAPSED' | 'CEDED' | 'CLOSED' | 'FOR_SALE' | 'RESCUED';
   readonly system: SystemId;
   readonly claimant: PrincipalId;
   readonly other: PrincipalId | null;
@@ -500,6 +503,8 @@ export function claimTickerLine(args: {
         return `${args.system} LAPSES. ${args.claimant} loses the claim and ${String(args.amount)} of bond.`;
       case 'CEDED':
         return `${args.claimant} gives up ${args.system}${args.other === null ? '' : ` to ${args.other}`}.`;
+      case 'CLOSED':
+        return `The season closes ${args.claimant}'s claim on ${args.system}. Its bond is untouched; the system is open.`;
       case 'FOR_SALE':
         return `${args.claimant} puts ${args.system} up for ${String(args.amount)}.`;
       case 'RESCUED':

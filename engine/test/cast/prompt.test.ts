@@ -1007,7 +1007,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_254);
+    // ★ RE-MEASURED at 41, Season 1's lanes merged — see the cell below for each lane's delta.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(114_291);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1083,7 +1084,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 111,254 = **8,746**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 104,743 — leaving **15,257**, against a required 4,000.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(111_254);
+    // ── ★ AND THE SEASON LANE, +3,037 ON TOP: §5's `### The season, the FINALE and the grand venture`
+    // (+2,624, FLOOR), §5's season row and §6's `· season` header line (+160, FLOOR), and §11B's CLOSED
+    // paragraph (+253, the claimant's). The two lanes composed exactly — 111,254 + 3,037 — so neither
+    // displaced the other; MEASURED on the merged tree. Analytic margin 120,000 − 114,291 = **5,709**.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(114_291);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1160,7 +1165,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ★ +2,231 at 41 (Season 1's two gated blocks and its FLOOR corrections), then +77 for §10's
     // delegated-create sentence, corrected from the price to the worst case `create` quotes.
     // Margin 120,000 − 104,743 = **15,257** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(104_743);
+    // ★ Then +2,784 for the season lane: its FLOOR unit and its two one-line mentions, on every
+    // position. Merged and measured: 104,743 + 2,784 = 107,527, margin 120,000 − 107,527 = **12,473**
+    // against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(107_527);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -1849,14 +1857,20 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // only offered once a standoff is already live, by which point a member reading the rules for
       // the first time inside a 24-tick window has already chosen wrong.
       64: 'sixty-four',
+      // ★ 65 at 41 (the season lane alone): §5's `### The season, the FINALE and the grand venture`. One FLOOR unit, so every
+      // measured position below moved by the same amount — the unit's own length.
+      65: 'sixty-five',
       // ★ 66 at 41: §4's `### Who has to sign` (the creator's create is its countersignature) and
       // §11A's `### A WORKS only works while you play — DORMANT`.
       66: 'sixty-six',
+      // ★ 67 at 41, merged: the season lane's §5 `### The season, the FINALE and the grand venture`
+      // (one FLOOR unit) on top of the stakes lane's two.
+      67: 'sixty-seven',
     };
     const n = CONTRACT_CATALOG.length;
-    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(66);
+    expect(n, 'if this moved, update the three prose counts in prompt.ts too').toBe(67);
     expect(source, `the prose says a different number than ${String(n)}`).toContain(
-      spelled[n as 66],
+      spelled[n as 67],
     );
     // ── ★ MATCHED ON A WORD BOUNDARY, NOT AS A SUBSTRING ─────────────────────
     //
@@ -2848,20 +2862,32 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       //
       // The newcomer is not offered a stake-bearing act, so it reads §11A's line and not §4's — the
       // gate, measured. Read, not added.
-      // ── ★ AND AT 41: SEASON 1, MEASURED ──────────────────────────────────────
+      // ── ★ AND AT 41: SEASON 1's STAKES LANE, MEASURED ──────────────────────────────────────
       //
       // §4's `### Who has to sign` reaches every position offered `sign` or `fill_role`; §11A's
       // DORMANT block every position that works ground or can raise a WORKS; the FLOOR corrections
       // (§5's sign advice, §6's `intents[]` line and DORMANT rung) every position alike. The
       // newcomer reads all three, because a newcomer is offered `fill_role` and a WORKS on its
       // first wake. Read, not added.
-      49_933, // a newcomer on its first wake            (+848, +46, then +1,390 at 41)
-      60_444, // mid-game in the Commons                 (+848, +266, then +2,231 at 41)
-      70_139, // about to take territory                 (+848, +266, then +2,231 at 41)
-      73_281, // at war: party to a live campaign        (+848, +266, then +2,231 at 41)
-      103_242, // a claimant in trouble                  (+848, +266, then +2,231 and +77 at 41)
-      85_128, // the Commons at its fullest              (+848, +266, then +2,231 and +77 at 41)
-      104_743, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308 at 41)
+      // ── ★ THEN THE SEASON LANE: +2,784 ON EVERY ROW AND +253 MORE ON THE CLAIMANT ──────────────────
+      //
+      //   §5   `### The season, the FINALE and the grand venture`  +2,624  FLOOR (every position)
+      //   §5   the Season row of the horizons table                   +80   FLOOR
+      //   §6   `· season (§5 …)` on the header entry                  +80   FLOOR
+      //   §11B "The season ends every Frontier claim"                +253   the claimant's section
+      //
+      // A FLOOR unit because the FINALE is scheduled and cannot be dodged (A14): a member that never
+      // read the season walks into its last Reckoning with no hand at the stage. Read, not added.
+      //
+      // The two lanes composed exactly: every merged reading below is the stakes lane's plus the
+      // season lane's own delta, so neither displaced the other. MEASURED on the merged tree.
+      52_717, // a newcomer on its first wake            (+1,390 stakes, +2,784 season at 41)
+      63_228, // mid-game in the Commons                 (+2,231 stakes, +2,784 season at 41)
+      72_923, // about to take territory                 (+2,231 stakes, +2,784 season at 41)
+      76_065, // at war: party to a live campaign        (+2,231 stakes, +2,784 season at 41)
+      106_279, // a claimant in trouble                  (+2,308 stakes, +3,037 season at 41)
+      87_912, // the Commons at its fullest              (+2,308 stakes, +2,784 season at 41)
+      107_527, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784 at 41)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3036,7 +3062,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      111_254, // the analytic ceiling                    (+848, +266, then +2,231 and +77 at 41)
+      114_291, // the analytic ceiling                    (+848, +266, then +2,308 stakes and +3,037 season at 41)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

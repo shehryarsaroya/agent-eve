@@ -70,6 +70,13 @@ export interface ProceedsInput {
    * Signed, so it cannot wear the `Bps` brand — see `arith.ts`.
    */
   readonly residualSignedBps: number;
+  /**
+   * ★ The yield at a full fill, when it is not the kind's own — the season's grand venture
+   * (`venture.ts:yieldBasisOf`). Absent means `kindSpec(kind).baseYieldMinor`, which is every
+   * ordinary venture and every forecast for a kind with no venture behind it yet. Zero is legal and
+   * means *"delivers nothing"*: a grand candidate that did not carry the verdict.
+   */
+  readonly baseYieldMinor?: Minor;
 }
 
 export interface Proceeds {
@@ -135,7 +142,11 @@ export function computeProceeds(input: ProceedsInput): Proceeds {
   }
 
   const filledOutputBps = computeOutputBps(spec.roles, input.filled);
-  const gross = scaleByBps(scaleByBps(spec.baseYieldMinor, filledOutputBps), input.stageBps);
+  const base = input.baseYieldMinor ?? spec.baseYieldMinor;
+  if (!Number.isSafeInteger(base) || base < 0) {
+    throw new ProceedsError(`a yield basis is a non-negative integer of minor units, got ${String(base)}`);
+  }
+  const gross = scaleByBps(scaleByBps(base, filledOutputBps), input.stageBps);
   const residual = scaleBySignedBps(gross, input.residualSignedBps);
   // Clamped at zero: a venture can under-deliver to nothing but it cannot owe the
   // world value, and a negative proceeds figure would flow into `splitByBps` and
@@ -210,6 +221,7 @@ export function proceedsBand(
   kind: VentureKind,
   filled: readonly number[],
   stageBps: Bps = NEUTRAL_STAGE_BPS,
+  baseYieldMinor?: Minor,
 ): ProceedsBand {
   const at = (percentile: Percentile): Minor =>
     computeProceeds({
@@ -217,6 +229,7 @@ export function proceedsBand(
       filled,
       stageBps,
       residualSignedBps: residualAtPercentile(kind, percentile),
+      ...(baseYieldMinor === undefined ? {} : { baseYieldMinor }),
     }).proceeds;
   return { p10: at('p10'), p50: at('p50'), p90: at('p90') };
 }

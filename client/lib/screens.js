@@ -60,6 +60,88 @@ var Screens = (function () {
       U.n(M.brokenRecent) + ' broken. The rows above are all time.');
   }
 
+  // ★ THE GRAND VENTURE, in words a stranger reads in three seconds (SPEC §7.6, A13).
+  //
+  // Every figure here is off `season` — the frame's own season line, built by the engine from the
+  // same block every agent's `header.season` is — so the client decides nothing: not who carries the
+  // yield, not what a stake is, not whether a share was paid.
+  function grandSummary(D, season) {
+    var g = season.grand || {};
+    var where = g.stage ? (g.stageName ? g.stageName + ' (' + g.stage + ')' : g.stage) : 'nowhere';
+    var when = season.inFinale ? 'the FINALE is tonight' : 'FINALE in ' + season.reckoningsLeft + ' Reckonings';
+    if (g.winner) {
+      var w = (g.candidates || []).filter(function (c) { return c.venture === g.winner; })[0];
+      return { val: where, note: 'carried by ' + (w ? w.creatorHandle : g.winner) + ' · yields ' + U.n(g.baseYield) };
+    }
+    if (season.inFinale) {
+      // Counted by the candidate's own state: a signed crew is LIVE, not "forming".
+      var cs = g.candidates || [];
+      var live = cs.filter(function (c) { return c.state === 'LIVE'; }).length;
+      var forming = cs.length - live;
+      var crews = [];
+      if (live) crews.push(live + (live === 1 ? ' crew live' : ' crews live'));
+      if (forming) crews.push(forming + (forming === 1 ? ' crew forming' : ' crews forming'));
+      return { val: where, note: (crews.length ? crews.join(' · ') : 'no crew yet') + ' · ' + when };
+    }
+    return { val: where, note: 'yields ' + U.n(g.baseYield) + ' · ' + when };
+  }
+
+  function grandPanel(D, season) {
+    var g = season.grand || {};
+    var head = 'SEASON ' + season.season + ' · ' + (season.inFinale ? 'THE FINALE' : 'THE GRAND VENTURE');
+    var lines = [
+      U.kv('STAGE', g.stage ? (g.stageName || g.stage) + ' · ' + g.stage : '—'),
+      U.kv('YIELDS', U.n(g.baseYield) + ' at a full fill'),
+      U.kv('FINALE', season.inFinale ? 'TONIGHT · tick ' + season.finaleTick : 'in ' + season.reckoningsLeft + ' Reckonings · tick ' + season.finaleTick),
+      U.kv('STAKE / ROLE', U.n(g.stakePerRole) + ' of earned cash'),
+    ];
+    var crews = (g.candidates || []).map(function (c) {
+      var mark = g.winner === c.venture ? '♛ ' : '';
+      return el('div', { class: 'grand-crew' + (g.winner === c.venture ? ' won' : '') }, [
+        el('div', { class: 'gc-h' }, [
+          el('b', { text: mark + c.creatorHandle }),
+          c.formedByHandle ? el('span', { class: 'dim', text: ' · formed by ' + c.formedByHandle }) : null,
+          el('span', { class: 'right', text: c.rolesFilled + '/' + c.rolesTotal + ' · ' + U.n(c.staked) + ' staked' +
+            (c.sealedFills ? ' + ' + c.sealedFills + ' sealed' : '') }),
+        ]),
+        el('div', { class: 'gc-slots' }, (c.slots || []).map(function (s) {
+          return el('span', { class: 'gc-slot' + (s.holder ? ' on' : ''), title: s.label + ' · ' + U.bps(s.shareBps) },
+            s.holderHandle || s.label);
+        })),
+      ]);
+    });
+    return panel(head, {
+      sub: season.inFinale ? 'the largest stake carries it · every share is elective' : 'announced from the season\'s first tick',
+      cls: 'grand',
+      style: 'flex:0 0 auto',
+    }, el('div', null, lines.concat(crews.length ? crews : [
+      el('div', { class: 'note-line', text: season.inFinale
+        ? 'No crew has formed yet. Every role is a hand standing at the stage.'
+        : 'Crews form during the FINALE, at the stage, four principals to a crew.' }),
+    ])));
+  }
+
+  // ★ THE SEASONS — each closed season's FINALE and its champions (A10, §16 Remembered).
+  function seasonsPanel(D) {
+    var recs = D.seasonRecords || [];
+    return panel('THE SEASONS', { sub: 'each FINALE, and who the season named', cls: 'seasons' },
+      recs.length ? el('div', null, recs.map(function (r) {
+        var bad = r.outcome === 'BROKEN';
+        return el('div', { class: 'season-rec' }, [
+          el('div', { class: 'ti', style: 'color:' + (bad ? 'var(--red-text)' : r.outcome === 'KEPT' ? 'var(--gold)' : 'var(--dim)'),
+            text: 'SEASON ' + r.season + ' · ' + r.outcome }),
+          el('div', { class: 'cl', text: r.legend }),
+          el('div', { class: 'champs' }, (r.titles || []).map(function (t) {
+            return el('div', { class: 'champ', title: t.title + ' · ' + t.handle + ' — ' + t.clause }, [
+              el('span', { class: 'dim', text: t.title + ' ' }),
+              el('b', { style: 'color:var(--text)', text: t.handle }),
+            ]);
+          })),
+        ]);
+      }))
+        : empty('no season has closed yet', 'A season closes at its FINALE; its grand venture and its champions are written here.'));
+  }
+
   // Standings are cumulative and survive replay. Meter summaries are bounded
   // and can cover a shorter window after a checkpoint has been adopted.
   function promiseTotals(R) {
@@ -281,6 +363,10 @@ var Screens = (function () {
         { warn: (M.levyShort || 0) > 0, note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · nobody lowers this alone' : 'awaiting the first settlement') }),
       tile('UNREFINED', U.n(M.unrefined),
         { note: (R.reckoningIndex !== undefined ? 'at R' + R.reckoningIndex + ' · not yet payable' : 'awaiting the first settlement'), neutral: true }),
+      D.season ? (function () {
+        var gs = grandSummary(D, D.season);
+        return tile('GRAND VENTURE', gs.val, { note: gs.note, sm: true, warn: D.season.inFinale });
+      })() : null,
     ]));
 
     /* ── THE MAP, ON THE FIRST SCREEN (owner direction, 2026-08-02) ──────
@@ -759,6 +845,10 @@ var Screens = (function () {
         ]);
       }) : empty('no rings to draw', 'Neither frame carries a <code>glyphs[]</code> row.'));
     var right = el('div', { class: 'rows', style: 'min-height:0' });
+    // ★ THE GRAND VENTURE heads the rail: its crews, their sockets and their stakes. It is a venture,
+    // so it lives with the ventures; the OVERVIEW carries its one-line tile and the map its crown.
+    // (On the OVERVIEW's side column it was measured at ~40 px tall on a 1000 px screen — a header.)
+    if (D.season) right.appendChild(grandPanel(D, D.season));
     right.appendChild(panel('★ THE VENTURE RING', {
       sub: 'the hollow arc rides on a word',
       foot: 'deep arc = escrowed, auto-executes · bright arc = elective, can simply not be paid',
@@ -2146,6 +2236,7 @@ var Screens = (function () {
           ]);
         }))
         : empty('no titles yet', '<code>hallOfFame[]</code> fills once the world has a history to rank.')));
+    side.appendChild(seasonsPanel(D));
 
     var kept = rows.reduce(function (a, r) { return a + r.electiveHonoured; }, 0);
     var broke = rows.reduce(function (a, r) { return a + r.defaults; }, 0);

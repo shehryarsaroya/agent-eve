@@ -231,6 +231,12 @@ export const CHECKPOINT_REQUIRED_TABLES: readonly string[] = [
   // uninsured and **no default recorded anywhere** — because the promise ceased to exist rather than
   // being broken, which is the one thing A5′ cannot tolerate.
   'risk',
+  // ── ★ THE SEASON (SPEC §5, §7.6, A10), NAMED IN THE CHANGE THAT ADDED THE BOOK ──
+  //
+  // A dropped season book is a world that forgets which grand candidate carried the verdict two ticks
+  // before the yield is paid, and which seasons it has already closed — so the boundary could run
+  // twice. `books-in-the-hash.test.ts` asserts this list and the registered tables agree both ways.
+  'season',
   // ── CAMPAIGNS (§16.6), AND THE MANIFEST ENTRY IS PART OF ADDING THE BOOK ──
   //
   // Not a follow-up. A restorable table missing from this list is a book an adoption silently drops

@@ -13,7 +13,7 @@
  *   `claimLines[].anchorHot`      a claim collecting nothing looks, on the
  *                                 map, exactly like one collecting everything
  *   `claimLines[].tenants`        who is paying rent to whom
- *   `claimLines[].state`          `CEDED` and `LAPSED` are different endings
+ *   `claimLines[].state`          `CEDED`, `LAPSED` and `CLOSED` are different endings
  *   `ruins[]`                     memory: what stopped, and who ended it
  *   `swayLines[].reachers`        whether a border means anything
  *
@@ -545,6 +545,8 @@ var ZoomView = (function () {
       var vg = (o.glyphs || []).filter(function (x) { return x.stage === s.id; }).slice(0, 4);
       var lastMiss = cl && (cl.state === 'LAPSED' || (cl.arrearsOf > 0 && cl.arrears >= cl.arrearsOf));
       var ceded = cl && cl.state === 'CEDED';
+      // ★ The season's ending: nobody's verdict, nothing slashed, the system open to the next anchor.
+      var closedBySeason = cl && cl.state === 'CLOSED';
       // the ring says who holds it and how close to falling it is — the same
       // three-step ramp the map's claim tint uses, so the two agree.
       var ring = !cl ? null
@@ -708,6 +710,7 @@ var ZoomView = (function () {
         if (lastMiss) st.push({ t: 'ARREARS ' + cl.arrears + ' of ' + cl.arrearsOf + ' · NEXT MISS LAPSES', c: 'rd' });
         else if (cl.arrears > 0) st.push({ t: 'ARREARS ' + cl.arrears + ' of ' + cl.arrearsOf, c: 'am' });
         else if (ceded) st.push({ t: 'CEDED', c: 'ce' });
+        else if (closedBySeason) st.push({ t: 'CLOSED · THE SEASON ENDED · OPEN TO ANCHOR', c: 'ce' });
         else st.push({ t: cl.legend || cl.state, c: 'cy' });
         if (!cl.anchorHot) st.push({ t: 'ANCHOR COLD · COLLECTING NOTHING', c: 'dm' });
       }

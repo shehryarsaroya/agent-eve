@@ -76,6 +76,7 @@ import { MAX_SEALS_PER_PRINCIPAL_PER_RECKONING } from '../../src/seal/book.js';
 import * as intent from '../../src/seal/intent.js';
 import { MAX_ROW_ITEMS } from '../../src/seal/saydo.js';
 import * as runtime from '../../src/sim/runtime.js';
+import * as season from '../../src/season/params.js';
 import * as sovereignty from '../../src/sovereignty/params.js';
 import { MAX_NAME_CHARS } from '../../src/syndicate/form.js';
 import * as syndicate from '../../src/syndicate/params.js';
@@ -246,6 +247,11 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_MARKET_ROWS: { value: runtime.MAX_MARKET_ROWS, class: 'LEGIBILITY', why: 'observation' },
   MAX_REACH_ROWS: { value: MAX_REACH_ROWS, class: 'LEGIBILITY', why: 'observation' },
   MAX_PLANS: { value: MAX_PLANS, class: 'LEGIBILITY', why: 'observation (the unwired rival)' },
+  // ── Season 1's season lane: what a frame and a header list of the season, never the record ──
+  MAX_FRAME_GRAND_CANDIDATES: { value: frames.MAX_FRAME_GRAND_CANDIDATES, class: 'LEGIBILITY', why: 'frame: grand candidates, largest public stake first' },
+  MAX_FRAME_SEASONS: { value: frames.MAX_FRAME_SEASONS, class: 'LEGIBILITY', why: 'frame: closed seasons, newest first — the record is the season.closed rows' },
+  MAX_FRAME_SEASON_RECORDS: { value: season.MAX_FRAME_SEASON_RECORDS, class: 'LEGIBILITY', why: 'the frame\'s season records, newest first' },
+  MAX_LISTED_GRAND_CANDIDATES: { value: season.MAX_LISTED_GRAND_CANDIDATES, class: 'LEGIBILITY', why: 'header.season.grand: candidates listed, largest stake first; one prize per season whatever the population' },
 
   // ── retention: recent history whose window narrows with volume ──────────────
   MAX_TALK_ENTRIES: { value: runtime.MAX_TALK_ENTRIES, class: 'RETENTION', why: 'the negotiation ring; at volume a venture\'s messages can age out before its settlement reads them for the receipt reel — flagged' },
@@ -260,6 +266,7 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_CAMPAIGNS: { value: campaign.MAX_CAMPAIGNS, class: 'RETENTION', why: 'campaign rows incl. ended ones' },
   MAX_FRONTS: { value: risk.MAX_FRONTS, class: 'RETENTION', why: 'fronts on record' },
   MAX_LEVY_ASSESSMENTS: { value: levy.MAX_LEVY_ASSESSMENTS, class: 'RETENTION', why: 'no longer caps an assessment (levy/params.ts says why); kept as the figure the old cliff sat at' },
+  MAX_SEASON_RECORDS: { value: season.MAX_SEASON_RECORDS, class: 'RETENTION', why: 'closed seasons on the book\'s working list (~2.5 years at production pace); each close is a PUBLIC season.closed row that never leaves the record, and SSN-4 reads only contiguity, which eviction from the front keeps — counted in seasons, not principals' },
 
   // ── drama budgets: world-wide, flat by design today ─────────────────────────
   MAX_LIVE_RAIDS: { value: predation.MAX_LIVE_RAIDS, class: 'DRAMA', why: 'six live standoffs galaxy-wide — at thousands of principals agent demands queue behind each other; per-constellation scaling is an owner call (it moves MAX_RAID_LINES too)' },

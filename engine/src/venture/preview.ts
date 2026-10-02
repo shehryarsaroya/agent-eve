@@ -54,6 +54,7 @@ import {
   isFullyFilled,
   pinnedValue,
   roleOfPrincipal,
+  yieldBasisOf,
   type VentureRecord,
 } from './venture.js';
 import { IN_FULL, computeClaims, type Election, type ResolutionKind } from './settlement.js';
@@ -101,6 +102,7 @@ export function takeAtPercentile(
   const filled = allRoleIndices(venture);
   const proceeds = computeProceeds({
     kind: venture.kind,
+    baseYieldMinor: yieldBasisOf(venture),
     filled,
     stageBps,
     residualSignedBps: residualAtPercentile(venture.kind, percentile),
@@ -196,6 +198,7 @@ export function electiveCeilingOfRole(
   const filled = allRoleIndices(venture);
   const proceeds = computeProceeds({
     kind: venture.kind,
+    baseYieldMinor: yieldBasisOf(venture),
     filled,
     stageBps,
     residualSignedBps: residualAtPercentile(venture.kind, 'p90'),
@@ -226,6 +229,7 @@ export function maxElectiveLiability(
   const filled = allRoleIndices(venture);
   const proceeds = computeProceeds({
     kind: venture.kind,
+    baseYieldMinor: yieldBasisOf(venture),
     filled,
     stageBps,
     residualSignedBps: residualAtPercentile(venture.kind, 'p90'),
@@ -451,12 +455,13 @@ export function projectedSettlement(
   stageBps: Bps = NEUTRAL_STAGE_BPS,
 ): ProjectedSettlement {
   const filled = filledIndices(venture);
-  const band = proceedsBand(venture.kind, filled, stageBps);
+  const band = proceedsBand(venture.kind, filled, stageBps, yieldBasisOf(venture));
   const at = (percentile: Percentile): ReturnType<typeof computeClaims> =>
     computeClaims(
       venture,
       computeProceeds({
         kind: venture.kind,
+        baseYieldMinor: yieldBasisOf(venture),
         filled,
         stageBps,
         residualSignedBps: residualAtPercentile(venture.kind, percentile),
@@ -491,6 +496,7 @@ export function projectedSettlement(
 
   const proceedsNow = computeProceeds({
     kind: venture.kind,
+    baseYieldMinor: yieldBasisOf(venture),
     filled,
     stageBps,
     residualSignedBps: 0,

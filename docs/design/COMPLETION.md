@@ -49,6 +49,28 @@ drama budgets · the parley ring's lifetime refusal (the parley lane's).
 
 ---
 
+## ⏱ 2026-10-01 — `RULES_VERSION` 41 on `season1-season-and-grand-venture`: the season, its FINALE and the grand venture
+
+*Branch reading, not merged. Sibling Season 1 branches are landing at the same time; renumber the
+version and re-read these figures after the merge.*
+
+| | reading, 2026-10-01 (branch) |
+|---|---|
+| `RULES_VERSION` | **41** (the season table, `ClaimState.CLOSED`, grand ventures) |
+| `tsc` · lint | 0 · 0 |
+| vitest | **344 files, 4,205 passed, 1 skipped** (`npm ci && npm run gate0`, 3,745 s) |
+| budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent |
+| contract | analytic ceiling **111,983** of 120,000 · largest reachable **105,219** (margin 14,781) |
+| a whole season, played | 12-member heuristic worlds from genesis (`fs-a`, `fs-b`, E2E-28): 14 Reckonings, **0 violations**, one crew carries the grand venture (~293,000 delivered, KEPT); the FINALE probes draw both answers (`cf-a` KEPT, `cf-b` BROKEN) |
+
+⚑ **"Season boundary" was on the Phase 1 line below for two months and did not exist.** At `c771ece`
+the word appears in `src/` only in comments; nothing ended, no claim closed, there was no FINALE and no
+grand venture. Phase 1's last named item — *"the first season boundary and finale"* (SPEC §16) — is now
+built, offered (`header.season`, the create and fill affordances), selected (the house cast), counted
+(SSN-1..5, the season record) and reached by play (E2E-28).
+
+---
+
 ## ⏱ 2026-07-30 — `RULES_VERSION` 40, 312 files / 3,889 tests, and a re-seeded world
 
 *The rest of this file predates the three merges of 2026-07-30 and its version numbers, test counts
@@ -212,8 +234,8 @@ surface is full rather than partial. Adding a mechanic now means spending a verb
 
 ## Phase 1 — all five areas have implementations
 
-`src/sovereignty/` (3,958 loc), syndicates, `src/works/` (574 loc), season boundary, siege/campaign
-code. **`works` is by far the thinnest module in the tree** and it is the one the economy runs on.
+`src/sovereignty/` (3,958 loc), syndicates, `src/works/` (574 loc), siege/campaign code, and — only
+since `RULES_VERSION` 41 — the season boundary (`src/season/`; this line claimed it before it existed). **`works` is by far the thinnest module in the tree** and it is the one the economy runs on.
 
 ---
 
