@@ -3469,3 +3469,24 @@ describe('the contract stays whole and cached; the FOCUS is per-member', () => {
     expect(situationalFocus({ holding: {}, obligations: {}, affordances: [], grants: {} })).toEqual([]);
   });
 });
+
+describe('VOICE reaches the model', () => {
+  it("puts each member's own voice in its prompt, and nobody else's", () => {
+    const contract = loadContract();
+    if (contract === null) throw new Error('no contract');
+    setSpeed('instant');
+    const runtime = new Runtime({ seed: 'voices' });
+    const characters = [...charactersFor(new HeuristicCast(runtime, { size: 20 }).seat('voices'), 'voices').values()];
+    expect(characters.length).toBe(20);
+    const observation = anObservation();
+    for (const character of characters) {
+      const text = buildPrompt({ contract, character, observation, memory: '', liveVerbs: ['move'], planMax: 1 })
+        .messages.map((m) => m.content)
+        .join('\n');
+      expect(text).toContain(character.voice);
+      for (const other of characters) {
+        if (other.handle !== character.handle) expect(text).not.toContain(other.voice);
+      }
+    }
+  });
+});
