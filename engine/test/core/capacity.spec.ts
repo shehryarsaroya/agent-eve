@@ -71,6 +71,7 @@ import { MAX_INDEMNITY_DEFERRALS } from '../../src/risk/indemnity.js';
 import * as riskLines from '../../src/risk/lines.js';
 import * as risk from '../../src/risk/params.js';
 import * as directory from '../../src/say/directory.js';
+import * as offer from '../../src/say/offer.js';
 import * as parley from '../../src/say/parley.js';
 import { MAX_REACH_ROWS } from '../../src/say/reach.js';
 import { MAX_SEALS_PER_PRINCIPAL_PER_RECKONING } from '../../src/seal/book.js';
@@ -152,6 +153,18 @@ const CAPS: Readonly<Record<string, Cap>> = {
     why:
       'letters still inside a window: the ceiling (MAX_PARLEYS_SENT_PER_RECKONING) for each Reckoning one ' +
       'PARLEY_RETAINED_TICKS stretch touches, per principal; was a flat 512 for the whole life of the world',
+  },
+
+  // ★ Was RETENTION ("display only"), and it was not: the directory lists by an offer and the OFFER reach
+  // rung addresses by it. A flat 256 for the world that evicted the oldest, so a fresh offer left the board
+  // inside its own freshness window at launch volume and one principal publishing every tick could clear
+  // it. The book now holds each principal's STANDING offer until it goes stale (`say/offer.ts` §2);
+  // `test/say/the-offer-book-stands.spec.ts` carries a spammer, a crowd and the window through it.
+  MAX_OFFER_ENTRIES: {
+    value: offer.MAX_OFFER_ENTRIES,
+    class: 'POPULATION',
+    per: offer.OFFERS_RETAINED_PER_PRINCIPAL,
+    why: 'one standing offer per principal, retired once stale; was a flat 256 for the world that evicted the oldest',
   },
 
   // ── map books: must clear per × MAX_MAP_SYSTEMS ─────────────────────────────
@@ -279,7 +292,6 @@ const CAPS: Readonly<Record<string, Cap>> = {
 
   // ── retention: recent history whose window narrows with volume ──────────────
   MAX_TALK_ENTRIES: { value: runtime.MAX_TALK_ENTRIES, class: 'RETENTION', why: 'the negotiation ring; at volume a venture\'s messages can age out before its settlement reads them for the receipt reel — flagged' },
-  MAX_OFFER_ENTRIES: { value: runtime.MAX_OFFER_ENTRIES, class: 'RETENTION', why: 'published offers, display only' },
   MAX_CLAIM_ENTRIES: { value: runtime.MAX_CLAIM_ENTRIES, class: 'RETENTION', why: 'public statements, display only' },
   MAX_RAID_TICKER_LINES: { value: runtime.MAX_RAID_TICKER_LINES, class: 'RETENTION', why: 'ticker' },
   MAX_RECKONING_SUMMARIES: { value: runtime.MAX_RECKONING_SUMMARIES, class: 'RETENTION', why: 'Reckonings, not rows' },

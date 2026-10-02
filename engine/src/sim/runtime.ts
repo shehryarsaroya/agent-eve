@@ -198,7 +198,7 @@ import { renderFrame, type FrameSource, type SettledView } from '../frames/rende
 import { assertInertLiveFacts, renderLiveFrame, type LiveSource, type LiveVentureView } from '../frames/live.js';
 import { hallOfFame, namesFor, ruinsFor } from '../frames/memory.js';
 import { readInt, readIntOrFault, readList, readString } from '../core/params.js';
-import { publishOffer } from '../say/offer.js';
+import { OfferBook, publishOffer, type OfferEntry } from '../say/offer.js';
 import { say } from '../say/say.js';
 import {
   PARLEY_ANSWER_WINDOW_TICKS,
@@ -2514,7 +2514,7 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *   - **The contact and season reads share the read epoch** (reach, the parley block, the directory's
  *     ranking, the season block) — scale's `perEpoch` rule, so the burst stays O(P).
  *
- * ── 41 · THE LAUNCH FIXES — three blockers found on the integrated tree, fixed before any world ran it ──
+ * ── 41 · THE LAUNCH FIXES — four blockers found on the integrated tree, fixed before any world ran it ──
  *
  *   - **The parley book rolls** (`say/parley.ts` §5). It was a 512-row ring that refused the 513th
  *     letter of the world's life — a launch with a few hundred agents would have gone silent in hours.
@@ -2533,12 +2533,21 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *     already open in the stage's tier. And its FINALE branches obey INV-23 as every fill does — a
  *     delegate of the grand creator is no crew — and keep a hand walked to the grand stage there through
  *     the window, neither of which they did.
+ *   - **The offer book stands** (`say/offer.ts` §2). It was a 256-row ring for the whole world that
+ *     evicted the oldest offer whoever wrote it, so at launch volume a fresh offer left the board
+ *     inside its own 288-tick freshness window, and one principal publishing every tick could clear the
+ *     board of everybody else — and with it everybody else's OFFER reach rung and directory row. It
+ *     now holds each principal's standing offer (a new one replaces the last, which is the only one the
+ *     freshness rule ever read), `EXPIRE` retires it once no freshness read can say yes, and the cap is
+ *     one per principal the world can hold.
  *
  * Still a fresh world at genesis, so there is no divergence to accept. The `say` table's shape is
  * unchanged; a world in which a letter outlives its windows hashes differently from the tick that
- * letter is retired, and a world in which nobody writes one hashes exactly as before. The season
- * record's key is `seasonEndedClaims` where it was `closedClaims`, so a world that reaches its FINALE
- * hashes differently from the boundary tick on, and one that has not reached it exactly as before.
+ * letter is retired, and a world in which nobody writes one hashes exactly as before. The same holds
+ * for an offer: the hash moves from the first tick one is replaced or retired, and a world where nobody
+ * advertises hashes exactly as before. The season record's key is `seasonEndedClaims` where it was
+ * `closedClaims`, so a world that reaches its FINALE hashes differently from the boundary tick on, and
+ * one that has not reached it exactly as before.
  *
  * ══════════════════════════════════════════════════════════════════════════
  */
@@ -2869,7 +2878,8 @@ export const MAX_PENDING_FILLS = ACTIONS_PER_TICK * MAX_PRINCIPALS;
 export const MAX_GRANT_OFFERS = 2;
 
 export const MAX_RELATIONS = 6;
-export const MAX_OFFER_ENTRIES = 256;
+/** The offer book's tripwire lives with the book now (`say/offer.ts` §2); re-exported for `sim/index.ts`. */
+export { MAX_OFFER_ENTRIES } from '../say/offer.js';
 export const MAX_CLAIM_ENTRIES = 512;
 
 /** §11.1: the public `reason` is hard-capped at 140 characters. */
@@ -3109,11 +3119,7 @@ export interface TalkEntry {
   readonly tick: number;
 }
 
-export interface OfferEntry {
-  readonly by: PrincipalId;
-  readonly text: string;
-  readonly tick: number;
-}
+export type { OfferEntry } from '../say/offer.js';
 
 /**
  * A refusal that could only be known once the tick resolved.
@@ -3994,8 +4000,13 @@ export class Runtime {
   /**
    * The prose OFFER book. Captured since 41 in the `say` table: the directory lists by an offer's
    * freshness and the OFFER reach rung addresses by it, both across a Reckoning boundary.
+   *
+   * ★ **And it STANDS** (`say/offer.ts` §2): one standing offer per principal, kept for exactly its
+   * freshness window and retired in `EXPIRE`. It used to be a 256-row `Ring` for the whole world that
+   * evicted the oldest offer whoever had written it — a fresh offer left the board inside its own
+   * window at launch volume, and one principal publishing every tick could clear it of everybody else.
    */
-  private readonly offers = new Ring<OfferEntry>(MAX_OFFER_ENTRIES);
+  private readonly offers = new OfferBook();
   private readonly claims = new Ring<ClaimEntry>(MAX_CLAIM_ENTRIES);
 
   /** Fill requests collected this tick, resolved once in VENTURES (PROP-V8). */
@@ -4639,6 +4650,9 @@ export class Runtime {
         // the way the tick loop's own intent prune in this phase is. Draws nothing, so no sub-stream moves.
         EXPIRE: (ctx) => {
           this.parleys.retire(ctx.tick);
+          // ★ The offer book stands (`say/offer.ts` §2): an offer no freshness read can say yes to any
+          // more has timed out too. Same phase, same reasons — inside the hash and the abort path.
+          this.offers.retire(ctx.tick);
         },
         PREDATE: (ctx) => {
           // ── BATTLES BEFORE RAID RESOLUTION, AND THE ORDER IS THE WHOLE COUPLING ──
@@ -11000,12 +11014,9 @@ export class Runtime {
       // freshness rule is `say/directory.ts:freshOfferOf`, the same one the directory lists by.
       advertisersNear: (system) => {
         const target = systemOf(this.world.map, system).constellation;
-        const byAuthor = this.offersByAuthor();
         const out: { readonly principal: PrincipalId; readonly tick: number }[] = [];
         for (const { principal } of this.seatedByConstellation().get(target) ?? []) {
-          const own = byAuthor.get(principal);
-          if (own === undefined) continue;
-          const fresh = freshOfferOf(own, principal, tick);
+          const fresh = freshOfferOf(this.offers.of(principal), tick);
           if (fresh !== null) out.push({ principal, tick: fresh.tick });
         }
         return out;
@@ -11036,23 +11047,6 @@ export class Runtime {
         const list = out.get(constellation) ?? [];
         list.push({ principal, system: holding.system });
         out.set(constellation, list);
-      }
-      return out;
-    });
-  }
-
-  /**
-   * The prose offer book grouped by author, oldest first within each — once per read epoch, so
-   * `freshOfferOf` (the one home for the freshness rule) reads each principal's own rows instead of the
-   * whole book once per principal. The book is the captured `say` table, inside the hash.
-   */
-  private offersByAuthor(): ReadonlyMap<PrincipalId, readonly OfferEntry[]> {
-    return this.perEpoch('offersByAuthor', () => {
-      const out = new Map<PrincipalId, OfferEntry[]>();
-      for (const offer of this.offers.all) {
-        const list = out.get(offer.by) ?? [];
-        list.push(offer);
-        out.set(offer.by, list);
       }
       return out;
     });
@@ -11272,7 +11266,7 @@ export class Runtime {
         return out;
       },
       constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
-      offers: () => this.offers.all,
+      offerOf: (principal) => this.offers.of(principal),
       forming: () => {
         const out: DirectoryVenture[] = [];
         for (const venture of this.ventures.live()) {

@@ -6,7 +6,35 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-02 (latest) — SEASON 1 LAUNCH FIXES: THREE BLOCKERS ON THE INTEGRATED TREE (branch `season1-launch-fixes` off `season1` `d3e4f52`; not merged, not deployed)
+> ### 2026-10-02 (latest) — THE OFFER BOOK STANDS: THE FOURTH LAUNCH BLOCKER (branch `season1-voices`, with the cast's voices and the three fixes below merged in; not deployed)
+>
+> Still `RULES_VERSION` 41, a fourth bullet in its launch-fixes note. Owner call (3) of the entry below:
+> `MAX_OFFER_ENTRIES` was a 256-row ring **for the whole world** that evicted its oldest row, and it was
+> classified RETENTION "display only" when the directory lists by it and the OFFER reach rung addresses
+> by it. So at launch volume a fresh offer left the board inside its own 288-tick freshness window, and
+> one principal publishing every tick cleared everybody else's — directory row and reach rung with it.
+>
+> - **One standing offer per principal** (`say/offer.ts` §2, `OfferBook`). A new offer replaces the
+>   author's last and moves to the back — the latest was the only row `freshOfferOf` ever chose, and
+>   SPEC §7.3 already calls an offer *"a standing price list"*. `EXPIRE` retires an offer once no
+>   freshness read can say yes (`offerLastReadTick` = published + 288), inside the hash and the abort
+>   path, beside the parley book. The `say` table's shape is unchanged; a restore refuses a capture
+>   `push` could not have produced (a second standing offer, ticks out of order, past the cap).
+> - **The cap is a POPULATION book**: 1 × `MAX_PRINCIPALS` = 10,000, a tripwire that throws rather than
+>   evicts. `capacity.spec.ts` reclassifies it. The directory port now asks for one principal's offer
+>   (`offerOf`) instead of walking the book once per seated principal, so the walk is O(seated), not
+>   O(seated × offers).
+> - **The surfaces say so.** `agent.md` §4: *"a standing price list; a new one replaces your last"* —
+>   +30 characters on every cast prompt position, folded into the existing sentence because its own
+>   line measured +90 and the analytic margin is now **1,693**. The `publish_offer` affordance's
+>   `what_it_forecloses` no longer says "nothing": it names the standing offer it replaces.
+> - **`the-offer-book-stands.spec.ts`**: a spammer publishes 280 offers inside one window and holds one
+>   row, while another principal's offer stays in the book, in the directory, on the OFFER rung and on
+>   `market.offers`; an offer is listed at exactly 288 ticks old and retired at 289; a republish starts
+>   the window again; a thousand authors hold a thousand rows. **Run against the unfixed tree, all three
+>   world tests fail** — the victim's offer is gone by the spammer's 256th.
+>
+> ### 2026-10-02 — SEASON 1 LAUNCH FIXES: THREE BLOCKERS ON THE INTEGRATED TREE (branch `season1-launch-fixes` off `season1` `d3e4f52`; not merged, not deployed)
 >
 > Still `RULES_VERSION` 41 (Season 1 is a fresh world, so a note in the 41 block rather than a bump),
 > verbs 40/40, observe keys 11/11, kinds 8/8, no new canon term. `npm run gate0`: tsc 0 · lint 0 ·

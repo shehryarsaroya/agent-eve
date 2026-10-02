@@ -122,8 +122,11 @@ export interface DirectoryPort {
   /** Every seated principal and the system its HOLDING stands on, in canonical principal order. */
   readonly seated: () => readonly { readonly principal: PrincipalId; readonly system: SystemId }[];
   readonly constellationOf: (system: SystemId) => string;
-  /** The prose offer book, oldest first. */
-  readonly offers: () => readonly { readonly by: PrincipalId; readonly text: string; readonly tick: number }[];
+  /**
+   * A principal's standing offer in the prose offer book, fresh or not, or `null`. The book holds one
+   * per principal (`say/offer.ts` §2), so this is a lookup rather than a walk of everybody's offers.
+   */
+  readonly offerOf: (principal: PrincipalId) => { readonly text: string; readonly tick: number } | null;
   /** Ventures still `FORMING` with at least one role open, by creator. */
   readonly forming: () => readonly DirectoryVenture[];
   /** Roles held in, plus ventures run as creator, among `LIVE` ventures — per principal. */
@@ -160,22 +163,19 @@ export interface Directory {
 }
 
 /**
- * A principal's latest offer, if it is still fresh at `tick`. **One home** for the freshness rule:
- * the directory lists by it and `reach.ts`'s OFFER rung addresses by it.
+ * A principal's standing offer, if it is still fresh at `tick`. **One home** for the freshness rule:
+ * the directory lists by it, `reach.ts`'s OFFER rung addresses by it, and the offer book keeps a row
+ * for exactly as long as it can say yes (`say/offer.ts:offerLastReadTick`).
+ *
+ * Takes the one standing offer rather than the book: the book holds only each principal's latest
+ * (`say/offer.ts` §2), which is the only row this ever chose.
  */
 export function freshOfferOf(
-  offers: readonly { readonly by: PrincipalId; readonly text: string; readonly tick: number }[],
-  principal: PrincipalId,
+  offer: { readonly text: string; readonly tick: number } | null,
   tick: number,
 ): { readonly text: string; readonly tick: number } | null {
-  let latest: { readonly text: string; readonly tick: number } | null = null;
-  for (const offer of offers) {
-    if (offer.by !== principal) continue;
-    if (offer.tick > tick) continue;
-    if (latest === null || offer.tick >= latest.tick) latest = { text: offer.text, tick: offer.tick };
-  }
-  if (latest === null) return null;
-  return tick - latest.tick <= DIRECTORY_OFFER_FRESH_TICKS ? latest : null;
+  if (offer === null || offer.tick > tick) return null;
+  return tick - offer.tick <= DIRECTORY_OFFER_FRESH_TICKS ? { text: offer.text, tick: offer.tick } : null;
 }
 
 /** Is this row soliciting — something a reader can respond to — rather than only at work? */
@@ -212,7 +212,6 @@ export function dealingIn(
   tick: number,
   exclude: PrincipalId | null = null,
 ): { readonly rows: readonly DirectoryRow[]; readonly seated: number } {
-  const offers = port.offers();
   const forming = port.forming();
   const working = port.liveRoles();
   const seekingBy = new Map<PrincipalId, DirectoryVenture[]>();
@@ -229,7 +228,7 @@ export function dealingIn(
     if (port.constellationOf(system) !== constellation) continue;
     seated += 1;
     if (principal === exclude) continue;
-    const offering = freshOfferOf(offers, principal, tick);
+    const offering = freshOfferOf(port.offerOf(principal), tick);
     const recruiting = [...(seekingBy.get(principal) ?? [])].sort(
       (a, b) => a.closesTick - b.closesTick || compareIds(a.venture, b.venture),
     );

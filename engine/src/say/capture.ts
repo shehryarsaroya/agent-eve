@@ -25,10 +25,10 @@
  *
  * **Contents, not counts.** The event ledger captures counts because its rows are immutable and the
  * truncation is an exact inverse; these books are working sets whose membership is part of the state —
- * the parley book retires a letter once no window reads it (`say/parley.ts` §5) and the offer book is a
- * 256-row ring — so the rows themselves are the only faithful capture. `parleysDropped` counts the
- * letters that have left the book. The cost is bounded by the caps, and both are empty in a world where
- * nobody talks.
+ * the parley book retires a letter once no window reads it (`say/parley.ts` §5) and the offer book holds
+ * each principal's standing offer until it goes stale (`say/offer.ts` §2) — so the rows themselves are
+ * the only faithful capture. `parleysDropped` and `offersDropped` count the rows that have left each
+ * book. The cost is bounded by the caps, and both are empty in a world where nobody talks.
  *
  * Parsed strictly, with located errors, for `StandingBook.restore`'s reason: a restore that quietly
  * dropped a malformed letter would silently revoke an answer somebody was owed.
@@ -55,8 +55,9 @@ export interface SayCaptured {
 }
 
 /**
- * The capture. **Book order, never sorted**: the ring IS a sequence, the answer predicate reads its
- * insertion order (`owesAnswer`), and re-ordering it would change which letter is "the latest".
+ * The capture. **Book order, never sorted**: each book IS a sequence. The answer predicate reads the
+ * parley book's insertion order (`owesAnswer`), and re-ordering it would change which letter is "the
+ * latest"; the offer book retires from its front, so its order is publish order and must come back so.
  */
 export function sayCapture(state: SayCaptured): CanonicalValue {
   return {

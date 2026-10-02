@@ -4695,7 +4695,9 @@ function affordancesFor(
     cost: 1,
     max_direct_loss: 0,
     max_contingent_liability: 0,
-    what_it_forecloses: 'nothing. An offer is a price list, not a commitment.',
+    // One standing offer per principal (`say/offer.ts` §2): saying "nothing" here hid that a second
+    // offer takes the first one down.
+    what_it_forecloses: 'your standing offer, if you have one: this replaces it. An offer is a price list, not a commitment.',
     expires_tick: tick + QUOTE_PIN_TICKS,
     quote_id: quoteId(principal, tick, 'publish_offer', {}),
   });

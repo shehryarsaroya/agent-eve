@@ -1009,7 +1009,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
     // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
     // ★ Then the launch fixes — see the cell below.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_277);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_307);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1125,7 +1125,11 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // admission rule is spelled `CLOSED`). +1 on every position — §5's FLOOR season statement now says a
     // claim "becomes SEASON_ENDED" where it said "closes", and the horizons row says claims "end" — and +6
     // more on the claimant, whose §11B paragraph names the state. Analytic margin **1,723**.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_277);
+    //
+    // Then +30 for the offer book standing (`say/offer.ts` §2): §4's `publish_offer` sentence now says a
+    // new offer replaces your last. Analytic margin **1,693** — thin, and the reason the clause was folded
+    // into an existing sentence instead of the +90 line it was first written as.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_307);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1210,7 +1214,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // against a required 4,000.
     // ★ Then +51 for the launch fixes' PARLEY ceiling sentence (the book rolls) and +1 for the claim
     // ending's rename (the FLOOR season statement): 111,507, margin **8,493** against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_507);
+    // ★ Then +30 for §4's `publish_offer` sentence — a new offer replaces your last (`say/offer.ts` §2):
+    // 111,537, margin **8,463** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_537);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2938,13 +2944,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // 513th letter of the world's life, and the book now rolls (`say/parley.ts` §5). MEASURED.
       // Then +1 on every row and +6 more on the claimant: the claim ending renamed `CLOSED` → `SEASON_ENDED`
       // (HARD RULE 4) in §5's FLOOR season statement and horizons row, and in §11B's claimant paragraph.
-      54_753, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1)
-      65_264, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1)
-      74_959, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1)
-      80_045, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1)
-      110_265, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7)
-      91_892, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1)
-      111_507, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1)
+      // Then +30 on every row: the offer book stands (`say/offer.ts` §2), and §4's always-selected
+      // `publish_offer` sentence says so — "a standing price list; a new one replaces your last." A
+      // second offer takes the first one down, and a member that published two expecting both to stand
+      // would be planning against a book that no longer exists. Folded into the sentence that was there
+      // rather than given its own line, which measured +90. MEASURED.
+      54_783, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer)
+      65_294, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer)
+      74_989, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer)
+      80_075, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30)
+      110_295, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30)
+      91_922, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30)
+      111_537, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3119,7 +3130,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      118_277, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7)
+      118_307, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

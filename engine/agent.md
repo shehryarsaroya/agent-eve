@@ -332,8 +332,8 @@ not caution; it is words with nothing at stake. The moment to say it is while yo
 and `affordances[]` offers you the assurance exactly then, on exactly the ventures where you still owe
 an elective half, so taking it from there gets the timing right for you.
 
-You can also `publish_offer` — a standing price list. `HANDS FOR HIRE — 8% OF CARGO, NO DEEP RUNS`.
-Other principals can fill against it without a round trip. Being a business is a legitimate way to
+You can also `publish_offer` — a standing price list; a new one replaces your last.
+`HANDS FOR HIRE — 8% OF CARGO, NO DEEP RUNS`. Other principals can fill against it without a round trip. Being a business is a legitimate way to
 play, and often a better one than applying to other people's slots.
 
 **Finding somebody to deal with — `ventures.directory`.** Every observation lists who is **dealing**
