@@ -2527,6 +2527,12 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *     word for two concepts. The rename reaches the claim book, the event (`claim.season_ended`), the
  *     season record (`seasonEndedClaims`), the frames, the client, `agent.md` and SPEC §3; the repo
  *     vocabulary guard now reads array-declared enums, which is where the collision hid.
+ *   - **The house cast commissions what it can fill** (`cast/heuristic.ts:createCanFill`). Not a rule:
+ *     cast policy. 84% of the heuristic cast's ventures retired unfilled over a season, because the
+ *     create branch never asked whether a cast-mate had a hand to give; it now asks, against the roles
+ *     already open in the stage's tier. And its FINALE branches obey INV-23 as every fill does — a
+ *     delegate of the grand creator is no crew — and keep a hand walked to the grand stage there through
+ *     the window, neither of which they did.
  *
  * Still a fresh world at genesis, so there is no divergence to accept. The `say` table's shape is
  * unchanged; a world in which a letter outlives its windows hashes differently from the tick that

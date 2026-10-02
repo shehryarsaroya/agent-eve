@@ -33,6 +33,7 @@
 import { describe, expect, it } from 'vitest';
 import { HeuristicCast } from '../../src/cast/index.js';
 import type { CanonicalValue } from '../../src/core/canonical.js';
+import { TICKS_PER_RECKONING } from '../../src/core/time.js';
 import type { EventId, InvariantViolation, PrincipalId, VentureId } from '../../src/core/types.js';
 import { minor } from '../../src/core/units.js';
 import { EventLedger } from '../../src/events/index.js';
@@ -382,9 +383,14 @@ describe('an aborted tick leaves no standing change, no seal, no obligation', ()
 
     // Walk the clean world forward until a tick actually mints something, so the
     // comparison below is about a tick that moved the counter.
+    //
+    // ★ Up to a whole Reckoning, not sixty ticks: since the cast commissions only what a cast-mate
+    // could fill (`HeuristicCast.createCanFill`), it opens its ventures when the last settlement has
+    // freed the hands — the opening of a Reckoning — and mid-cycle ticks mint nothing. The next
+    // Reckoning's opening is inside this walk.
     let target = -1;
     let previous = mintOf(cleanWorld.runtime);
-    for (let i = 0; i < 60 && target < 0; i += 1) {
+    for (let i = 0; i < TICKS_PER_RECKONING && target < 0; i += 1) {
       const before = mintOf(cleanWorld.runtime);
       run(cleanWorld, cleanWorld.runtime.engine.tick + 1);
       if (mintOf(cleanWorld.runtime) !== before) {

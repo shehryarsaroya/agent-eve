@@ -441,13 +441,20 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
     // look like a regression.
     let kept = 0;
     let broken = 0;
-    let ventures = 0;
+    let formed = 0;
     for (const seed of GATE_SEEDS) {
       const run = play(seed, CLAIM_TICKS);
       const frame = run.runtime.reckoningFrame();
       kept += frame?.meters.keptRecent ?? 0;
       broken += frame?.meters.brokenRecent ?? 0;
-      ventures += run.runtime.ventures.all().length;
+      // ★ Ventures that FORMED — reached LIVE and bound somebody — not ventures opened. The count this
+      // used to take (2,639 across these four worlds) was 89% ventures that retired unfilled; since the
+      // cast commissions only what a cast-mate could fill (`HeuristicCast.createCanFill`) it opens 301,
+      // of which 284 form, against 297 formed before. A board is as thick as the deals on it.
+      formed += run.runtime.ventures
+        .all()
+        .filter((v) => v.state === 'LIVE' || v.state === 'SETTLED' || v.state === 'DEFAULTED' || v.state === 'DEFERRED')
+        .length;
     }
     // Both halves non-zero, because §7.6 needs a real answer: a cast that broke nothing would make
     // the falsification test rigged, and one that kept nothing would leave standing nothing to accrue.
@@ -460,7 +467,7 @@ describe('★ THE BALANCE GATE — territory must not make the Levy harder', () 
       'the house cast is breaking a third of its promises — territory is being funded out of money ' +
         'already promised to somebody, which is a breach we authored rather than an agent chose',
     ).toBeLessThan(20);
-    expect(ventures, 'and the board is not thinner than the world without territory').toBeGreaterThan(800);
+    expect(formed, 'and the board is not thinner than the world without territory').toBeGreaterThan(250);
   }, 600_000);
 });
 
