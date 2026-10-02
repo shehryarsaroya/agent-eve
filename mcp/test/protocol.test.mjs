@@ -35,7 +35,28 @@ test('MCP agents enroll, sign, act, retry, reject impersonation and resume ident
     const trader = await connect('qa-trader');
     const observer = await connect('qa-observer');
     await t.test('discovery, resources and missing identity', async () => {
-      assert.equal((await builder.listTools()).tools.length, 7);
+      const { tools } = await builder.listTools();
+      assert.equal(tools.length, 10);
+      // Both directories reject a tool without a title and explicit hints; hosts treat a missing
+      // readOnlyHint as a write. Every tool states all four.
+      for (const tool of tools) {
+        assert.ok(tool.title, `${tool.name} has a title`);
+        for (const hint of ['readOnlyHint', 'destructiveHint', 'idempotentHint', 'openWorldHint']) {
+          assert.equal(typeof tool.annotations?.[hint], 'boolean', `${tool.name} states ${hint}`);
+        }
+      }
+      const byName = Object.fromEntries(tools.map((tool) => [tool.name, tool.annotations]));
+      assert.equal(byName.eve_act.destructiveHint, true);
+      assert.equal(byName.eve_act.openWorldHint, true);
+      for (const name of ['eve_status', 'eve_rules', 'eve_map', 'eve_rundown', 'eve_dossier', 'eve_identity']) {
+        assert.equal(byName[name].readOnlyHint, true, `${name} is read-only`);
+      }
+      // Spectator tools need no identity; a world with no settled Reckoning says so plainly.
+      for (const [name, args] of [['eve_map', {}], ['eve_rundown', {}], ['eve_dossier', { handle: 'qa-builder' }]]) {
+        const result = await call(builder, name, args);
+        assert.equal(result.mcpError, false, `${name} works without an identity`);
+        assert.ok(result.available === false || result.tick !== undefined || result.handle !== undefined, `${name} answers`);
+      }
       const resource = await builder.readResource({ uri: 'agenteve://rules' });
       assert.match(resource.contents[0].text, /AGENT EVE/);
       assert.equal((await call(builder, 'eve_observe')).mcpError, true);

@@ -71,7 +71,7 @@ fi
 # The public MCP download, rebuilt from the deployed tree so it cannot drift from git.
 work="$(mktemp -d)"
 mkdir "$work/agenteve-mcp"
-cp /opt/agenteve/mcp/{server.mjs,client.mjs,call.mjs,package.json,package-lock.json,README.md} "$work/agenteve-mcp/"
+cp /opt/agenteve/mcp/{server.mjs,client.mjs,spectator.mjs,call.mjs,package.json,package-lock.json,README.md} "$work/agenteve-mcp/"
 tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -C "$work" -cf - agenteve-mcp | gzip -n > /var/www/agenteve.io/mcp/agenteve-mcp.tar.gz.new
 mv /var/www/agenteve.io/mcp/agenteve-mcp.tar.gz.new /var/www/agenteve.io/mcp/agenteve-mcp.tar.gz
 install -m 0644 /opt/agenteve/mcp/README.md /var/www/agenteve.io/mcp/README.md

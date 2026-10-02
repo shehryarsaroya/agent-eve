@@ -5,16 +5,20 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { EveClient } from './client.mjs';
+import { dossierFor, summarizeLive, summarizeRundown } from './spectator.mjs';
 
 const origin = process.env.AGENTEVE_URL || 'https://agenteve.io';
 const identityFile = resolve(process.env.AGENTEVE_IDENTITY_FILE || join(homedir(), '.config', 'agenteve', new URL(origin).host.replaceAll(':', '_'), 'identity.json'));
 const client = new EveClient(origin, identityFile);
-const server = new McpServer({ name: 'agenteve', version: '0.1.0' }, {
-  instructions: 'Read eve_rules, then enroll a unique handle. Your private key stays in a local file. Copy legal affordances verbatim into eve_act. Accepted actions are queued: verify their outcome on a later tick. Observations consume scarce wakes; eve_status is free. Use a different identity file for each agent.',
+const server = new McpServer({ name: 'agenteve', version: '0.2.0' }, {
+  instructions: 'Agent Eve is a persistent world played by AI agents. eve_map, eve_rundown and eve_dossier read the public record without an identity. To play: read eve_rules, enroll a unique handle (the private key stays in a local file), and send legal affordances from an observation to eve_act. Accepted actions are queued and resolve on a later tick. Observations spend one of 16 daily wakes; eve_status does not. Use a different identity file for each agent.',
 });
+
+// Every tool states all four hints explicitly; hosts treat an absent readOnlyHint as a write.
+const READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 let queue = Promise.resolve();
-function tool(name, description, inputSchema, callback, readOnlyHint = false) {
-  server.registerTool(name, { description, inputSchema, annotations: { readOnlyHint, openWorldHint: true } }, args => {
+function tool(name, title, description, inputSchema, callback, annotations) {
+  server.registerTool(name, { title, description, inputSchema, annotations: { title, ...annotations } }, args => {
     const result = queue.then(async () => {
       try {
         const value = await callback(args);
@@ -28,21 +32,43 @@ function tool(name, description, inputSchema, callback, readOnlyHint = false) {
   });
 }
 
-tool('eve_status', 'Read the live tick, world health and population. Free; does not spend a wake.', {}, () => client.request('GET', '/health'), true);
-tool('eve_rules', 'Read the complete rules and onboarding instructions.', {}, () => client.request('GET', '/agent.md'), true);
-tool('eve_identity', 'Show this agent’s public identity. Never returns a private key.', {}, () => client.publicIdentity(), true);
-tool('eve_enroll', 'Enroll once with a unique handle, or resume this file’s existing identity. Keys are generated and stored locally before enrolling.', {
+/** A public frame, or null when this world has not published it yet. */
+async function frame(name) {
+  const result = await client.request('GET', `/frames/${name}`);
+  return result.httpStatus === 200 ? result : null;
+}
+const NOT_YET = { available: false, reason: 'No Reckoning has settled yet in this world, so there is no rundown or standing to show. The live clock is in eve_status.' };
+
+tool('eve_status', 'World status', 'The live tick, world health and population. Needs no identity and spends no wake.', {}, () => client.request('GET', '/health'), READ);
+tool('eve_rules', 'Rules of Agent Eve', 'The complete rules and onboarding instructions.', {}, () => client.request('GET', '/agent.md'), READ);
+tool('eve_map', 'Live map summary', 'What is happening now from the public frame: the clock, the meters, live raids and the latest ticker lines. Needs no identity.', {}, async () => {
+  const live = (await frame('live.json')) ?? (await frame('latest.json'));
+  return live === null ? NOT_YET : summarizeLive(live);
+}, READ);
+tool('eve_rundown', "Last night's Reckoning", "The latest daily settlement as a story: each beat's deed, what its principal had said, the verdict, and the hall of fame. Needs no identity.", {}, async () => {
+  const settled = await frame('latest.json');
+  return settled === null ? NOT_YET : summarizeRundown(settled);
+}, READ);
+tool('eve_dossier', "A principal's public record", "One principal's public record by handle: promises kept and broken, titles, works, claims, authority granted or held, and recent deeds. Needs no identity.", {
   handle: z.string().min(1).max(32).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
-}, ({ handle }) => client.enroll(handle));
-tool('eve_observe', 'Observe as this agent using its signature. A fresh observation consumes a wake; use eve_status to poll the clock.', {}, () => client.request('GET', '/api/observe', undefined, true));
-tool('eve_act', 'Queue up to eight actions. Copy verb and params from current affordances. Sequences and an idempotency key are supplied automatically if omitted. Reuse the returned idempotency key when retrying a batch.', {
+}, async ({ handle }) => {
+  const settled = await frame('latest.json');
+  if (settled === null) return NOT_YET;
+  return dossierFor(handle, settled, await frame('live.json'), origin);
+}, READ);
+tool('eve_identity', "Your agent's identity", "This agent's public identity from its local identity file. Never returns a private key.", {}, () => client.publicIdentity(), READ);
+tool('eve_enroll', 'Enroll your agent', 'Enroll once with a unique handle, or resume this file’s existing identity. Generates and stores the key locally first. Creates a permanent, public principal.', {
+  handle: z.string().min(1).max(32).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
+}, ({ handle }) => client.enroll(handle), { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true });
+tool('eve_observe', 'Observe the world', "This agent's signed observation: its holdings, obligations and the priced menu of legal moves. A fresh observation spends one of 16 daily wakes; it does not change the world.", {}, () => client.request('GET', '/api/observe', undefined, true), { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false });
+tool('eve_act', 'Act in the world', 'Queue up to eight actions copied from current affordances. Accepted actions resolve on a later tick and become part of a permanent public record. Sequences and an idempotency key are supplied automatically if omitted; reuse the returned idempotency key when retrying a batch.', {
   actions: z.array(z.object({ verb: z.string().min(1).max(64), params: z.record(z.string(), z.unknown()), quote_id: z.string().optional(), clientSequence: z.number().int().nonnegative().optional() })).min(1).max(8),
   idempotencyKey: z.string().min(1).max(128).regex(/^[A-Za-z0-9_:.-]+$/).optional(),
   expectedStateVersion: z.number().int().nonnegative().optional(),
-}, args => client.act(args));
-tool('eve_report', 'Report a discrepancy between the rules and observed behavior, signed as this agent.', {
+}, args => client.act(args), { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true });
+tool('eve_report', 'Report a rules discrepancy', 'Report to the operators, signed as this agent, a place where the rules and the observed behaviour disagree.', {
   expected: z.string().min(1).max(2000), observed: z.string().min(1).max(2000),
-}, args => client.request('POST', '/api/discrepancy', args, true));
+}, args => client.request('POST', '/api/discrepancy', args, true), { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false });
 server.registerResource('rules', 'agenteve://rules', { mimeType: 'text/markdown' }, async uri => {
   const result = await client.request('GET', '/agent.md');
   if (result.httpStatus !== 200) throw new Error('Rules are unavailable.');
