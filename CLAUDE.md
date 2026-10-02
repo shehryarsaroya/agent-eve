@@ -86,16 +86,19 @@ The passes, by domain and phase (~9,000 lines; two are duplicated inside `CONCEP
 
 ## 3. State of play (2026-07-26)
 
-> **⚑ 2026-09-20 — LIVE AGAIN; verified end to end 2026-10-01.** A fresh season (its own seed)
-> runs at **https://agenteve.io** as a standalone service on Ahmad's *shared* Contabo box
-> (`89.117.78.215`, key `ahmadecho_vps_ed25519` in the kit's `credentials/keys/`):
-> `agenteve.service`, code in `/opt/agenteve`, PostgreSQL in the Docker container `agenteve-db`,
-> daily backups from `agenteve-maintenance.timer`. Twelve **heuristic** house principals, no LLM
-> key, five-minute ticks. The box serves other tenants' sites — touch only resources named
-> `agenteve`, and `nginx -t` before any reload. **Runbook:** the first section of
-> `docs/background/INFRA.md`. **Current state:** `TRACKER.md` STATUS. There is no git checkout on
-> the box, so "deployed = `master`" is a claim about file hashes; TRACKER's 2026-10-01 entry says
-> how it was checked. The retirement note below is history.
+> **⚑ 2026-10-02 — SEASON 1 IS LIVE.** `RULES_VERSION` 41, seed `agenteve-season-1`, at
+> **https://agenteve.io** — a standalone service on Ahmad's *shared* Contabo box (`89.117.78.215`, key
+> `ahmadecho_vps_ed25519` in the kit's `credentials/keys/`): `agenteve.service` (code `/opt/agenteve`,
+> stamped `REVISION`), PostgreSQL in the Docker container `agenteve-db`, daily backups on the box and to
+> R2 (`agenteve-backups`) from `agenteve-maintenance.timer`, and an uptime Worker that mails after two
+> failed checks. **Twenty house principals played by GPT-6 Astra** (heuristic between wakes), up to
+> 1,000 seats (`COMPACT_SEATS`, an 8 GB `MemoryMax` drop-in), five-minute ticks, a 14-Reckoning season.
+> Deploy with `deploy/deploy-standalone.sh`; start a season with `deploy/new-season-standalone.sh`. The
+> previous world (started 2026-09-20) ended at tick 4,159 and is archived on the box, in
+> `~/agenteve-archive` on the operator's Mac, and in R2 `archive/`. The box serves other tenants' sites —
+> touch only resources named `agenteve`, and `nginx -t` before any reload. **Runbook:** the first section
+> of `docs/background/INFRA.md`. **Current state:** `TRACKER.md` STATUS. There is no git checkout on the
+> box; `/opt/agenteve/REVISION` names the deployed commit. The retirement note below is history.
 
 > **⚑ 2026-08-08 — RETIRED.** The hosted world is off and the game VPS (`vmi3131667`) is wiped
 > bare — only sshd listens: `compact-api` stopped, disabled and deleted; `/opt/compact`,
@@ -317,12 +320,12 @@ The predecessor validated a lot. Its code is **gone by choice** (clean slate —
 
 Detail in `SPEC.md` §15. The reframe that matters: at 300 principals a deterministic tick is **single-digit milliseconds** on the target box, so **every remaining risk is a correctness risk, not a capacity risk.** Spend the hardware budget on invariants.
 
-- **Capacity is not the risk, but the old number was wrong.** §6 used to say a tick is "single-digit
-  milliseconds at 300 principals". **Measured 2026-07-26** (`scripts/population-scale.ts`): scaling is
-  sub-linear (exponent ≈ 0.87), 7.7 ms/tick at 20 principals, projecting to **~82 ms/tick at 300** — ten
-  times the old figure and still only 0.03% of a 5-minute tick. So spend the budget on invariants, as
-  before; just do not quote "single-digit". The harness caps at `MAX_CAST` = 20, so 300 remains a
-  projection rather than a measurement.
+- **Capacity is not the risk, but memory is the limit.** Measured 2026-10-01 at real populations
+  (`docs/design/SCALE-2026-10-01.md`): a mean tick of **19 ms at 300 principals, 69 ms at 1,000 and
+  211 ms at 3,000** — under a tenth of a percent of a 5-minute tick. What binds is the in-memory journal:
+  ~0.5–0.8 KB per principal per tick, **~2.1 GB of heap per season at 1,000** and ~5.4 GB at 3,000, so
+  seats are set with memory (`COMPACT_SEATS` with `MemoryMax`), and paging the journal out is the open
+  item. Do not quote the old "single-digit" or "~82 ms at 300" figures.
 - **Three write artifacts, two projections.** State tables (agent `observe`), the append-only event ledger (viewer, audit, dataset), the action log (replay). **Events are output, not input** — replay is `(snapshot, action_log, seed) → snapshot`. "Observations are projections of one event stream" gets built as fold-per-request, which is the event-sourcing cliff.
 - **`posting` is authoritative for value.** The invariant is ≥2 postings summing to zero per value-moving event, asserted at tick close — *not* balance fields on the event, which duplicates the table and is scar #5 inside the field list meant to prevent scar #5.
 - **Within-tick actions never react to another within-tick action.** Agents act from snapshot T; valid actions land in T+1. Order by `(priority, principal_id, client_sequence)`, never arrival.

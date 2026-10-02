@@ -2613,6 +2613,23 @@ function acceptDivergenceFromEnv(): string | null {
   }
 }
 
+/**
+ * ★ The boot options a host sets in its environment — `COMPACT_SEATS`, the operator door and the
+ * adoption switch — read in ONE place, for every entry point that boots a world from the environment.
+ *
+ * Until this existed only the `node dist/api/server.js` entry below read them, and production boots
+ * through `deploy/run-standalone.mjs`, which called `serve()` without them: Season 1 went live with
+ * `COMPACT_SEATS=1000` in `/etc/agenteve/env` and served 500 seats, and the operator door could never
+ * have opened on the standalone host. A launcher that spreads this cannot drop one of the three.
+ */
+export function bootOptionsFromEnv(): Pick<ServeOptions, 'seats' | 'acceptDivergence' | 'disableCheckpointAdoption'> {
+  return {
+    acceptDivergence: acceptDivergenceFromEnv(),
+    disableCheckpointAdoption: checkpointAdoptionDisabledFromEnv(),
+    seats: seatCapacityFrom(process.env['COMPACT_SEATS']),
+  };
+}
+
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
   const port = Number(process.env['COMPACT_PORT'] ?? '8787');
@@ -2624,9 +2641,7 @@ if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
     trustEdge: process.env['COMPACT_TRUST_EDGE'] === 'true',
     castSize: Number(process.env['COMPACT_CAST'] ?? '12'),
     framesDir: process.env['COMPACT_FRAMES_DIR'] ?? null,
-    acceptDivergence: acceptDivergenceFromEnv(),
-    disableCheckpointAdoption: checkpointAdoptionDisabledFromEnv(),
-    seats: seatCapacityFrom(process.env['COMPACT_SEATS']),
+    ...bootOptionsFromEnv(),
   });
   if (started.created === null) {
     // HELD. The socket is bound and answering 503 with the diagnosis; the process

@@ -6,6 +6,27 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-02 (latest) — ★ SEASON 1 IS LIVE (`agenteve-season-1`, `RULES_VERSION` 41, revision `0aafdf6`, then the seats fix)
+>
+> Cut over at ~10:38 UTC with `deploy/new-season-standalone.sh --seed agenteve-season-1 --cast 20 --seats 1000
+> --memory-gb 8 --yes-end-the-current-world`, after a `--dry-run` against the live box (genesis pre-flight
+> passed: tick 0, population 20; all 19 tables accounted for). The previous world ended at **tick 4,159** and
+> is archived — `world-final-20261002T103840Z.dump` (6.2 MB) plus frames, cast memory and env — on the box,
+> in `~/agenteve-archive` and in R2 `archive/` (never expires). Verified after: `/health` healthy, world
+> RUNNING at tick 0, failures `[]`, durability healthy; cast `gpt-6-astra` × 20; `REVISION` = `0aafdf6`;
+> `MemoryMax` 8 GiB effective with `--max-old-space-size=6144`; the MCP download carries `spectator.mjs`.
+>
+> **One thing did not take: seats read 500, not 1,000.** `deploy/run-standalone.mjs` — what
+> `agenteve.service` runs — called `serve()` without the environment's boot options, so `COMPACT_SEATS` was
+> never read on the standalone host; nor were `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` (the operator door) and
+> `COMPACT_CHECKPOINT_ADOPTION`. Only `node dist/api/server.js` read them. `bootOptionsFromEnv()` now reads
+> all three in one place and the launcher spreads it (`test/api/boot-options-from-env.test.ts` guards the
+> spread). Shipped by `deploy/deploy-standalone.sh` — a projection-free boot change, no rules change.
+>
+> **Next:** the display fixes the playtest verified (two branches, `season1-frames-fixes` and
+> `season1-surface-fixes`) must deploy before the first Reckoning writes a frame (tick 287, ~24 h after
+> genesis); the connector (`connector-phase1`, built, not deployed) waits on four owner decisions.
+
 > ### 2026-10-02 (latest) — A BLIND PLAYTEST OF THE MERGED SEASON 1, TWO VERIFIERS, AND FOUR RULES FIXES BEFORE ANY WORLD RAN IT (on `master`, after the merge of all Season 1 branches)
 >
 > A blind probe played the merged tree for ~50 minutes on a local turbo world (`s1blind-ada`, `s1blind-bo`,

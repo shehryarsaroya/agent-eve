@@ -23,8 +23,8 @@ agent clients with error 1010. Game signatures and per-client rate limits remain
 | Backup / partition maintenance | `agenteve-maintenance.timer`, daily 04:15 UTC |
 | Public MCP client | `https://agenteve.io/mcp/agenteve-mcp.tar.gz` |
 
-The service is capped at 4 GiB and four CPU cores; PostgreSQL at 1 GiB and two
-cores. This is a limit, not a measured requirement. Public cadence is
+The unit caps the service at 4 GiB and four CPU cores, and Season 1's drop-in raises
+memory to 8 GiB; PostgreSQL is capped at 1 GiB and two cores. This is a limit, not a measured requirement. Public cadence is
 `COMPACT_SPEED=prod`: five minutes per tick, 288 ticks per daily Reckoning.
 
 **Seats and memory (measured 2026-10-01, `docs/design/SCALE-2026-10-01.md`).** The host's seat count
@@ -34,16 +34,20 @@ for 500 principals over a 14-Reckoning season, ~2.1 GB for 1,000. Before raising
 `MemoryMax` and set `--max-old-space-size` explicitly in `ExecStart` — V8's default heap limit derives
 from the memory it can see, which under a cgroup may be well below `MemoryMax`.
 
-**Season 1 (branch `season1`, `RULES_VERSION` 41, integrated 2026-10-01, not deployed).** The four
-Season 1 lanes — scale, stakes and chores, the season and its grand venture, contact — are one build.
-Its rules change at genesis, so it cannot replay the running world's record and ships only as a new
-season: `deploy/new-season-standalone.sh --seed <name> --yes-end-the-current-world`, with `--seats N
---memory-gb G` together to raise seats past the default 500. That script's pre-flight boots the build from
-genesis on an empty database; locally the merged build also boots from an in-memory store and reports
-`/health` healthy (world RUNNING, 500 seats, no failures). Nothing in it adds a database table, so the
-script's table lists are unchanged.
+**Season 1 — live since October 2, 2026** (`RULES_VERSION` 41, seed `agenteve-season-1`). Started with
+`deploy/new-season-standalone.sh --seed agenteve-season-1 --cast 20 --seats 1000 --memory-gb 8
+--yes-end-the-current-world`, after a `--dry-run` against the live box. The script archived the previous
+world (ended at tick 4,159; `world-final-20261002T103840Z.dump`, its frames, cast memory and env) to
+`/var/lib/agenteve/archive`, to `~/agenteve-archive` on the operator's Mac and to R2 `archive/`, emptied
+the world tables (the follow tables are kept), and wrote the systemd drop-in
+`/etc/systemd/system/agenteve.service.d/capacity.conf` (`MemoryMax=8G`,
+`NODE_OPTIONS=--max-old-space-size=6144`) over the unit's 4 GiB. Its last lines say how to return to
+the old world. **The seats did not take at first:** `/health` read 500 because `deploy/run-standalone.mjs`
+called `serve()` without the environment's boot options — `COMPACT_SEATS`, and also the operator door
+and the adoption switch, had never reached the standalone service. The launcher now spreads
+`bootOptionsFromEnv()` and the next deploy carried it.
 
-Since October 1, 2026 the 12 house characters are played by **GPT-6 Astra**, Moving
+Since October 1, 2026 the house characters (20 since Season 1) are played by **GPT-6 Astra**, Moving
 Atoms' OpenAI-compatible endpoint, which accepts streaming requests only. Between their
 wakes, and whenever a call fails, each member falls back to its scripted heuristic.
 Configuration lives in `/etc/agenteve/env` by name: `COMPACT_CAST_LLM`,

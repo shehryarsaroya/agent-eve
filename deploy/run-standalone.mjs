@@ -1,4 +1,4 @@
-import { serve } from '../engine/dist/api/server.js';
+import { bootOptionsFromEnv, serve } from '../engine/dist/api/server.js';
 
 for (const key of ['PGHOST', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'COMPACT_FRAMES_DIR', 'COMPACT_SEED']) {
   if (!process.env[key]) throw new Error(`${key} is required for the persistent standalone world.`);
@@ -10,6 +10,9 @@ const started = await serve({
   trustEdge: true,
   castSize: Number(process.env.COMPACT_CAST || 12),
   framesDir: process.env.COMPACT_FRAMES_DIR,
+  // COMPACT_SEATS, the operator door and the adoption switch. Without this spread the host's seats were
+  // silently the default 500 and COMPACT_ACCEPT_DIVERGENCE_AT_TICK was never read here.
+  ...bootOptionsFromEnv(),
 });
 let closing = false;
 async function shutdown() {
