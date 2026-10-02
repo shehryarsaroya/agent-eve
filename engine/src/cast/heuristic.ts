@@ -1720,8 +1720,17 @@ export class HeuristicCast {
    * ══════════════════════════════════════════════════════════════════════════
    */
   private marchUnderwayTo(member: CastMember, place: SystemId, tick: number): boolean {
+    if (carrierAt(this.runtime.world, member.principal, place, tick) !== null) return true;
+    return this.walkUnderwayTo(member, place);
+  }
+
+  /**
+   * The walking half of {@link marchUnderwayTo}: is a hand of this member IN TRANSIT toward `place` — its
+   * next gate `place` itself, or strictly closer to it than the system it left? A hand already standing
+   * there is not a walk, which is the difference the aimless walk's one exclusion needs.
+   */
+  private walkUnderwayTo(member: CastMember, place: SystemId): boolean {
     const world = this.runtime.world;
-    if (carrierAt(world, member.principal, place, tick) !== null) return true;
     const ticksTo = (from: SystemId): number =>
       from === place ? 0 : (route(world.map, from, place)?.ticks ?? Number.MAX_SAFE_INTEGER);
     for (const hand of handsOf(world, member.principal)) {
@@ -2575,8 +2584,27 @@ export class HeuristicCast {
           // counter exists for lies entirely inside *"has a side"* — and that,
           // rather than the number, is what the test now filters on.
           // ══════════════════════════════════════════════════════════════════
+          // ── ★ BUT NEVER A SECOND HAND INTO A STANDOFF THIS MEMBER IS ALREADY MARCHING TO (merge) ──
+          //
+          // The one narrow exclusion, and it is not the reverted one above. A member that is a SIDE of
+          // a live standoff (its target, or a party) and already has a hand walking there
+          // ({@link walkUnderwayTo}) does not let the dice send another: *"a member has three hands
+          // and a standoff needs one"* is `musterFor`'s own rule, and it refuses to start a second walk
+          // while any walk is in progress — this walk was the one door it did not cover. Found by the
+          // Season 1 merge on seed `g06`: `p:corvid`, the target at sys-06, mustered `h3` one gate out
+          // on t126 and the walk sent `h1` straight onto the stage on t127, so two hands of one member
+          // were aimed at one standoff for five ticks (`the-cast-forms-a-coalition`'s `doubleMarches`).
+          // Bystanders' hands still wander onto stages, which is the trade the note above keeps.
+          const marching = new Set<SystemId>();
+          for (const raid of runtime.raids.live()) {
+            if (raid.state !== 'DEMANDED') continue;
+            const hasASide =
+              raid.target === member.principal || raid.parties.some((party) => party.principal === member.principal);
+            if (hasASide && this.walkUnderwayTo(member, raid.stage)) marching.add(raid.stage);
+          }
           const legal = [...system.lanes]
             .filter((lane) => tierOf(runtime.world.map, lane) === home)
+            .filter((lane) => !marching.has(lane))
             .sort(compareIds);
           const lane = legal.length === 0 ? undefined : legal[rng.int(legal.length)];
           if (lane !== undefined) {
