@@ -33,7 +33,13 @@ function quoted(value: string): string {
   return `"${value.replace(/[\\"]/g, '').replace(/[\r\n]/g, ' ')}"`;
 }
 
-/** The `WWW-Authenticate` value for a 401: no token for a tool that needs one, or a bad token. */
+/**
+ * The `WWW-Authenticate` value for a 401: no token for a tool that needs one, or a bad token.
+ *
+ * For the no-token case RFC 6750 §3.1 says a server SHOULD NOT include an error code. This sends
+ * `error="invalid_token"` anyway, because Claude's lazy-authentication guide specifies exactly this
+ * header for exactly this case, and the MCP SDK's client reads it either way.
+ */
 export function bearerChallenge(config: Config, error: { readonly code: 'invalid_token' | 'insufficient_scope'; readonly description: string }): string {
   const parts = [
     `error=${quoted(error.code)}`,

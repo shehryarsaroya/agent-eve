@@ -74,7 +74,7 @@ if ENV_FILE.exists():
             existing[key] = value
 generated = {
     # Versioned so it can rotate (connector/src/crypto/vault.ts). LOSING THIS STRANDS EVERY
-    # HOSTED PRINCIPAL: identity is never re-minted. See README "Master key custody".
+    # HOSTED PRINCIPAL: identity is never re-minted. See connector/README.md §3.
     'EVE_MCP_MASTER_KEYS': existing.get('EVE_MCP_MASTER_KEYS') or f'1:{b64key()}',
     'EVE_GATEWAY_SECRET': existing.get('EVE_GATEWAY_SECRET') or b64key(),
     'PGPASSWORD': existing.get('PGPASSWORD') or secrets.token_hex(32),
@@ -100,7 +100,10 @@ settings = {
 for name, value in (('EVE_MCP_POLICY_URL', args.policy_url), ('EVE_MCP_TERMS_URL', args.terms_url), ('EVE_MCP_DOCS_URL', args.docs_url), ('EVE_MCP_TOKEN_AUDIENCES', args.audiences)):
     if value:
         settings[name] = value
-content = ''.join(f'{k}={v}\n' for k, v in {**settings, **generated}.items())
+# Anything an operator added by hand (EVE_MCP_TOKEN_AUDIENCES, EVE_MCP_LIMIT_*, origins…) survives
+# a redeploy; only the settings this script owns are refreshed, and the secrets are never replaced.
+preserved = {k: v for k, v in existing.items() if k not in settings and k not in generated}
+content = ''.join(f'{k}={v}\n' for k, v in {**settings, **preserved, **generated}.items())
 tmp = ENV_FILE.with_suffix('.tmp')
 with open(tmp, 'w') as stream:
     os.chmod(tmp, 0o600)

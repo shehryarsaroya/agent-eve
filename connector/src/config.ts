@@ -44,7 +44,7 @@ export interface Config {
   readonly tokenAudiences: readonly string[];
   /** Scopes advertised in protected resource metadata and challenges. */
   readonly scopes: readonly string[];
-  /** Master keys that seal agent keys, by version. The highest version seals new keys. */
+  /** Master keys that encrypt agent keys, by version. The highest version encrypts new keys. */
   readonly masterKeys: ReadonlyMap<number, Buffer>;
   /** The HMAC key for the gateway header the engine will verify; null disables the header. */
   readonly gatewaySecret: Buffer | null;

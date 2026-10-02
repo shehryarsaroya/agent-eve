@@ -34,7 +34,7 @@ Status: **built and tested, not deployed.** Nothing in any cloud was created or 
 | Protected resource | `src/http.ts`, `src/auth/` | RFC 9728 metadata, JWKS verification (`jose`), lazy 401 challenges |
 | Consent page | `public/oauth/` | Static; `consent-flow.mjs` is the logic, `consent.js` the DOM |
 | Accounts, keys, signing log | `migrations/001_eve_mcp.sql` | In the engine's Postgres, own schema and role; **not** in Supabase |
-| Audience hook | `supabase/access-token-hook.sql` | Stamps `aud` = the resource on OAuth-client tokens (see §6) |
+| Access-token hook | `supabase/access-token-hook.sql` | Stamps `aud` = the resource on OAuth-client tokens, and refuses password sign-ins on accounts not flagged for review (see §6) |
 | Public frames | `src/frames.ts` | Read from the frames **directory**, through nginx's loopback-only listener (8811) in production — **never through the engine's port**: the engine's `/frames/` route serves `latest.json` and the archive but not `live.json` (nginx serves that off disk), so `eve_map` would silently lose the live clock and `eve_dossier`'s live lines would go stale. The config refuses a frames URL on the engine's origin; the e2e test asserts `eve_map` carries `phase` and `ticksUntilReckoning` |
 | Deploy | `../deploy/deploy-mcp.py`, `provision-mcp.py`, `agenteve-mcp.service`, `nginx-mcp-agenteve.conf` | Written, not run |
 
@@ -52,7 +52,7 @@ and the clock constants (`engine/src/core/time.ts`). One home per concept.
    `…/auth/v1/oauth/authorize` with PKCE S256 and `resource`.
 4. Supabase redirects to **`https://mcp.agenteve.io/oauth/consent?authorization_id=…`**. The page signs
    the person in if needed (email link, or the 6-digit code from the same email for another device;
-   Google/GitHub when switched on; a password for reviewer accounts — nobody can sign up with one),
+   Google/GitHub when switched on; a password only for accounts the deploy flagged for review — §6),
    calls `supabase.auth.oauth.getAuthorizationDetails`, and shows: the app's name (flagged as
    self-registered), **where access goes** (host, with a warning for unknown hosts and for loopback),
    the account's agent handle (from `GET /account`) or "no agent yet", what the app will be able to do,
@@ -81,9 +81,9 @@ the server holds the key. Every tool has a `title`, all four hints, top-level `s
 | `eve_rundown` | Last night's Reckoning | no | T/F/T/F | public `latest.json` → `summarizeRundown` |
 | `eve_dossier` | A principal's public record | no | T/F/T/F | `dossierFor(handle)` over the public frames |
 | `eve_identity` | Your agent's identity | yes | T/F/T/F | handle, principal id, key id, `signer: hosted` |
-| `eve_enroll` | Enroll your agent | yes | F/T/T/T | generates + seals the key, then `POST /api/enroll`; one principal per account; resumes |
+| `eve_enroll` | Enroll your agent | yes | F/T/T/T | generates + encrypts the key, then `POST /api/enroll`; one principal per account; resumes |
 | `eve_observe` | Observe the world | yes | T/F/F/F | signed `GET /api/observe` (spends a wake) |
-| `eve_act` | Act in the world | yes | F/T/F/T | signed `POST /api/act`; sequences and idempotency key supplied; retries never act twice |
+| `eve_act` | Act in the world | yes | F/T/F/T | signed `POST /api/act`; sequences and idempotency key supplied; a resend while the batch is still queued is answered, not sent (§4) |
 | `eve_report` | Report a rules discrepancy | yes | F/F/F/F | signed `POST /api/discrepancy` |
 | `eve_signing_log` | Your agent's signing log | yes | T/F/T/F | this account's log, newest first, never bodies |
 | `eve_wake_status` | Wake status | yes | T/F/T/F | next decision tick, wakes left, suggested sleep — free: no wake, no signature |
@@ -100,13 +100,13 @@ pasted back verbatim. A fresh world's observation is ~33,000 characters, under C
 ## 3. Keys, the signing log, and "signer: hosted"
 
 - **Generated here**, Ed25519 (`node:crypto`), key id = the RFC 7638 thumbprint the engine computes.
-- **Sealed before the enrolment request leaves** (a lost reply must never lose a key): AES-256-GCM,
+- **Encrypted and stored before the enrolment request leaves** (a lost reply must never lose a key): AES-256-GCM,
   12-byte IV, AAD `agenteve-mcp/agent-key/v1|<account>|<keyid>` so a ciphertext copied onto another row
-  will not open. Stored in `eve_mcp.hosted_principal.sealed_key` with its master-key version.
+  will not open. Stored in `eve_mcp.hosted_principal.encrypted_key` with its master-key version.
 - **The master key exists only in `/etc/agenteve-mcp/env`** (`EVE_MCP_MASTER_KEYS=1:<32 bytes>`), mode
   0600, generated on the host by `provision-mcp.py`. Not in Postgres, so not in the nightly dumps
-  or their R2 copies; not in Supabase; never logged. Versioned: add `2:<new>`, re-seal, drop `1`.
-- **Master key custody is an owner decision.** If the env file is lost, every hosted principal is
+  or their R2 copies; not in Supabase; never logged. Versioned: add `2:<new>`, re-encrypt, drop `1`.
+- **Where the master key is kept besides the host is an owner decision.** If the env file is lost, every hosted principal is
   stranded for good (identity is never re-minted, A10). The deploy prints a reminder; it does not
   escrow the key anywhere by itself.
 - Decrypted only for the instant of signing, then the buffer is zeroed. The vault object refuses
@@ -118,6 +118,14 @@ pasted back verbatim. A fresh world's observation is ~33,000 characters, under C
   for acts a summary of accepted/corrected verbs by client sequence. Never a body, a param, an
   agent's text or a signature. The account reads its own through `eve_signing_log`; the service's
   role is the only reader of the table. (A downloadable export is Phase 4.)
+- **One account, one principal; one handle, one account.** Handle and principal id are unique among
+  *enrolled* rows (partial unique indexes), so a pending enrolment can neither squat a handle another
+  account already holds nor be squatted. A pending enrolment ends only on a **definitive** answer: a
+  lost reply, a 5xx or a timeout keeps the same key and handle for the next try. When the engine says
+  `ALREADY_ENROLLED`, the service observes with the stored key; if the engine knows that key (200, or
+  `KEY_NOT_YET_REGISTERED` before its tick) the enrolment is completed, otherwise it stays pending.
+  If an observation ever names a different principal than the stored row, the row is corrected from
+  the engine and the mismatch logged (`principal.mismatch`): the engine is the authority.
 - **Taking the key over** is Phase 4: the engine's `keyring.rotate()` has no caller yet. Planned
   path: the player makes a key locally (the stdio bridge), the connector submits a rotation signed
   by the hosted key, and the principal becomes `signer: self`. The private key is never exported to
@@ -125,19 +133,37 @@ pasted back verbatim. A fresh world's observation is ~33,000 characters, under C
 
 ## 4. Retries and idempotency
 
-`eve_act` hashes its canonical arguments (actions + `expectedStateVersion`). Per account, acts run
-one at a time. Then:
+`eve_act` hashes its canonical arguments (each action's verb, params, `quote_id` and
+`clientSequence`, plus `expectedStateVersion`). Per account, acts run one at a time. An identical
+batch found in the signing log (searched back `EVE_MCP_RETRY_WINDOW_SECONDS`, default 600) is then:
 
-- an identical batch already **answered 200 by the engine with at least one action accepted**, within
-  `EVE_MCP_RETRY_WINDOW_SECONDS` (default 600; Claude allows 240 s per call, ChatGPT ~60 s), is
-  **answered from the signing log and never sent again** — even if the engine has since restarted
-  and forgotten its own idempotency store;
-- an identical batch the engine processed but **accepted none of** is sent again under a new key: it
-  cannot act twice, and resending after a correction is how an agent recovers (agent.md §0.4);
-- a batch whose earlier attempt **never got an answer** is re-sent under the **same** idempotency key,
-  so the engine dedupes it if it did arrive;
-- otherwise a fresh key `mcp-<random>` is minted. An explicit `idempotencyKey` replays the same way,
-  keyed by the key instead of the content. To send the same batch again on purpose, pass a new key.
+- **answered 200 with at least one action accepted, and still queued** — the engine's tick (from
+  `/api/health`) is before the last tick its accepted actions resolve in; if the clock cannot be
+  read, within 60 s of the first send → **answered from the signing log and never sent again**, even
+  if the engine has restarted since and forgotten its own idempotency store;
+- **answered, but its tick has run** → sent again under a new key. The agent may have read a
+  correction (an accepted action can still be refused when its tick runs, agent.md §0.4), and
+  resending is how it recovers; an agent with no new information has no reason to repeat itself;
+- **answered with nothing accepted** → sent again under a new key; it cannot act twice;
+- **never answered** → re-sent under the **same** idempotency key, so the engine dedupes it if the
+  first copy did arrive;
+- otherwise a fresh key `mcp-<random>` is minted.
+
+An explicit `idempotencyKey` already used for the same batch replays that batch's original outcome,
+as the engine's own idempotency does; the same key with a **different** batch is refused rather than
+answered with the wrong outcome. To send the same batch again on purpose, pass a new key.
+
+What this does not cover, precisely:
+
+- **A late host retry.** If our reply to the host was lost after the engine answered, and the host's
+  retry arrives after the batch's tick has run, it looks exactly like a deliberate resend and is sent
+  again. With 300-second ticks that needs the first call to land within one retry delay of a tick
+  boundary. **`expectedStateVersion` closes it**: every applied action advances the state version,
+  so the late copy is refused with a fresh preview (PROP-W3) and nothing is submitted or charged;
+  if nothing in the first copy applied, it never acted, so the copy cannot make it act twice. The
+  tool description tells agents to pass it.
+- **"Never answered" relies on the engine's idempotency store**, which is in memory (64 keys per
+  principal): an engine restart between the lost reply and the resend loses that dedupe.
 
 Client sequence numbers are reserved by one atomic `UPDATE … RETURNING`, so two batches never share one.
 
@@ -172,8 +198,11 @@ precisely:
 | RFC 9207 `iss` on the authorization response | ChatGPT's *stable* redirect `https://chatgpt.com/connector_platform_oauth_redirect` requires it | **No** `iss` param, no `authorization_response_iss_parameter_supported` | ChatGPT uses its callback-ID redirect `https://chatgpt.com/connector/oauth/{callback_id}`, registered by DCR |
 | RFC 8707 `resource` → token `aud` | ChatGPT "should"; MCP requires servers to accept only their own tokens | Accepts and stores `resource`, but every token says `aud: "authenticated"` | **Closed** by the Custom Access Token Hook stamping `aud` = `https://mcp.agenteve.io/mcp` on every token that has a `client_id` (issue and refresh); the project serves this one resource only |
 | Custom scopes | — | Only `openid email profile phone`; any other requested scope is refused | We advertise `scopes_supported: ["email"]` and `scope="email"` in challenges, so hosts never ask for one Supabase refuses |
+| PKCE S256 only | MCP: clients MUST use S256 | S256 **and** `plain` accepted and advertised | Hosts use S256 (the flow test asserts it); a client choosing `plain` is only weakening its own flow |
+| Loopback redirects with any port (RFC 8252 §7.3) | Claude Code binds an ephemeral port | Exact-string redirect matching | Fine with DCR, where Claude Code registers the exact port it listens on; it would matter only with CIMD |
 | DCR at volume | Claude: "DCR registers a new client on every connection" | Rate limit **10 registrations / 5 min per IP (burst 30)**, not exposed in the Management API; registered clients are never pruned | **Launch risk**: chat users share a few host egress IPs. Ask Supabase support to raise `GOTRUE_RATE_LIMIT_OAUTH_DYNAMIC_REGISTRATION`; prune stale dynamic clients with the admin API |
 | Token = full account access | — | An OAuth token works against Supabase's own APIs as the user (it does not check `aud`) | We store nothing in Supabase; the deploy requires re-authentication for password changes and secure email change, so an approved app cannot quietly take the sign-in over |
+| Planted passwords | — | With the email provider on, anyone holding the public key can sign up **someone else's** email with a password; the victim's later email-link confirmation keeps that password set | **Closed** by the same hook: a `password` sign-in mints no session unless the account carries `app_metadata.agenteve_password_signin` (only the service key can set it; the deploy sets it on the reviewer login). Supabase's Password Verification hook would be the natural place, but it is Teams/Enterprise only |
 | mTLS from ChatGPT | ChatGPT presents an OpenAI client certificate | n/a (TLS ends at Cloudflare) | Not verified; tokens are the gate |
 
 **Fallback, if a host starts refusing any of the above:** keep this service as the protected resource
@@ -202,7 +231,7 @@ CIMD, which Supabase cannot do (§6).
 ```sh
 cd connector
 npm ci
-npm test                 # 80 tests in 14 files, ~13 s
+npm test                 # 85 tests in 14 files, ~30 s
 npm run typecheck
 npm run build            # dist/main.mjs, dist/migrate.mjs
 ```
@@ -215,9 +244,9 @@ gitignored outputs). Without it, it is skipped with a message.
 | `signing.test.ts` | The service's requests verify under the **engine's own** RFC 9421 verifier (`engine/src/identity`), bodyless and with a body; the public authority is signed while connecting to loopback; tampered bodies and replayed nonces are refused; the gateway header verifies and is bound to method, path and body |
 | `oauth-flow.test.ts` | **The whole sign-in chain with the official SDK's OAuth client** (what hosts run) against a Supabase-shaped authorization server (`test/helpers/mock-supabase.ts`, modelled on Supabase's source): our 401 → our metadata → RFC 8414 discovery at the path-inserted URL → dynamic registration → authorize with PKCE S256, `resource` and `scope=email` → our consent page logic → code → exchange → an expired token, which our 401 turns into a refresh → rotated refresh token → enroll |
 | `tokens.test.ts` | Connector tokens: audience, issuer, expiry, `client_id`, anonymous and non-UUID subjects, HS256 refused; session vs connector tokens; remote JWKS over HTTP |
-| `http.test.ts` | Protected resource metadata at both paths; CORS; 405s; body cap; Origin check; 2025-06-18 and 2025-11-25 negotiation; 12 tools each with title, four hints and `securitySchemes`; spectator tools signed out; **401 + resource_metadata for every account tool** (also hidden in a batch); 401 for bad/expired/wrong-audience/session tokens; ChatGPT's in-band prompt via the signed session id; `/account`; `/healthz` loopback-only |
-| `tools.test.ts` | Enrolment with the key sealed first; one agent per account; handle re-pick rules; recovery of a lost enrolment reply; signed observe with bounded quoted text and untouched affordances; **retries and concurrent duplicates act once**; a fully refused batch can be resent; re-send under the same key after no answer; `quote_id`; corrections in the log; wake status; isolation; per-account limits; invalid arguments |
-| `store.test.ts`, `hook.test.ts`, `cache.test.ts` | The real migration and every statement on Postgres (PGlite); the Supabase audience hook run in Postgres; the shared /health and agent.md cache (a booting 503 kept briefly for health, never for the rules) |
+| `http.test.ts` | Protected resource metadata at both paths; CORS; 405s; body cap; Origin check; 2025-06-18 and 2025-11-25 negotiation; 12 tools each with title, four hints and `securitySchemes`; spectator tools signed out; **401 + resource_metadata for every account tool** (also hidden in a batch); 401 for bad/expired/wrong-audience/session tokens; ChatGPT's in-band prompt via the signed session id; `/account`; `/healthz` loopback-only, and answering within its 1 s bound when the engine hangs |
+| `tools.test.ts` | Enrolment with the key encrypted and stored first; one agent per account; handle re-pick rules and no squatting of a handle another account holds; recovery of a lost enrolment reply, before and after the key's tick; a stored principal id corrected from the engine; signed observe with bounded quoted text and untouched affordances; **retries and concurrent duplicates act once while queued**; the same batch sent again once its tick has run; a fully refused batch can be resent; one key for two batches refused; re-send under the same key after no answer; `quote_id`; corrections in the log; wake status; isolation; per-account limits; invalid arguments (against a fake engine that keeps the real one's enrolment order and next-tick key registration) |
+| `store.test.ts`, `hook.test.ts`, `cache.test.ts` | The real migration and every statement on Postgres (PGlite), including handle uniqueness among enrolled rows only; the Supabase access-token hook run in Postgres (audience stamping, and password sign-in refused unless flagged); the shared /health and agent.md cache (a booting 503 kept briefly for health, never for the rules) |
 | `crypto.test.ts`, `gateway.test.ts` | Key ids equal the engine's thumbprint; vault AAD binding, tamper detection, rotation, no serialisation; config refusals name variables, never values |
 | `secrets.test.ts` | No master key, gateway secret, agent seed or bearer token in any response or log line of a full session, including poisoned errors |
 | `consent.test.ts`, `consent-dom.test.ts` | The consent page logic against a fake supabase-js (sign-in, code, providers, passwords, auto-approve, approve, deny, expired request, unsafe redirect, switching accounts), and its DOM in jsdom (a hostile client name renders as text; Allow calls approve) |
@@ -235,11 +264,11 @@ Read from the environment (`/etc/agenteve-mcp/env` in production, written by `pr
 | `PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD` / `EVE_MCP_DATABASE_URL` | — | `eve_mcp_app` on `agenteve-db` — password **secret** |
 | `EVE_FRAMES_URL` / `EVE_FRAMES_DIR` | one required | production: `http://127.0.0.1:8811/frames/` |
 | `EVE_MCP_PUBLIC_ORIGIN` | `https://mcp.agenteve.io` | resource = origin + `/mcp` |
-| `EVE_MCP_TOKEN_AUDIENCES` | the resource | add `authenticated` only until the audience hook is live |
+| `EVE_MCP_TOKEN_AUDIENCES` | the resource | add `authenticated` only until the access-token hook is live |
 | `EVE_ENGINE_URL` / `EVE_ENGINE_AUTHORITY` / `EVE_ENGINE_CLIENT_IP` | `http://127.0.0.1:8801` / its host / `127.0.0.1` | production signs `agenteve.io` |
 | `EVE_MCP_INBAND_AUTH_CLIENTS` | `openai\|chatgpt` | regex on `clientInfo.name` |
 | `EVE_MCP_ALLOWED_ORIGINS` | claude.ai, chatgpt.com, chat.openai.com, own origin | browser Origins; none is always allowed |
-| `EVE_MCP_RETRY_WINDOW_SECONDS` | 600 | |
+| `EVE_MCP_RETRY_WINDOW_SECONDS` | 600 | how far back the signing log is searched for an identical batch (§4) |
 | `EVE_MCP_LIMIT_{SPECTATOR,ACCOUNT,OBSERVE,ACT,ENROLL,REPORT}` | §5 | `burst/windowSeconds` |
 | `EVE_MCP_POLICY_URL` `EVE_MCP_TERMS_URL` `EVE_MCP_DOCS_URL` | unset | published in the protected resource metadata |
 
@@ -254,22 +283,27 @@ merged to `master` and pushed.
 1. `python3 deploy/deploy-mcp.py --plan` — read the plan.
 2. `python3 deploy/deploy-mcp.py --ops-email <address> --create-project --org-slug <org> --region <region>`
    (or `--project-ref <ref>`; add `--share-gateway-secret` to stage the engine's secret now). It:
-   - **Supabase**: ensures an ES256 signing key is in use; installs the audience hook
+   - **Supabase**: ensures an ES256 signing key is in use; installs the access-token hook
      (`supabase/access-token-hook.sql`); sets Site URL `https://mcp.agenteve.io`, redirect allow-list
      `https://mcp.agenteve.io/**`, OAuth 2.1 server on, dynamic registration on, authorization path
      `/oauth/consent`, `jwt_exp` 3600, refresh-token rotation, password changes requiring
      re-authentication, secure email change, the magic-link/confirmation email with link **and**
-     code, SMTP via Resend when keyed, Google/GitHub when keyed; creates the reviewer login when
-     `AGENTEVE_MCP_REVIEWER_EMAIL/_PASSWORD` are in the vault; then checks the live metadata
-     (issuer, S256, registration endpoint, `none` client auth).
+     code, SMTP via Resend when keyed, Google/GitHub when keyed; creates (or updates) the reviewer
+     login when `AGENTEVE_MCP_REVIEWER_EMAIL/_PASSWORD` are in the vault, flagged
+     `app_metadata.agenteve_password_signin` so the hook lets its password through; then checks the
+     live metadata (issuer, S256, registration endpoint, `none` client auth).
    - **Cloudflare**: `mcp` A record → 89.117.78.215, DNS-only until the certificate exists, then proxied.
    - **Host**: `git archive` of the pushed commit → `/opt/agenteve-mcp-next`; `npm ci && npm run build &&
      npm prune --omit=dev`; `provision-mcp.py` (user `agenteve-mcp`, `/etc/agenteve-mcp/env` with
-     host-generated secrets, role `eve_mcp_app` + schema `eve_mcp`, static site
+     host-generated secrets that are never replaced, the settings it owns refreshed and any line an
+     operator added kept; role `eve_mcp_app` + schema `eve_mcp`; static site
      `/var/www/mcp.agenteve.io` with vendored supabase-js and `oauth/config.js`); migrate as the
      connector's role via `systemd-run` (environment read by systemd, never on a command line);
-     Let's Encrypt for `mcp.agenteve.io`; the vhost, `nginx -t` before reload with automatic restore;
-     the unit; swap trees; roll back if `/healthz` does not answer.
+     Let's Encrypt for `mcp.agenteve.io`; the vhost (the consent page is reachable only as
+     `/oauth/consent`, with its CSP and frame headers — `/oauth/consent.html` is a 404), `nginx -t`
+     before reload with automatic restore; the unit; swap trees; roll back if `/healthz` does not
+     answer (it answers within a second whatever the engine is doing, so a slow engine cannot roll
+     the connector back).
    - **Verify**: `agenteve.service` still active and healthy; the public metadata; initialize;
      12 tools; a signed-out account tool → 401 with `resource_metadata`.
 3. **Escrow the master key** somewhere the owner controls (owner decision; §3).
@@ -347,7 +381,7 @@ never "dossier"; renaming the `eve_dossier` tool is a separate, published-contra
 ## 12. Open risks
 
 - **Server-held keys are one place to impersonate every hosted player** (A5′'s worst case). Mitigated
-  by sealing, a separate role and schema, a master key outside the database and its backups, the
+  by encryption, a separate role and schema, a master key outside the database and its backups, the
   per-account log, and public disclosure — not eliminated. Session keys (Phase 4, option D) are the fix.
 - **Master key loss strands every hosted principal**; escrow is undecided.
 - **DCR volume** against Supabase's per-IP registration limit, and dynamic clients accumulating (§6).
@@ -356,6 +390,11 @@ never "dossier"; renaming the `eve_dossier` tool is a separate, published-contra
   the sign-in prompt, not security.
 - **ChatGPT's unattended runs and Claude Team/Enterprise write approvals** may stall play (research §5.3).
 - **Until the engine change lands**, all hosted players share the engine's per-address limits (§5).
+- **A late host retry without `expectedStateVersion`** can act twice (§4): the first reply lost
+  after the engine answered, and the retry arriving after the batch's tick has run. Narrow with
+  300-second ticks; closed for every agent that passes the state version.
+- **The engine's idempotency store is in memory**: a resend after "never answered" is deduped only
+  if the engine has not restarted in between (§4).
 - **Seats**: 300 on the shared 4 GiB box; a chat launch can fill them. `SEATS_FULL` passes through.
 - **Supabase is a new dependency on the sign-in path**: if it is down, signed-out spectating still
   works, existing tokens keep verifying from the cached JWKS for their hour, and new sign-ins fail.

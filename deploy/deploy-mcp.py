@@ -8,7 +8,7 @@ Run from the repo root on the operator's machine, on a clean `master` that is al
 
 What it creates or updates, in order (every step is idempotent; re-running converges):
   1. Supabase (Management API): the auth-only project; an asymmetric (ES256) JWT signing key in
-     use; the access-token audience hook; the OAuth 2.1 server (dynamic registration on,
+     use; the access-token hook (audience, review-only passwords); the OAuth 2.1 server (dynamic registration on,
      authorization path /oauth/consent), Site URL and redirect allow-list; sign-in email
      templates and, when a key is in the vault, SMTP through Resend; Google/GitHub when their
      credentials are in the vault; optionally the directory reviewer's password login.
@@ -145,7 +145,7 @@ providers: list[str] = []
 
 # ── 1. Supabase: the authorization server ────────────────────────────────────────────────────
 if not args.skip_supabase:
-    say('1/5 Supabase Auth (OAuth 2.1 server, signing key, audience hook, sign-in mail)')
+    say('1/5 Supabase Auth (OAuth 2.1 server, signing key, access-token hook, sign-in mail)')
     token = secret('SUPABASE_ACCESS_TOKEN')
     api = 'https://api.supabase.com/v1'
     auth = {'Authorization': f'Bearer {token}'}
@@ -233,8 +233,17 @@ if not args.skip_supabase:
         redact.append(service)
         # New-format secret keys (sb_secret_…) go in `apikey` alone; a legacy service_role JWT also as a bearer.
         admin = {'apikey': service} if service.startswith('sb_secret_') else {'apikey': service, 'Authorization': f'Bearer {service}'}
-        status, _ = http('POST', f'{supabase_url}/auth/v1/admin/users', admin, {'email': reviewer_email, 'password': reviewer_password, 'email_confirm': True}, ok=(200, 201, 422))
-        print('reviewer login', 'created' if status in (200, 201) else 'already exists')
+        # The flag the access-token hook requires before a password sign-in mints a session; only
+        # the service key can set app_metadata, so nobody can grant it to themselves.
+        flag = {'agenteve_password_signin': True}
+        status, _ = http('POST', f'{supabase_url}/auth/v1/admin/users', admin, {'email': reviewer_email, 'password': reviewer_password, 'email_confirm': True, 'app_metadata': flag}, ok=(200, 201, 422))
+        if status == 422:
+            _, listing = http('GET', f'{supabase_url}/auth/v1/admin/users?page=1&per_page=1000', admin)
+            existing = next((u for u in listing.get('users', []) if u.get('email') == reviewer_email.lower()), None)
+            if existing is None:
+                raise SystemExit('the reviewer login exists but could not be found to flag it')
+            http('PUT', f'{supabase_url}/auth/v1/admin/users/{existing["id"]}', admin, {'password': reviewer_password, 'app_metadata': {**(existing.get('app_metadata') or {}), **flag}})
+        print('reviewer login', 'created' if status in (200, 201) else 'updated', '(password sign-in flagged)')
         del service
 
     status, metadata = http('GET', f'{supabase_url}/.well-known/oauth-authorization-server/auth/v1', {})

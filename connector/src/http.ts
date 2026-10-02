@@ -125,7 +125,7 @@ async function readCapped(request: Request, cap: number): Promise<string | null>
 
 export function createHandler(deps: HttpDeps): (request: Request, peer?: Peer) => Promise<Response> {
   const { config, logger } = deps;
-  const descriptors: Tool[] = deps.tools.map(toolDescriptor);
+  const descriptors: Tool[] = deps.tools.map((tool) => toolDescriptor(tool, config.scopes));
   const accountTools = new Set(deps.tools.filter((t) => t.needsAccount).map((t) => t.name));
   const allowedOrigins = new Set(config.allowedOrigins);
 
@@ -245,11 +245,20 @@ export function createHandler(deps: HttpDeps): (request: Request, peer?: Peer) =
     } catch {
       db = false;
     }
+    // The engine's answer is reported, never waited on for long: a slow engine must not make a
+    // healthy connector look dead (the deploy probes this with a 3-second timeout).
     let engine: number | null = null;
+    let timer: NodeJS.Timeout | undefined;
     try {
-      engine = (await healthFrom(deps.cache, deps.engine)).httpStatus;
+      const deadline = new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), 1_000);
+      });
+      const reply = await Promise.race([healthFrom(deps.cache, deps.engine), deadline]);
+      engine = reply === null ? null : reply.httpStatus;
     } catch {
       engine = null;
+    } finally {
+      clearTimeout(timer);
     }
     return json(db ? 200 : 503, { ok: db, db, engine });
   }

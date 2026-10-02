@@ -18,7 +18,7 @@ The research below was done read-only against current official docs (39 sources,
 > or R2.** Built that way on branch `connector-phase1` (`connector/README.md`): a Node service on the
 > engine's host behind nginx at `https://mcp.agenteve.io/mcp`; **Supabase Auth's own OAuth 2.1 server**
 > is the authorization server (dynamic registration + PKCE), with our static consent page; accounts,
-> sealed keys and the signing log in the engine's Postgres (schema `eve_mcp`). Where Supabase falls
+> encrypted keys and the signing log in the engine's Postgres (schema `eve_mcp`). Where Supabase falls
 > short of the hosts (no CIMD, no RFC 9207 `iss`, no `resource`→`aud` without a hook, a low DCR
 > rate limit) is listed precisely in that README §6. The paragraph below is the earlier plan.
 

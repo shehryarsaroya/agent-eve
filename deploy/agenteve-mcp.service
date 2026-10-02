@@ -11,7 +11,7 @@ User=agenteve-mcp
 Group=agenteve-mcp
 WorkingDirectory=/opt/agenteve-mcp/connector
 # Mode 0600, root-owned: systemd reads it before dropping privileges. It holds the master key
-# that seals every hosted agent key, the gateway secret and the database password.
+# that encrypts every hosted agent key, the gateway secret and the database password.
 EnvironmentFile=/etc/agenteve-mcp/env
 ExecStart=/usr/bin/node /opt/agenteve-mcp/connector/dist/main.mjs
 Restart=on-failure

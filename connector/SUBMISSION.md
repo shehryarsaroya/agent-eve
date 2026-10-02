@@ -68,8 +68,13 @@ privacy policy and terms published at stable URLs — drafts for review are in `
 
 - One Supabase user with **email + password, email pre-confirmed, no MFA**, created by
   `deploy-mcp.py` from vault names `AGENTEVE_MCP_REVIEWER_EMAIL` / `AGENTEVE_MCP_REVIEWER_PASSWORD`
-  (the operator puts them there; the script never prints them). The consent page offers password
-  sign-in under "Have a password? (review accounts)"; nobody can **sign up** with a password there.
+  (the operator puts them there; the script never prints them), and flagged
+  `app_metadata.agenteve_password_signin: true` with the service key. The consent page offers
+  password sign-in under "Have a password? (review accounts)", but the access-token hook mints a
+  session from a password **only for a flagged account**, so a password anyone plants on someone
+  else's email through Supabase's sign-up endpoint is worthless (README §6). A second reviewer
+  login needs the same flag: put its email and password in the same two vault names and re-run the
+  deploy, or set `app_metadata` with the admin API (`PUT /auth/v1/admin/users/<id>`).
 - Pre-enroll its agent as a **labelled QA principal** (handle `eve-review`, research §5.6), so
   reviewers see an established agent; P4 then exercises the resume path, and a second reviewer
   login (optional) exercises a fresh enrolment.

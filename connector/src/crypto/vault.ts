@@ -1,19 +1,22 @@
 /**
- * Sealing agent keys at rest: AES-256-GCM under a master key that exists only in the service's
+ * Agent keys at rest: AES-256-GCM under a master key that exists only in the service's
  * environment file — never in Postgres, never in a backup, never in a log.
  *
- * The blob is `iv (12) ‖ ciphertext ‖ tag (16)`. The additional authenticated data binds a blob
- * to the account and key id it was sealed for, so a row's ciphertext copied onto another row
- * fails to open instead of letting one account sign as another.
+ * (Vocabulary, HARD RULE 4: this is ENCRYPTION. "Seal" is §3 canon for a pre-committed intention
+ * and is never used for it.)
  *
- * Master keys are versioned (`EVE_MCP_MASTER_KEYS=1:…,2:…`): new keys are sealed under the
- * highest version, and every listed version can still open what it sealed, so rotation is
- * "add a version, re-seal, drop the old one" with no flag day.
+ * The blob is `iv (12) ‖ ciphertext ‖ tag (16)`. The additional authenticated data binds a blob
+ * to the account and key id it was encrypted for, so a row's ciphertext copied onto another row
+ * fails to decrypt instead of letting one account sign as another.
+ *
+ * Master keys are versioned (`EVE_MCP_MASTER_KEYS=1:…,2:…`): new keys are encrypted under the
+ * highest version, and every listed version can still decrypt what it encrypted, so rotation is
+ * "add a version, re-encrypt, drop the old one" with no flag day.
  */
 
 import { createCipheriv, createDecipheriv, hkdfSync, randomBytes } from 'node:crypto';
 
-export interface Sealed {
+export interface EncryptedBlob {
   readonly version: number;
   readonly blob: Buffer;
 }
@@ -37,7 +40,7 @@ export class KeyVault {
     return this.#current;
   }
 
-  seal(plaintext: Buffer, aad: string): Sealed {
+  encrypt(plaintext: Buffer, aad: string): EncryptedBlob {
     const key = this.#keys.get(this.#current);
     if (key === undefined) throw new VaultError('current master key missing');
     const iv = randomBytes(12);
@@ -47,13 +50,13 @@ export class KeyVault {
     return { version: this.#current, blob: Buffer.concat([iv, body, cipher.getAuthTag()]) };
   }
 
-  open(sealed: Sealed, aad: string): Buffer {
-    const key = this.#keys.get(sealed.version);
-    if (key === undefined) throw new VaultError(`no master key for version ${sealed.version}`);
-    if (sealed.blob.length < 12 + 16 + 1) throw new VaultError('sealed blob is too short');
-    const iv = sealed.blob.subarray(0, 12);
-    const tag = sealed.blob.subarray(sealed.blob.length - 16);
-    const body = sealed.blob.subarray(12, sealed.blob.length - 16);
+  decrypt(encrypted: EncryptedBlob, aad: string): Buffer {
+    const key = this.#keys.get(encrypted.version);
+    if (key === undefined) throw new VaultError(`no master key for version ${encrypted.version}`);
+    if (encrypted.blob.length < 12 + 16 + 1) throw new VaultError('encrypted blob is too short');
+    const iv = encrypted.blob.subarray(0, 12);
+    const tag = encrypted.blob.subarray(encrypted.blob.length - 16);
+    const body = encrypted.blob.subarray(12, encrypted.blob.length - 16);
     try {
       const decipher = createDecipheriv('aes-256-gcm', key, iv);
       decipher.setAAD(Buffer.from(aad, 'utf8'));
@@ -61,7 +64,7 @@ export class KeyVault {
       return Buffer.concat([decipher.update(body), decipher.final()]);
     } catch {
       // Never say more: the reason is either a wrong key or a tampered blob.
-      throw new VaultError('sealed key failed authentication');
+      throw new VaultError('encrypted key failed authentication');
     }
   }
 
@@ -78,7 +81,7 @@ export class KeyVault {
   }
 }
 
-/** What an agent key is sealed against: its account and its key id. */
+/** What an agent key is bound to: its account and its key id. */
 export function agentKeyAad(accountId: string, keyid: string): string {
   return `agenteve-mcp/agent-key/v1|${accountId}|${keyid}`;
 }

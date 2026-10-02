@@ -6,7 +6,9 @@ window.EVE_CONSENT = {
   supabaseKey: '<publishable key, sb_publishable_…>',
   // Sign-in options switched on in the Supabase project ('google', 'github').
   providers: [],
-  // Reviewer accounts sign in with a password; nobody can sign up with one here.
+  // Shows the password box for review accounts. A password sign-in mints a session only for an
+  // account the operator flagged (app_metadata.agenteve_password_signin, set by the deploy with the
+  // service key); the access-token hook refuses every other one (supabase/access-token-hook.sql).
   passwordSignIn: true,
   // Redirect hosts shown as recognised on the consent screen; others get a warning.
   knownRedirectHosts: ['claude.ai', 'claude.com', 'chatgpt.com', 'chat.openai.com'],

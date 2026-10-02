@@ -26,8 +26,9 @@ describe('secrets never leave', () => {
     const call = async (name: string, args: Record<string, unknown> = {}) => payload(await client.callTool({ name, arguments: args }));
 
     expect((await call('eve_enroll', { handle: 'vault-check' }))['httpStatus']).toBe(201);
+    h.engine.tick += 1;
     const row = await new Store(h.db).principal(sub);
-    const seed = new KeyVault(new Map([[1, MASTER_KEY]])).open({ version: row?.keyVersion ?? 1, blob: row?.sealedKey ?? Buffer.alloc(0) }, agentKeyAad(sub, row?.keyid ?? ''));
+    const seed = new KeyVault(new Map([[1, MASTER_KEY]])).decrypt({ version: row?.keyVersion ?? 1, blob: row?.encryptedKey ?? Buffer.alloc(0) }, agentKeyAad(sub, row?.keyid ?? ''));
 
     await call('eve_identity');
     await call('eve_observe');

@@ -133,7 +133,7 @@ deployed; `connector/README.md`).** Fresh names throughout, none shared with the
 | Service / Unix user | `agenteve-mcp.service` / `agenteve-mcp` |
 | Code | `/opt/agenteve-mcp/{connector,mcp,engine/src/core,deploy}` (previous trees `-prev-<stamp>`) |
 | Ports | `127.0.0.1:8810` (the service); `127.0.0.1:8811` (nginx, public frames for the service only) |
-| Secret configuration | `/etc/agenteve-mcp/env`, mode 0600: `EVE_MCP_MASTER_KEYS` (seals hosted agent keys — never in the database or its backups), `EVE_GATEWAY_SECRET`, `PGPASSWORD` — all generated on the host |
+| Secret configuration | `/etc/agenteve-mcp/env`, mode 0600: `EVE_MCP_MASTER_KEYS` (encrypts hosted agent keys — never in the database or its backups), `EVE_GATEWAY_SECRET`, `PGPASSWORD` — all generated on the host |
 | Database | schema `eve_mcp` in `compact`, role `eve_mcp_app` (no access to the engine's tables) |
 | nginx vhost / static site | `/etc/nginx/sites-available/mcp.agenteve.io` / `/var/www/mcp.agenteve.io` |
 | DNS | `mcp.agenteve.io` A → 89.117.78.215 (Cloudflare, proxied once its origin certificate exists) |

@@ -18,7 +18,7 @@ afterAll(async () => {
 async function principalFor(handle: string) {
   const accountId = randomUUID();
   await store.touchAccount(accountId);
-  const result = await store.insertPrincipal({ accountId, handle, keyid: `kid-${handle}-${randomUUID()}`, publicKey: 'x', sealedKey: Buffer.from([1, 2, 3]), keyVersion: 1 });
+  const result = await store.insertPrincipal({ accountId, handle, keyid: `kid-${handle}-${randomUUID()}`, publicKey: 'x', encryptedKey: Buffer.from([1, 2, 3]), keyVersion: 1 });
   return { accountId, result };
 }
 
@@ -29,19 +29,27 @@ describe('the eve_mcp schema', () => {
     expect(rows.map((r) => r.version)).toEqual(['001_eve_mcp.sql']);
   });
 
-  it('holds one principal per account and one account per handle', async () => {
+  it('holds one principal per account, and one ENROLLED account per handle', async () => {
     const first = await principalFor('alpha');
     expect(first.result).toBe('inserted');
-    const again = await store.insertPrincipal({ accountId: first.accountId, handle: 'alpha-two', keyid: 'k2', publicKey: 'x', sealedKey: Buffer.from([1]), keyVersion: 1 });
+    const again = await store.insertPrincipal({ accountId: first.accountId, handle: 'alpha-two', keyid: 'k2', publicKey: 'x', encryptedKey: Buffer.from([1]), keyVersion: 1 });
     expect(again).toBe('account-has-principal');
-    const other = await principalFor('alpha');
-    expect(other.result).toBe('handle-in-use');
+    // Pending rows squat nothing: a second account may try the same handle; the engine decides.
+    const rival = await principalFor('alpha');
+    expect(rival.result).toBe('inserted');
+    await store.markEnrolled(first.accountId);
+    // Once one is enrolled, no other row may take or become that handle.
+    expect((await principalFor('alpha')).result).toBe('handle-in-use');
+    await expect(store.markEnrolled(rival.accountId)).rejects.toThrow();
+    const row = await store.principal(rival.accountId);
+    expect(await store.renamePending(rival.accountId, row?.keyid ?? '', 'alpha')).toBe('handle-in-use');
+    expect(await store.correctPrincipal(rival.accountId, row?.keyid ?? '', 'alpha')).toBe('corrected'); // still pending: allowed
   });
 
   it('refuses a handle the engine would refuse', async () => {
     const accountId = randomUUID();
     await store.touchAccount(accountId);
-    await expect(store.insertPrincipal({ accountId, handle: 'Bad_Handle', keyid: 'k-bad', publicKey: 'x', sealedKey: Buffer.from([1]), keyVersion: 1 })).rejects.toThrow();
+    await expect(store.insertPrincipal({ accountId, handle: 'Bad_Handle', keyid: 'k-bad', publicKey: 'x', encryptedKey: Buffer.from([1]), keyVersion: 1 })).rejects.toThrow();
   });
 
   it('renames only a principal that never enrolled', async () => {
@@ -54,7 +62,7 @@ describe('the eve_mcp schema', () => {
     const enrolled = await store.principal(accountId);
     expect(enrolled?.enrolled).toBe(true);
     expect(enrolled?.lastEnrollStatus).toBe(201);
-    expect(enrolled?.sealedKey.equals(Buffer.from([1, 2, 3]))).toBe(true);
+    expect(enrolled?.encryptedKey.equals(Buffer.from([1, 2, 3]))).toBe(true);
   });
 
   it('reserves client sequence numbers atomically, never below a floor', async () => {

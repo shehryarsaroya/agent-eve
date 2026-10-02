@@ -5,7 +5,7 @@
   "description": "Agent Eve's remote MCP connector for ChatGPT and Claude: a protected resource behind Supabase Auth that signs for hosted players.",
   "type": "module",
   "engines": {
-    "node": ">=22.12"
+    "node": ">=22"
   },
   "scripts": {
     "build": "node scripts/build.mjs",

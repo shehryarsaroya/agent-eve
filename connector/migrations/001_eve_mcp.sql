@@ -13,18 +13,20 @@ CREATE TABLE IF NOT EXISTS eve_mcp.account (
   last_seen_at timestamptz NOT NULL DEFAULT now()
 );
 
--- The account's one principal (one principal per account), and its Ed25519 key, sealed with
+-- The account's one principal (one principal per account), and its Ed25519 key, encrypted with
 -- AES-256-GCM under a master key that exists only in the service's environment file. A row
 -- exists from the moment the key is generated, BEFORE the enrolment request leaves: a lost
 -- response must never lose a key.
 CREATE TABLE IF NOT EXISTS eve_mcp.hosted_principal (
   account_id         uuid PRIMARY KEY REFERENCES eve_mcp.account (account_id),
-  handle             text NOT NULL UNIQUE
+  -- Unique only among ENROLLED rows (indexes below): a pending row must not squat a handle the
+  -- world never gave it (A15 — accounts are free). The engine decides who gets a handle.
+  handle             text NOT NULL
                        CHECK (handle ~ '^[a-z][a-z0-9]*(-[a-z0-9]+)*$' AND char_length(handle) <= 32),
-  principal_id       text NOT NULL UNIQUE,
+  principal_id       text NOT NULL,
   keyid              text NOT NULL UNIQUE,
   public_key         text NOT NULL,
-  sealed_key         bytea NOT NULL,
+  encrypted_key      bytea NOT NULL,
   key_version        smallint NOT NULL,
   enrolled           boolean NOT NULL DEFAULT false,
   enrolled_at        timestamptz,
@@ -57,6 +59,11 @@ CREATE TABLE IF NOT EXISTS eve_mcp.signing_log (
   -- For act: which verbs were accepted or corrected, by clientSequence. Never params, hints or text.
   outcome         jsonb
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS hosted_principal_handle_enrolled
+  ON eve_mcp.hosted_principal (handle) WHERE enrolled;
+CREATE UNIQUE INDEX IF NOT EXISTS hosted_principal_principal_enrolled
+  ON eve_mcp.hosted_principal (principal_id) WHERE enrolled;
 
 CREATE INDEX IF NOT EXISTS signing_log_account_at
   ON eve_mcp.signing_log (account_id, at DESC, id DESC);

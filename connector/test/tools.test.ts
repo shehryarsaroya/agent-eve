@@ -33,7 +33,7 @@ async function tool(client: Client, name: string, args: Record<string, unknown> 
 }
 
 describe('enrolment with a server-held key', () => {
-  it('generates and seals the key before the request leaves, then enrols', async () => {
+  it('generates and encrypts the key before the request leaves, then enrols', async () => {
     const { client, sub } = await signedIn();
     const taken = await tool(client, 'eve_enroll', { handle: 'vale' });
     expect(taken).toMatchObject({ httpStatus: 409, reason: 'HANDLE_TAKEN', mcpError: true });
@@ -50,9 +50,9 @@ describe('enrolment with a server-held key', () => {
     // What reached the engine was the public half only; the stored half opens only under the master key.
     const sent = h.engine.calls.filter((c) => c.path === '/api/enroll').at(-1)?.payload as { publicKey: string };
     expect(sent.publicKey).toBe(row?.publicKey);
-    const seed = new KeyVault(new Map([[1, MASTER_KEY]])).open({ version: row?.keyVersion ?? 0, blob: row?.sealedKey ?? Buffer.alloc(0) }, agentKeyAad(sub, row?.keyid ?? ''));
+    const seed = new KeyVault(new Map([[1, MASTER_KEY]])).decrypt({ version: row?.keyVersion ?? 0, blob: row?.encryptedKey ?? Buffer.alloc(0) }, agentKeyAad(sub, row?.keyid ?? ''));
     expect(seed).toHaveLength(32);
-    expect(row?.sealedKey.includes(seed)).toBe(false);
+    expect(row?.encryptedKey.includes(seed)).toBe(false);
     expect(JSON.stringify(h.engine.calls)).not.toContain(seed.toString('base64url'));
 
     const log = await tool(client, 'eve_signing_log');
@@ -84,20 +84,53 @@ describe('enrolment with a server-held key', () => {
     expect((await tool(client, 'eve_enroll', { handle: 'lost-reply' }))['httpStatus']).toBe(201);
   });
 
-  it('recovers an enrolment whose response was lost, by a signed observe', async () => {
-    const { client } = await signedIn();
+  it('recovers an enrolment whose reply was lost — in the same tick — and never re-binds the key', async () => {
+    const { client, sub } = await signedIn();
     let first = true;
     h.engine.override = (call) => {
       if (call.path !== '/api/enroll' || !first) return undefined;
       first = false;
-      // The world enrolled us, then the reply was lost.
-      void h.engine.call({ ...call });
+      // The world enrolled us (the key takes effect next tick), then the reply was lost.
+      h.engine.answer(call);
       return new EngineError('the engine connection failed mid-reply');
     };
     expect((await tool(client, 'eve_enroll', { handle: 'phoenix' }))['mcpError']).toBe(true);
     h.engine.override = null;
+    // Same tick: the engine says ALREADY_ENROLLED and the signed observe says KEY_NOT_YET_REGISTERED.
+    // That proves the key IS registered — it must not be read as a refusal that frees a re-pick.
     const recovered = await tool(client, 'eve_enroll', { handle: 'phoenix' });
-    expect(recovered).toMatchObject({ httpStatus: 200, resumed: true, enrolled: true, mcpError: false });
+    expect(recovered).toMatchObject({ httpStatus: 200, resumed: true, enrolled: true, handle: 'phoenix', mcpError: false });
+    expect(String(recovered['note'])).toMatch(/next tick/);
+    // A model reading "a new handle is a new principal" tries another name: refused, nothing sent.
+    const enrolls = h.engine.calls.filter((c) => c.path === '/api/enroll').length;
+    expect(String((await tool(client, 'eve_enroll', { handle: 'phoenix-two' }))['error'])).toMatch(/already has an agent, phoenix/);
+    expect(h.engine.calls.filter((c) => c.path === '/api/enroll')).toHaveLength(enrolls);
+    h.engine.tick += 1;
+    expect(await tool(client, 'eve_observe')).toMatchObject({ httpStatus: 200, mcpError: false });
+    expect(await store.principal(sub)).toMatchObject({ handle: 'phoenix', principalId: 'p:phoenix', enrolled: true });
+  });
+
+  it('makes the row follow the principal the engine names, should they ever disagree', async () => {
+    const { client, sub } = await signedIn();
+    expect((await tool(client, 'eve_enroll', { handle: 'truthful' }))['httpStatus']).toBe(201);
+    h.engine.tick += 1;
+    await h.db.query("UPDATE eve_mcp.hosted_principal SET handle = 'mistaken', principal_id = 'p:mistaken' WHERE account_id = $1", [sub]);
+    await tool(client, 'eve_observe');
+    expect(await store.principal(sub)).toMatchObject({ handle: 'truthful', principalId: 'p:truthful' });
+    expect(h.logs.some((line) => line.includes('principal.mismatch'))).toBe(true);
+  });
+
+  it('lets a pending row squat no handle: a definitive refusal frees it for others', async () => {
+    const a = await signedIn();
+    const b = await signedIn();
+    h.engine.override = (call) => (call.path === '/api/enroll' ? { httpStatus: 503, body: { ok: false, reason: 'SEATS_FULL' } } : undefined);
+    expect((await tool(a.client, 'eve_enroll', { handle: 'contested' }))['httpStatus']).toBe(503);
+    h.engine.override = null;
+    // A's refused, pending row does not hold "contested" against B.
+    expect((await tool(b.client, 'eve_enroll', { handle: 'contested' }))['httpStatus']).toBe(201);
+    // And A, refused definitively, may pick another.
+    expect((await tool(a.client, 'eve_enroll', { handle: 'contested' }))['reason']).toBe('ALREADY_ENROLLED');
+    expect((await tool(a.client, 'eve_enroll', { handle: 'second-choice' }))['httpStatus']).toBe(201);
   });
 });
 
@@ -105,6 +138,7 @@ describe('playing', () => {
   async function enrolledClient(handle: string) {
     const { client, sub } = await signedIn();
     expect((await tool(client, 'eve_enroll', { handle }))['httpStatus']).toBe(201);
+    h.engine.tick += 1; // the key takes effect on the next tick, as in the engine
     return { client, sub };
   }
 
@@ -150,9 +184,25 @@ describe('playing', () => {
     expect((await tool(client, 'eve_act', { actions, idempotencyKey: 'deliberate-1' }))['replayed']).toBe(false);
     expect((await tool(client, 'eve_act', { actions, idempotencyKey: 'deliberate-1' }))['replayed']).toBe(true);
     expect(h.engine.acted).toBe(3);
+    // One explicit key for a different batch is refused, not silently answered with the old one.
+    const mismatched = await tool(client, 'eve_act', { actions: [{ verb: 'haul', params: { lane: 2 } }], idempotencyKey: 'deliberate-1' });
+    expect(String(mismatched['error'])).toMatch(/already used for a different batch/);
+    expect(h.engine.acted).toBe(3);
     const sequences = h.engine.calls.filter((c) => c.path === '/api/act').map((c) => (c.payload as { actions: { clientSequence: number }[] }).actions[0]?.clientSequence);
     expect(new Set(sequences).size).toBe(sequences.length);
     expect((await store.principal(sub))?.nextSequence).toBeGreaterThan(3);
+  });
+
+  it('sends the same batch again once the tick it was queued for has run', async () => {
+    const { client } = await enrolledClient('persistent');
+    const actions = [{ verb: 'levy_vote', params: { choice: 'EVEN' } }];
+    expect((await tool(client, 'eve_act', { actions }))['replayed']).toBe(false);
+    expect((await tool(client, 'eve_act', { actions }))['replayed']).toBe(true); // still queued
+    // Its tick runs (and, say, refuses it at resolution): the agent resending it means it.
+    h.engine.tick += 1;
+    h.advance(3_100);
+    expect((await tool(client, 'eve_act', { actions }))['replayed']).toBe(false);
+    expect(h.engine.acted).toBe(2);
   });
 
   it('sends a fully refused batch again, since it acted nothing the first time', async () => {
@@ -204,9 +254,9 @@ describe('playing', () => {
     await tool(client, 'eve_observe');
     const callsBefore = h.engine.calls.filter((c) => c.signer !== undefined).length;
     const status = await tool(client, 'eve_wake_status');
-    expect(status).toMatchObject({ tick: 100, wakesRemaining: 15, nextDecisionAt: 112, ticksUntilDecision: 12, decisionDue: false, suggestedSleepTicks: 12, suggestedSleepMinutes: 60, wakesRemainingIsEstimate: false });
+    expect(status).toMatchObject({ tick: 101, wakesRemaining: 15, nextDecisionAt: 113, ticksUntilDecision: 12, decisionDue: false, suggestedSleepTicks: 12, suggestedSleepMinutes: 60, wakesRemainingIsEstimate: false });
     expect(h.engine.calls.filter((c) => c.signer !== undefined).length).toBe(callsBefore);
-    h.engine.tick = 113;
+    h.engine.tick = 114;
     h.advance(3_100); // the shared /health read is cached for three seconds
     expect(await tool(client, 'eve_wake_status')).toMatchObject({ decisionDue: true, suggestedSleepTicks: 0 });
     h.engine.tick = 300; // a new Reckoning: the pool has refilled
@@ -220,6 +270,7 @@ describe('isolation and limits', () => {
     const a = await signedIn();
     const b = await signedIn();
     expect((await tool(a.client, 'eve_enroll', { handle: 'alpha-one' }))['httpStatus']).toBe(201);
+    h.engine.tick += 1;
     await tool(a.client, 'eve_observe');
     expect(String((await tool(b.client, 'eve_observe'))['error'])).toMatch(/Enroll first/);
     expect((await tool(b.client, 'eve_signing_log'))['entries']).toEqual([]);
@@ -232,6 +283,7 @@ describe('isolation and limits', () => {
     store = new Store(h.db);
     const { client } = await signedIn();
     await tool(client, 'eve_enroll', { handle: 'hasty' });
+    h.engine.tick += 1;
     await tool(client, 'eve_observe');
     await tool(client, 'eve_observe');
     const limited = await tool(client, 'eve_observe');
@@ -240,6 +292,7 @@ describe('isolation and limits', () => {
     // Another account is unaffected.
     const other = await signedIn();
     await tool(other.client, 'eve_enroll', { handle: 'calm' });
+    h.engine.tick += 1;
     expect((await tool(other.client, 'eve_observe'))['httpStatus']).toBe(200);
   });
 

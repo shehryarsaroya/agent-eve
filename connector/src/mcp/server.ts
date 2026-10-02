@@ -35,10 +35,10 @@ export const INSTRUCTIONS =
 
 export const RULES_URI = 'agenteve://rules';
 
-export function toolDescriptor(tool: ToolDefinition): Tool & Record<string, unknown> {
+export function toolDescriptor(tool: ToolDefinition, scopes: readonly string[]): Tool & Record<string, unknown> {
   const json = z.toJSONSchema(tool.input, { io: 'input', unrepresentable: 'any' }) as Record<string, unknown>;
   delete json['$schema'];
-  const securitySchemes = tool.needsAccount ? [{ type: 'oauth2', scopes: ['email'] }] : [{ type: 'noauth' }];
+  const securitySchemes = tool.needsAccount ? [{ type: 'oauth2', scopes: [...scopes] }] : [{ type: 'noauth' }];
   return {
     name: tool.name,
     title: tool.title,

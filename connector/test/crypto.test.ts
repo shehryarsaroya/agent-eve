@@ -20,33 +20,33 @@ describe('agent keys', () => {
 describe('the key vault', () => {
   const master = new Map([[1, randomBytes(32)]]);
 
-  it('opens what it sealed, for the same account and key id only', () => {
+  it('decrypts what it encrypted, for the same account and key id only', () => {
     const vault = new KeyVault(master);
     const seed = randomBytes(32);
-    const sealed = vault.seal(seed, agentKeyAad('a', 'k'));
-    expect(sealed.version).toBe(1);
-    expect(sealed.blob.includes(seed)).toBe(false);
-    expect(vault.open(sealed, agentKeyAad('a', 'k')).equals(seed)).toBe(true);
-    expect(() => vault.open(sealed, agentKeyAad('b', 'k'))).toThrow(VaultError);
-    expect(() => vault.open(sealed, agentKeyAad('a', 'other'))).toThrow(VaultError);
+    const encrypted = vault.encrypt(seed, agentKeyAad('a', 'k'));
+    expect(encrypted.version).toBe(1);
+    expect(encrypted.blob.includes(seed)).toBe(false);
+    expect(vault.decrypt(encrypted, agentKeyAad('a', 'k')).equals(seed)).toBe(true);
+    expect(() => vault.decrypt(encrypted, agentKeyAad('b', 'k'))).toThrow(VaultError);
+    expect(() => vault.decrypt(encrypted, agentKeyAad('a', 'other'))).toThrow(VaultError);
   });
 
   it('detects tampering and refuses an unknown version', () => {
     const vault = new KeyVault(master);
-    const sealed = vault.seal(randomBytes(32), 'aad');
-    const flipped = Buffer.from(sealed.blob);
+    const encrypted = vault.encrypt(randomBytes(32), 'aad');
+    const flipped = Buffer.from(encrypted.blob);
     flipped[20] = (flipped[20] ?? 0) ^ 1;
-    expect(() => vault.open({ version: 1, blob: flipped }, 'aad')).toThrow(/failed authentication/);
-    expect(() => vault.open({ version: 2, blob: sealed.blob }, 'aad')).toThrow(/no master key for version 2/);
+    expect(() => vault.decrypt({ version: 1, blob: flipped }, 'aad')).toThrow(/failed authentication/);
+    expect(() => vault.decrypt({ version: 2, blob: encrypted.blob }, 'aad')).toThrow(/no master key for version 2/);
   });
 
-  it('rotates: new keys seal under the highest version, old blobs still open', () => {
+  it('rotates: new keys encrypt under the highest version, old blobs still decrypt', () => {
     const old = new KeyVault(master);
-    const sealedOld = old.seal(Buffer.from('seed-one-seed-one-seed-one-seed1'), 'aad');
+    const encryptedOld = old.encrypt(Buffer.from('seed-one-seed-one-seed-one-seed1'), 'aad');
     const rotated = new KeyVault(new Map([...master, [2, randomBytes(32)]]));
     expect(rotated.currentVersion).toBe(2);
-    expect(rotated.seal(Buffer.alloc(32, 1), 'aad').version).toBe(2);
-    expect(rotated.open(sealedOld, 'aad').toString()).toBe('seed-one-seed-one-seed-one-seed1');
+    expect(rotated.encrypt(Buffer.alloc(32, 1), 'aad').version).toBe(2);
+    expect(rotated.decrypt(encryptedOld, 'aad').toString()).toBe('seed-one-seed-one-seed-one-seed1');
   });
 
   it('never serialises a master key', () => {

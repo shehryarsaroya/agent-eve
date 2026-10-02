@@ -42,9 +42,20 @@ describe('the access-token hook', () => {
   });
 
   it('leaves sign-in session tokens alone', async () => {
-    for (const method of ['magiclink', 'password', 'oauth', 'otp']) {
+    for (const method of ['magiclink', 'oauth', 'otp', 'email/signup', 'token_refresh']) {
       const out = await hook({ user_id: base.sub, authentication_method: method, claims: { ...base } });
       expect(out.claims).toEqual(base);
     }
+  });
+
+  it('refuses a password sign-in unless the operator flagged the account for review', async () => {
+    const planted = (await hook({ user_id: base.sub, authentication_method: 'password', claims: { ...base, app_metadata: { provider: 'email' } } })) as unknown as { error?: { http_code: number; message: string } };
+    expect(planted.error?.http_code).toBe(403);
+    expect(planted.error?.message).toMatch(/review accounts/);
+    // A user cannot set app_metadata themselves; a user_metadata flag counts for nothing.
+    const selfFlagged = (await hook({ user_id: base.sub, authentication_method: 'password', claims: { ...base, app_metadata: {}, user_metadata: { agenteve_password_signin: 'true' } } })) as unknown as { error?: unknown };
+    expect(selfFlagged.error).toBeTruthy();
+    const reviewer = await hook({ user_id: base.sub, authentication_method: 'password', claims: { ...base, app_metadata: { provider: 'email', agenteve_password_signin: true } } });
+    expect(reviewer.claims['sub']).toBe(base.sub);
   });
 });

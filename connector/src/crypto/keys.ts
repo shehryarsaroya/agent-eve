@@ -18,7 +18,7 @@ export interface AgentKey {
   readonly keyid: string;
   /** base64url of the 32-byte public key: what `POST /api/enroll` takes as `publicKey`. */
   readonly publicKey: string;
-  /** base64url of the 32-byte private seed. Secret: sealed before it is stored. */
+  /** The 32-byte private seed. Secret: encrypted before it is stored. */
   readonly seed: Buffer;
 }
 

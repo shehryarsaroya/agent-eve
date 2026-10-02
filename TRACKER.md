@@ -15,9 +15,9 @@
 > protected resource (Supabase JWTs verified against the JWKS; 401 + `resource_metadata` only for
 > tools that need an account; ChatGPT's in-band prompt when its `initialize` names it). Twelve tools
 > (the bridge's ten + `eve_signing_log`, `eve_wake_status`), each with a title and all four hints.
-> One principal per account; the key is generated server-side and sealed (AES-256-GCM, master key
-> only in `/etc/agenteve-mcp/env`) in the engine's Postgres, schema `eve_mcp`, own role. Retries never
-> act twice. 80 tests, including the engine's own RFC 9421 verifier, the full sign-in chain driven by the MCP SDK's OAuth client, and an end-to-end
+> One principal per account; the key is generated server-side and encrypted (AES-256-GCM, master key
+> only in `/etc/agenteve-mcp/env`) in the engine's Postgres, schema `eve_mcp`, own role. A retry of a
+> batch still queued is answered from the signing log, never re-sent. 85 tests, including the engine's own RFC 9421 verifier, the full sign-in chain driven by the MCP SDK's OAuth client, and an end-to-end
 > enroll → observe → act against the real engine with `trustEdge` on.
 >
 > **Needs before launch** (`connector/README.md` §10–§12, `connector/SUBMISSION.md`): the engine

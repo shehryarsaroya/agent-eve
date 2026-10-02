@@ -207,4 +207,19 @@ describe('the consent page helper and operator endpoints', () => {
     expect(remote.status).toBe(404);
     expect((await h.service.handle(new Request('https://mcp.test.example/nope'))).status).toBe(404);
   });
+
+  it('/healthz never waits on a hung engine', async () => {
+    h.advance(3_100); // past the cached /health
+    const call = h.engine.call.bind(h.engine);
+    h.engine.call = () => new Promise(() => undefined);
+    try {
+      const started = Date.now();
+      const response = await h.service.handle(new Request('http://127.0.0.1:8810/healthz'), { address: '127.0.0.1' });
+      expect(Date.now() - started).toBeLessThan(2_500);
+      expect(await response.json()).toEqual({ ok: true, db: true, engine: null });
+    } finally {
+      h.engine.call = call;
+      h.advance(3_100); // let the hung read age out of the cache
+    }
+  });
 });

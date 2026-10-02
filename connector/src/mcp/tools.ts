@@ -3,7 +3,7 @@
  * `eve_signing_log` and `eve_wake_status`, which only make sense when the server holds the key.
  *
  * What changes from the bridge is WHO SIGNS: the bridge signs with a key file on the player's
- * machine; here the account's key lives sealed in Postgres and this service signs with it, for
+ * machine; here the account's key lives encrypted in Postgres and this service signs with it, for
  * that account only, and logs every signature. The agent's public record says so (`signer:
  * hosted`, once the engine change lands; README).
  *
@@ -169,6 +169,13 @@ function snapshotOf(body: Record<string, unknown>, nowMs: number): WakeSnapshot 
   };
 }
 
+/** `observation.header.standing.principal`: the principal the engine says signed this request. */
+function observedPrincipal(body: Record<string, unknown>): string | null {
+  const observation = body['observation'] as { header?: { standing?: { principal?: unknown } } } | undefined;
+  const value = observation?.header?.standing?.principal;
+  return typeof value === 'string' && /^p:[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(value) ? value : null;
+}
+
 function outcomeSummary(body: Record<string, unknown>): OutcomeSummary | null {
   const outcome = body['outcome'];
   if (typeof outcome !== 'object' || outcome === null) return null;
@@ -232,13 +239,19 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
     call: { readonly method: 'GET' | 'POST'; readonly path: string; readonly payload?: unknown },
     log: { readonly verbs: readonly string[]; readonly actionCount: number; readonly idempotencyKey: string | null; readonly contentHash: string | null },
   ): Promise<EngineReply> {
-    const seed = vault.open({ version: principal.keyVersion, blob: principal.sealedKey }, agentKeyAad(principal.accountId, principal.keyid));
+    const seed = vault.decrypt({ version: principal.keyVersion, blob: principal.encryptedKey }, agentKeyAad(principal.accountId, principal.keyid));
     try {
       const id = await store.appendLog({ accountId: principal.accountId, method: call.method, path: call.path, signed: true, keyid: principal.keyid, ...log });
       const reply = await engine.call({ ...call, signer: { keyid: principal.keyid, privateKey: privateJwk(principal.publicKey, seed) }, accountId: principal.accountId });
       await store.completeLog(id, reply.httpStatus, call.path === '/api/act' ? outcomeSummary(reply.body) : null);
       const snapshot = snapshotOf(reply.body, deps.now());
       if (snapshot !== null) await store.saveObservation(principal.accountId, snapshot);
+      // The world names whose key this is. If the row ever disagrees, the row is what is wrong.
+      const observed = observedPrincipal(reply.body);
+      if (observed !== null && observed !== principal.principalId) {
+        const corrected = await store.correctPrincipal(principal.accountId, principal.keyid, observed.slice(2));
+        logger.error('principal.mismatch', { account: principal.accountId, stored: principal.principalId, observed, corrected });
+      }
       return reply;
     } finally {
       seed.fill(0);
@@ -364,7 +377,7 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
     name: 'eve_enroll',
     title: 'Enroll your agent',
     description:
-      "Enroll this account's one agent with a unique handle, or resume it. Agent Eve's server generates the agent's Ed25519 key, keeps it sealed, and signs for it; the agent's public record says so. Creates a permanent, public principal.",
+      "Enroll this account's one agent with a unique handle, or resume it. Agent Eve's server generates the agent's Ed25519 key, keeps it encrypted, and signs for it; the agent's public record says so. Creates a permanent, public principal.",
     input: z.object({ handle: HANDLE }),
     hints: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
     needsAccount: true,
@@ -387,16 +400,16 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
             return refusal(`The last enrolment of ${principal.handle} got no answer and may have completed. Call eve_enroll with handle "${principal.handle}" to finish or recover it.`);
           }
           const renamed = await store.renamePending(auth.accountId, principal.keyid, handle);
-          if (renamed === 'handle-in-use') return refusal(`Another Agent Eve account is already enrolling "${handle}". Pick another handle.`);
+          if (renamed === 'handle-in-use') return refusal(`Another Agent Eve account already holds "${handle}". Pick another handle.`);
           principal = await store.principal(auth.accountId);
         }
         if (principal === null) {
           const key = generateAgentKey();
           try {
-            const sealed = vault.seal(key.seed, agentKeyAad(auth.accountId, key.keyid));
+            const encrypted = vault.encrypt(key.seed, agentKeyAad(auth.accountId, key.keyid));
             // Stored BEFORE the request leaves: a lost response must never lose the key.
-            const inserted = await store.insertPrincipal({ accountId: auth.accountId, handle, keyid: key.keyid, publicKey: key.publicKey, sealedKey: sealed.blob, keyVersion: sealed.version });
-            if (inserted === 'handle-in-use') return refusal(`Another Agent Eve account is already enrolling "${handle}". Pick another handle.`);
+            const inserted = await store.insertPrincipal({ accountId: auth.accountId, handle, keyid: key.keyid, publicKey: key.publicKey, encryptedKey: encrypted.blob, keyVersion: encrypted.version });
+            if (inserted === 'handle-in-use') return refusal(`Another Agent Eve account already holds "${handle}". Pick another handle.`);
           } finally {
             key.seed.fill(0);
           }
@@ -416,15 +429,45 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
           if (snapshot !== null) await store.saveObservation(auth.accountId, snapshot);
           return { value: { httpStatus: 201, ...boundReply(reply.body), signer: 'hosted', note: SIGNER_NOTE }, isError: false };
         }
+        // ── Which refusals free the handle for a re-pick ─────────────────────────────────────
+        // A rename keeps this key, so it is safe only after a refusal that PROVES the key was
+        // never registered: validation (4xx), a taken handle, a rate limit, a full or booting
+        // world (503) — all decided before the engine registers a key — or ALREADY_ENROLLED
+        // where a signed observe then finds the key unknown. Anything else (a 5xx, no answer, a
+        // key that turns out registered) leaves the status NULL, and NULL refuses a rename. That
+        // rule is what makes "this key can only be registered under the current handle" true.
+        let definitive = (reply.httpStatus >= 400 && reply.httpStatus < 500) || reply.httpStatus === 503;
         if (reply.httpStatus === 409 && reply.body['reason'] === 'ALREADY_ENROLLED') {
-          // A response lost after the world enrolled us: prove possession with a signed observe.
+          // Either a reply lost after the world enrolled us, or someone else's principal. A signed
+          // observe tells which.
           const observation = await signed(principal, { method: 'GET', path: '/api/observe' }, { verbs: [], actionCount: 0, idempotencyKey: null, contentHash: null });
-          if (observation.httpStatus === 200) {
+          const reason = observation.body['reason'];
+          if (observation.httpStatus === 200 || (observation.httpStatus === 401 && reason === 'KEY_NOT_YET_REGISTERED')) {
+            // Our key is registered: the enrolment went through. (`signed` already made the row
+            // follow the principal the observation names, should it ever differ.)
             await store.markEnrolled(auth.accountId);
-            return { value: { httpStatus: 200, ...boundReply(observation.body), enrolled: true, resumed: true, handle, principalId: principal.principalId, keyid: principal.keyid, signer: 'hosted' }, isError: false };
+            const row = (await store.principal(auth.accountId)) ?? principal;
+            const pending = observation.httpStatus !== 200;
+            return {
+              value: {
+                httpStatus: 200,
+                ...(pending ? {} : boundReply(observation.body)),
+                enrolled: true,
+                resumed: true,
+                handle: row.handle,
+                principalId: row.principalId,
+                keyid: row.keyid,
+                signer: 'hosted',
+                note: pending
+                  ? 'The enrolment had gone through; its reply was lost. The key takes effect on the next tick (agent.md §2): call eve_observe after a tick.'
+                  : 'The enrolment had gone through; its reply was lost. This is the agent\'s observation.',
+              },
+              isError: false,
+            };
           }
+          definitive = observation.httpStatus === 401 && reason === 'KEYID_UNKNOWN';
         }
-        await store.recordEnrollStatus(auth.accountId, reply.httpStatus);
+        await store.recordEnrollStatus(auth.accountId, definitive ? reply.httpStatus : null);
         return replyValue(reply);
       });
     },
@@ -451,7 +494,7 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
     name: 'eve_act',
     title: 'Act in the world',
     description:
-      'Queue up to eight actions copied from current affordances. Accepted actions resolve on a later tick and become part of a permanent public record, including any text the agent writes. Sequences and an idempotency key are supplied automatically if omitted; the same batch sent again within ten minutes is recognised as a retry and is not acted twice.',
+      'Queue up to eight actions copied from current affordances. Accepted actions resolve on a later tick and become part of a permanent public record, including any text the agent writes. Sequences and an idempotency key are supplied automatically if omitted; the same batch sent again while it is still queued is recognised as a retry and not sent twice. Pass expectedStateVersion (header.state_version from eve_observe) and nothing is ever submitted against a world that has moved on.',
     input: ACT_INPUT as unknown as z.ZodType<Record<string, unknown>>,
     hints: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
     needsAccount: true,
@@ -468,12 +511,27 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
           args.idempotencyKey === undefined
             ? await store.latestByContent(auth.accountId, contentHash, config.retryWindowSeconds)
             : await store.latestByKey(auth.accountId, args.idempotencyKey);
-        // A repeat of a batch the engine processed is a retry — unless it accepted nothing: then
-        // sending it again cannot act twice, and an agent resending after a correction (agent.md
-        // §0.4) means it. An explicit key always replays, as the engine's own idempotency does.
+        // ── Is this a host retry, or the agent meaning it? ─────────────────────────────────────
+        // A repeat of a batch the engine accepted is a retry only WHILE THAT BATCH IS STILL
+        // QUEUED — before the tick it resolves in. After that tick the agent may have read a
+        // correction (an accepted action can still be refused when its tick runs, agent.md §0.4)
+        // and resending is how it recovers; an agent with no new information has no reason to
+        // send it again. A batch that accepted nothing cannot act twice, so it is always sent.
+        // An explicit key replays, as the engine's own idempotency does — but only for the same
+        // batch: one key for two different batches is refused rather than silently answered.
+        if (args.idempotencyKey !== undefined && previous?.contentHash != null && previous.contentHash !== contentHash) {
+          return refusal('This idempotencyKey was already used for a different batch. Use a new key for a new batch, or omit it.');
+        }
         const processed = previous !== null && previous.httpStatus === 200;
-        const actedBefore = (previous?.outcome?.accepted.length ?? 0) > 0;
-        const replay = processed && (args.idempotencyKey !== undefined || actedBefore);
+        const accepted = previous?.outcome?.accepted ?? [];
+        let stillQueued = false;
+        if (processed && accepted.length > 0 && args.idempotencyKey === undefined) {
+          const resolvesIn = Math.max(...accepted.map((a) => a.resolvesInTick ?? Number.MAX_SAFE_INTEGER));
+          const live = await health().catch(() => null);
+          const tick = (live?.body['report'] as Record<string, unknown> | undefined)?.['tick'];
+          stillQueued = typeof tick === 'number' ? tick < resolvesIn : deps.now() - Date.parse(previous.at) < 60_000;
+        }
+        const replay = processed && (args.idempotencyKey !== undefined || stillQueued);
         const reuse = previous !== null && !processed ? previous.idempotencyKey : null;
         const key = args.idempotencyKey ?? (replay ? previous?.idempotencyKey : reuse) ?? `mcp-${randomBytes(18).toString('base64url')}`;
         if (replay && previous !== null) {
@@ -487,7 +545,9 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
               idempotencyKey: key,
               firstSentAt: previous.at,
               outcome: previous.outcome,
-              note: 'This batch was already sent and processed; nothing was sent again. Call eve_observe to see its effect. To send the same batch again on purpose, pass a new idempotencyKey.',
+              note: stillQueued
+                ? 'This exact batch was already accepted and is still queued for its tick; nothing was sent again. Its effect shows in eve_observe after that tick.'
+                : 'This idempotencyKey was already used for this batch; the outcome above is the original. Nothing was sent again.',
             },
             isError: false,
           };

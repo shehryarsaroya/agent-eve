@@ -26,7 +26,7 @@ export interface HostedPrincipal {
   readonly principalId: string;
   readonly keyid: string;
   readonly publicKey: string;
-  readonly sealedKey: Buffer;
+  readonly encryptedKey: Buffer;
   readonly keyVersion: number;
   readonly enrolled: boolean;
   readonly enrolledAt: string | null;
@@ -86,7 +86,7 @@ function principalOf(row: Record<string, unknown>): HostedPrincipal {
     principalId: String(row['principal_id']),
     keyid: String(row['keyid']),
     publicKey: String(row['public_key']),
-    sealedKey: Buffer.from(row['sealed_key'] as Uint8Array),
+    encryptedKey: Buffer.from(row['encrypted_key'] as Uint8Array),
     keyVersion: Number(row['key_version']),
     enrolled: row['enrolled'] === true,
     enrolledAt: isoOrNull(row['enrolled_at']),
@@ -121,7 +121,7 @@ function isUniqueViolation(error: unknown): boolean {
 }
 
 const PRINCIPAL_COLUMNS =
-  'account_id, handle, principal_id, keyid, public_key, sealed_key, key_version, enrolled, enrolled_at, last_enroll_status, next_sequence, last_observation, created_at';
+  'account_id, handle, principal_id, keyid, public_key, encrypted_key, key_version, enrolled, enrolled_at, last_enroll_status, next_sequence, last_observation, created_at';
 const LOG_COLUMNS =
   'id, account_id, at, method, path, signed, keyid, verbs, action_count, idempotency_key, content_hash, http_status, outcome';
 
@@ -147,21 +147,30 @@ export class Store {
     return rows[0] === undefined ? null : principalOf(rows[0]);
   }
 
+  /** Is this handle already an ENROLLED principal of another account here? */
+  async handleEnrolledElsewhere(accountId: string, handle: string): Promise<boolean> {
+    const { rows } = await this.db.query('SELECT 1 FROM eve_mcp.hosted_principal WHERE handle = $1 AND enrolled AND account_id <> $2', [handle, accountId]);
+    return rows.length > 0;
+  }
+
   async insertPrincipal(row: {
     readonly accountId: string;
     readonly handle: string;
     readonly keyid: string;
     readonly publicKey: string;
-    readonly sealedKey: Buffer;
+    readonly encryptedKey: Buffer;
     readonly keyVersion: number;
   }): Promise<InsertResult> {
+    // Handles are unique among ENROLLED rows only, so a pending row never squats one; an enrolled
+    // holder is checked here so the refusal is local and immediate (the engine would refuse too).
+    if (await this.handleEnrolledElsewhere(row.accountId, row.handle)) return 'handle-in-use';
     try {
       const { rows } = await this.db.query(
-        `INSERT INTO eve_mcp.hosted_principal (account_id, handle, principal_id, keyid, public_key, sealed_key, key_version)
+        `INSERT INTO eve_mcp.hosted_principal (account_id, handle, principal_id, keyid, public_key, encrypted_key, key_version)
          VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (account_id) DO NOTHING
          RETURNING account_id`,
-        [row.accountId, row.handle, `p:${row.handle}`, row.keyid, row.publicKey, row.sealedKey, row.keyVersion],
+        [row.accountId, row.handle, `p:${row.handle}`, row.keyid, row.publicKey, row.encryptedKey, row.keyVersion],
       );
       return rows.length === 1 ? 'inserted' : 'account-has-principal';
     } catch (error) {
@@ -170,16 +179,34 @@ export class Store {
     }
   }
 
-  /** Re-pick the handle of a principal that never enrolled. Its key is kept: it was never registered. */
+  /**
+   * Re-pick the handle of a principal that never enrolled, keeping its key. Only safe after a
+   * refusal that proves the key was never registered — the caller's rule (`last_enroll_status`).
+   */
   async renamePending(accountId: string, keyid: string, handle: string): Promise<'renamed' | 'not-pending' | 'handle-in-use'> {
+    if (await this.handleEnrolledElsewhere(accountId, handle)) return 'handle-in-use';
+    const { rows } = await this.db.query(
+      `UPDATE eve_mcp.hosted_principal SET handle = $3, principal_id = $4, last_enroll_status = NULL
+       WHERE account_id = $1 AND keyid = $2 AND enrolled = false
+       RETURNING account_id`,
+      [accountId, keyid, handle, `p:${handle}`],
+    );
+    return rows.length === 1 ? 'renamed' : 'not-pending';
+  }
+
+  /**
+   * Make the row name the principal the ENGINE says this key belongs to. The world is the source of
+   * truth: when an observation signed with this key names another principal, the row follows it.
+   */
+  async correctPrincipal(accountId: string, keyid: string, handle: string): Promise<'corrected' | 'handle-in-use' | 'not-found'> {
     try {
       const { rows } = await this.db.query(
-        `UPDATE eve_mcp.hosted_principal SET handle = $3, principal_id = $4, last_enroll_status = NULL
-         WHERE account_id = $1 AND keyid = $2 AND enrolled = false
+        `UPDATE eve_mcp.hosted_principal SET handle = $3, principal_id = $4
+         WHERE account_id = $1 AND keyid = $2
          RETURNING account_id`,
         [accountId, keyid, handle, `p:${handle}`],
       );
-      return rows.length === 1 ? 'renamed' : 'not-pending';
+      return rows.length === 1 ? 'corrected' : 'not-found';
     } catch (error) {
       if (isUniqueViolation(error)) return 'handle-in-use';
       throw error;
