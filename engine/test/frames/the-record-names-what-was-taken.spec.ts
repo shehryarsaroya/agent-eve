@@ -247,7 +247,9 @@ describe('★ sealVerdict reaches CONTRADICTED, and names who (§14, A5′)', ()
         actedOnStateVersion: rt.engine.stateVersion,
         stateVersion: rt.engine.stateVersion,
         intent: {
-          verb: 'deliver',
+          // The delivery verb, so the door accepts it (`RULES_VERSION` 41 refuses a verb no deed is
+          // recorded under — `deliver` here was the very trap `agent.md` §8 taught). The band does the work.
+          verb: 'haul',
           target: String(doomed.id),
           measure: 'MINOR',
           // Deliberately unreachable, so the deed cannot land in the band.

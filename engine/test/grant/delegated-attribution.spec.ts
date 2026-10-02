@@ -21,8 +21,7 @@
 import { describe, expect, it } from 'vitest';
 import { FREEZE_TICKS, TICKS_PER_RECKONING, setSpeed } from '../../src/core/time.js';
 import type { GameEvent, GrantId, PrincipalId, SystemId, VentureId } from '../../src/core/types.js';
-import { storesAccount } from '../../src/ledger/index.js';
-import { allRoleIndices, electiveTotal, escrowRequired, type VentureRecord } from '../../src/venture/index.js';
+import { allRoleIndices, electiveTotal, escrowRequired, kindSpec, type VentureRecord } from '../../src/venture/index.js';
 import { slotClaimAt } from '../../src/observe/forecast.js';
 import { commonsSystems } from '../../src/world/index.js';
 import { Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
@@ -172,7 +171,7 @@ describe('DEFECT 1 — A5′: the record names BOTH principals, from public stat
   it('a delegated venture that DEFAULTS is attributable to the delegate with no private state', () => {
     const w = world('d1');
     const grant = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 5_000_000 });
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     // The row itself, before anything settles: one home for "who acted".
@@ -231,7 +230,7 @@ describe('DEFECT 1 — A5′: the record names BOTH principals, from public stat
     // The mutation that matters most: a field that always names somebody would libel every solo
     // creator as somebody else's puppet, which is A5′ in the opposite direction.
     const w = world('d1-self');
-    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 8_000, stage: w.stage })).toBeNull();
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', stage: w.stage })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     expect(v.actedBy).toBeNull();
@@ -255,7 +254,7 @@ describe('DEFECT 1 — A5′: the record names BOTH principals, from public stat
     // under-attributed record. Asserted both ways round.
     const w = world('d1-capture');
     const grant = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 5_000_000 });
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const before = w.runtime.engine.stateHash;
     const table = w.runtime.engine.stateTables.find((t) => t.name === 'venture');
     if (table?.restore === undefined) throw new Error('no restorable venture state table');
@@ -270,32 +269,40 @@ describe('DEFECT 1 — A5′: the record names BOTH principals, from public stat
 // ── DEFECT 2 — ★ A7: the draw is the worst case the grantor can be billed ────
 
 describe('DEFECT 2 — A7: the contingent draw is the worst case, not the p50', () => {
-  it('a HAUL at value 8000 charges the 7800 it can be billed, not the 2000 it is priced at', () => {
+  // The probe that found this ran a HAUL at `value` 8000: price 2,000, bound 7,800 — 3.9x. `value` is
+  // the kind's yield since 41, so the figures are read off the venture rather than pinned to a value
+  // nobody can send any more; the claim — the mandate is charged the BOUND, not the price — is unchanged.
+  it('a HAUL charges the worst case it can be billed, not the elective half it is priced at', () => {
     const w = world('d2');
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 30_000 });
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000, elective_bps: 2_500 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL', elective_bps: 2_500 })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
 
-    expect(escrowRequired(v)).toBe(6_000);
-    // The PRICE is unchanged — the parties still agreed 2,000 of unsecured tail.
-    expect(electiveTotal(v)).toBe(2_000);
-    // The BOUND is what the mandate is charged, recomputed here off `slotClaimAt`.
-    expect(p90ElectiveCeiling(v)).toBe(7_800);
-    expect(w.runtime.grants.get(id)?.spentContingent).toBe(p90ElectiveCeiling(v));
-    expect(w.runtime.grants.get(id)?.spentContingent).toBe(7_800);
-    // The 3.9× the probe measured, now on the right side of the comparison.
-    expect(p90ElectiveCeiling(v)).toBeGreaterThan(electiveTotal(v) * 3);
+    // The PRICE is what the parties agreed as unsecured tail; the BOUND is what the mandate is
+    // charged, recomputed here off `slotClaimAt`.
+    const price = electiveTotal(v);
+    const bound = p90ElectiveCeiling(v);
+    expect(escrowRequired(v) + price).toBe(kindSpec('HAUL').baseYieldMinor);
+    expect(w.runtime.grants.get(id)?.spentContingent).toBe(bound);
+    expect(bound, 'the worst case is above the price, and the mandate is charged the worst case').toBeGreaterThan(price);
   });
 
-  it('a grantor that caps contingent liability at 2000 CANNOT be bound to 7800', () => {
+  it('a grantor that caps contingent liability below the worst case CANNOT be bound to it', () => {
     // The probe's sentence, as an assertion: *"a grantor that caps contingent liability at 2,000
     // believing that bounds its downside can be bound to 7,800."* It cannot now.
+    const probe = world('d2-cap-probe');
+    issueGrant(probe, { template: 'steward', direct: 5_000_000, contingent: 30_000 });
+    expect(delegatedCreate(probe, { kind: 'HAUL', elective_bps: 2_500 })).toBeNull();
+    const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
+    if (pv === undefined) throw new Error('no probe venture');
+    const bound = p90ElectiveCeiling(pv);
+
     const w = world('d2-cap');
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 2_000 });
-    const refusal = delegatedCreate(w, { kind: 'HAUL', value: 8_000, elective_bps: 2_500 });
+    const refusal = delegatedCreate(w, { kind: 'HAUL', elective_bps: 2_500 });
     expect(refusal?.invariant).toBe('INV-22');
-    expect(refusal?.hint).toContain('7800');
+    expect(refusal?.hint).toContain(String(bound));
     expect(refusal?.hint).toContain('contingent headroom of 2000');
     expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(0);
     expect(w.runtime.grants.get(id)?.spentContingent).toBe(0);
@@ -309,14 +316,14 @@ describe('DEFECT 2 — A7: the contingent draw is the worst case, not the p50', 
     const w = world('d2-both');
     const probe = world('d2-both-probe');
     issueGrant(probe, { template: 'steward', direct: 5_000_000, contingent: 5_000_000 });
-    expect(delegatedCreate(probe, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(probe, { kind: 'HAUL' })).toBeNull();
     const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
     if (pv === undefined) throw new Error('no probe venture');
     const bound = p90ElectiveCeiling(pv);
 
     // A mandate that authorises EXACTLY one venture's worst case, and nothing more.
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: bound });
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     expect(w.runtime.grants.headroom(id).contingent).toBe(0);
@@ -348,14 +355,14 @@ describe('DEFECT 3 — an ABANDONED venture gives the grantor’s budget back', 
   it('abandon releases the whole draw, and a later create that was refused now lands', () => {
     const w = world('d3');
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 50_000 });
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 28_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     const drawn = w.runtime.grants.get(id)?.spentContingent ?? 0;
     expect(drawn).toBe(p90ElectiveCeiling(v));
     expect(drawn).toBeGreaterThan(0);
     // A second one has nowhere to go: the whole budget is committed.
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 28_000 })?.invariant).toBe('INV-22');
+    expect(delegatedCreate(w, { kind: 'BUILD' })?.invariant).toBe('INV-22');
 
     expect(act(w.runtime, w.grantor, 'abandon', { venture: v.id })).toBeNull();
     expect(w.runtime.ventures.require(v.id).state).toBe('ABANDONED');
@@ -370,13 +377,13 @@ describe('DEFECT 3 — an ABANDONED venture gives the grantor’s budget back', 
     expect(releases[0]?.contingent).toBe(drawn);
 
     // And the authority the delegate got back is REAL: the create that was just refused now lands.
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 28_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
   });
 
   it('a formation window that closes unfilled releases it too — the other retirement path', () => {
     const w = world('d3-window');
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 50_000 });
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 28_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     expect(w.runtime.grants.get(id)?.spentContingent).toBeGreaterThan(0);
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
@@ -391,7 +398,7 @@ describe('DEFECT 3 — an ABANDONED venture gives the grantor’s budget back', 
     // into a different promise from the one the grantor read, so it deliberately does not.
     const w = world('d3-settled');
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 5_000_000 });
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     const drawn = w.runtime.grants.get(id)?.spentContingent ?? 0;
@@ -404,7 +411,7 @@ describe('DEFECT 3 — an ABANDONED venture gives the grantor’s budget back', 
   it('the release journal is inside the capture, so a rollback cannot forget a give-back', () => {
     const w = world('d3-capture');
     const id = issueGrant(w, { template: 'steward', direct: 5_000_000, contingent: 50_000 });
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 28_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     expect(act(w.runtime, w.grantor, 'abandon', { venture: v.id })).toBeNull();
@@ -427,7 +434,7 @@ describe('DEFECT 4 — a narrow first grant no longer shadows every later one', 
     const wide = issueGrant(w, { template: 'quartermaster', direct: 40_000, contingent: 40_000 });
     expect(w.runtime.grants.forDelegate(w.delegate)).toHaveLength(2);
 
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     expect(v?.boundByGrant).toBe(wide);
     // The treasury-hand was not touched, because it does not carry the verb.
@@ -442,16 +449,16 @@ describe('DEFECT 4 — a narrow first grant no longer shadows every later one', 
     const b = issueGrant(w, { template: 'steward', direct: 90_000, contingent: 90_000 });
 
     // Left to the engine, the WIDEST that carries the verb wins — so `b`, not `a`.
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 8_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     expect(w.runtime.ventures.forPrincipal(w.grantor)[0]?.boundByGrant).toBe(b);
 
     // Named explicitly, the narrower one is used — the param is read, not overridden.
-    expect(delegatedCreate(w, { grant: a, kind: 'DIG', value: 4_000 })).toBeNull();
+    expect(delegatedCreate(w, { grant: a, kind: 'DIG' })).toBeNull();
     const dug = w.runtime.ventures.forPrincipal(w.grantor).find((v) => v.kind === 'DIG');
     expect(dug?.boundByGrant).toBe(a);
 
     // And naming one that cannot carry the verb is REFUSED, naming the ones that can.
-    const refusal = delegatedCreate(w, { grant: narrow, kind: 'DIG', value: 4_000 });
+    const refusal = delegatedCreate(w, { grant: narrow, kind: 'DIG' });
     expect(refusal?.invariant).toBe('INV-22');
     expect(refusal?.hint).toContain(narrow);
     expect(refusal?.hint).toContain(a);
@@ -462,7 +469,7 @@ describe('DEFECT 4 — a narrow first grant no longer shadows every later one', 
     const w = world('d4-none');
     const one = issueGrant(w, { template: 'treasury-hand', direct: 40_000, contingent: 40_000 });
     const two = issueGrant(w, { template: 'treasury-hand', direct: 50_000, contingent: 50_000 });
-    const refusal = delegatedCreate(w, { kind: 'HAUL', value: 8_000 });
+    const refusal = delegatedCreate(w, { kind: 'HAUL' });
     expect(refusal?.invariant).toBe('INV-22');
     expect(refusal?.hint).toContain('none of the 2 live grant(s)');
     expect(refusal?.hint).toContain(one);
@@ -476,7 +483,7 @@ describe('DEFECT 4 — a narrow first grant no longer shadows every later one', 
     const wrong = issueGrant(w, { template: 'quartermaster', direct: 900_000, contingent: 900_000 });
     const right = issueGrant(w, { template: 'treasury-hand', direct: 40_000, contingent: 40_000 });
     // The grantor creates a venture of its own so there is something to elect on, and fills it.
-    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 8_000, stage: w.stage })).toBeNull();
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', stage: w.stage })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     for (const [i, filler] of w.fillers.slice(0, v.roles.length).entries()) {
@@ -498,10 +505,17 @@ describe('DEFECT 4 — a narrow first grant no longer shadows every later one', 
   });
 });
 
-// ── DEFECT 5 — ★ §11B: EXPOSURE includes the authority you have handed out ──
+// ── DEFECT 5, REVERSED AT 41 — ★ a grant's `max_direct_loss` is a LIMIT, not EXPOSURE ──────────
+//
+// `RULES_VERSION` 26 counted live grants' `max_direct_loss` as EXPOSURE after a probe with 160,000 of
+// granted authority read `exposure.mine: 0`. But that figure is a ceiling the grantor sets on what a
+// delegate may draw — unbounded, funded by nothing, locked nowhere — and the Levy's published default
+// bills the more exposed LESS, so a never-used grant zeroed its grantor's Levy
+// (`test/levy/a-grant-buys-no-relief.spec.ts`). EXPOSURE is locked value again; the limits are shown
+// on the grant.
 
-describe('DEFECT 5 — EXPOSURE is Σ open max_direct_loss, and a grant carries one', () => {
-  it('five live grants of 32000 register as 160000 of EXPOSURE, and the Levy bills off it', () => {
+describe("DEFECT 5, reversed — a grant's max_direct_loss is a LIMIT, and it is no EXPOSURE", () => {
+  it('five live grants of 32000 are 160000 of LIMITS on the grants, and 0 of EXPOSURE', () => {
     const w = world('d5');
     let granted = 0;
     for (let n = 0; n < 5; n += 1) {
@@ -509,38 +523,22 @@ describe('DEFECT 5 — EXPOSURE is Σ open max_direct_loss, and a grant carries 
       granted += 32_000;
     }
     expect(granted).toBe(160_000);
-    expect(w.runtime.grants.forGrantor(w.grantor)).toHaveLength(5);
+    const grants = w.runtime.grants.forGrantor(w.grantor);
+    expect(grants).toHaveLength(5);
+    expect(grants.reduce((n, g) => n + g.maxDirectLoss, 0), 'the limits are on the grants').toBe(granted);
 
-    // The encumbrance term is still zero — a grant opens no lock — and that is exactly why the sum
-    // had to grow a second term rather than the lock table growing a fake row.
-    expect(w.runtime.ledger.encumbrances.cachedExposure(w.grantor)).toBe(0);
-    expect(w.runtime.exposureOf(w.grantor)).toBe(granted);
-
+    expect(w.runtime.exposureOf(w.grantor), 'MUTATION: count grants in exposureOf and this is 160000').toBe(0);
     while (w.runtime.engine.tick < TICKS_PER_RECKONING - FREEZE_TICKS) runTick(w.runtime);
-    // ★ The Levy's high-water mark, which two of its four allocation rules read.
-    expect(w.runtime.levy.exposurePeakOf(0, w.grantor)).toBe(granted);
-    expect(w.runtime.levySubjectOf(w.grantor).exposurePeak).toBe(granted);
-    // The delegate carries none of it: `max_direct_loss` bounds the GRANTOR's loss.
+    // ★ So the Levy's high-water mark, which two of its four allocation rules read, is untouched.
+    expect(w.runtime.levy.exposurePeakOf(0, w.grantor)).toBe(0);
+    expect(w.runtime.levySubjectOf(w.grantor).exposurePeak).toBe(0);
     expect(w.runtime.exposureOf(w.delegate)).toBe(0);
-    expect(w.runtime.ledger.freeBalance(storesAccount(w.grantor))).toBeGreaterThan(0);
   }, 30_000);
 
-  it('revoking a grant lowers it, so hiding is not free and the figure is not stuck on', () => {
-    // The mutation. A term that only ever grew would be a tax on having ever delegated, and a term
-    // that never grew would be the defect. Revocation takes effect the NEXT tick (§8.1 #6).
-    const w = world('d5-revoke');
-    const id = issueGrant(w, { template: 'steward', direct: 32_000, contingent: 32_000 });
-    expect(w.runtime.exposureOf(w.grantor)).toBe(32_000);
-    expect(act(w.runtime, w.grantor, 'revoke', { grant: id })).toBeNull();
-    runTick(w.runtime);
-    expect(w.runtime.exposureOf(w.grantor)).toBe(0);
-  });
-
-  it('the CAP is what counts, not the draw — an unused wide mandate is not a hiding place', () => {
+  it('an unused wide mandate is not exposure either — nothing is locked, so nothing is at risk', () => {
     const w = world('d5-cap');
     issueGrant(w, { template: 'steward', direct: 900_000, contingent: 900_000 });
-    // Nothing drawn at all.
     expect(w.runtime.grants.allSpends()).toHaveLength(0);
-    expect(w.runtime.exposureOf(w.grantor)).toBe(900_000);
+    expect(w.runtime.exposureOf(w.grantor)).toBe(0);
   });
 });

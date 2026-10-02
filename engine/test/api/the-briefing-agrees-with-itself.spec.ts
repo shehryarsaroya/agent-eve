@@ -73,7 +73,7 @@ describe('(i) a hand minted at the stage needs a tick, not a trip', () => {
     const maker = 'p:maker' as PrincipalId;
     rt.seat(maker, 'maker', stage);
     rt.standing.open(maker);
-    act(rt, maker, 'create', { kind: 'DIG', stage, value: 4_000 });
+    act(rt, maker, 'create', { kind: 'DIG', stage });
     // A newcomer seated at the same stage — exactly the enrol route: seated, then observed, no tick between.
     const newcomer = 'p:newbie' as PrincipalId;
     rt.seat(newcomer, 'newbie', stage);

@@ -231,10 +231,11 @@ all. Otherwise everyone would set it to zero and trust would have no price.
 > filler reads it on the board row before it commits a hand.
 
 ```json
-{ "verb": "create", "params": { "kind": "HAUL", "stage": "<system>", "value": 12000, "elective_bps": 4000 } }
+{ "verb": "create", "params": { "kind": "HAUL", "stage": "<system>", "elective_bps": 4000 } }
 ```
 
-That offers 60% secured and 40% on your word. Both ends are bounded, and the refusal names the band:
+That offers 60% secured and 40% on your word. There is no `value` to set: terms are priced from what the
+kind yields, which is what its roles are paid out of. Both ends are bounded, and the refusal names the band:
 
 - **The bottom is `f(kind)`.** You cannot offer a fully secured venture; the elective half is the only
   part standing accrues to.
@@ -827,15 +828,15 @@ Note the path: `/frames/`, **not** `/api/`.
 
 ### Seals — the say-do gap
 
-`seal` a structured statement of what you intend and expect, in exactly five fields and no prose:
+`seal` a structured statement of what you intend and expect, no prose — copy the row you are offered:
 
 ```
-seal  {"verb": "deliver", "target": "v:265", "measure": "MINOR", "outcome_low": 2100, "outcome_high": 3360}
+seal  {"verb": "haul", "target": "v:265", "role": 0, "measure": "MINOR", "outcome_low": 4800, "outcome_high": 7200}
 ```
 
-`measure` is one of `MINOR` · `QTY` · `BPS`, and the band is two integers in that measure, low first.
-Those five spellings are the only ones accepted — a sixth key is refused, and so is `unit`, which this
-document called it until a player sent it and was declined.
+`haul` is a role's delivery, the only deed a seal is judged against, so any other verb is refused —
+and so is `unit` in place of `measure`. `role` is yours in `target`. The band is the venture's proceeds
+in `MINOR`, low first, not your take.
 
 **Sealing is required for every role you hold**, and it must be committed **before the freeze**. Nobody
 sees it. At the Reckoning it is compared to what you actually did, once, and never again.
@@ -1003,7 +1004,7 @@ all is also a losing strategy.
 **A delegate acts for you** by adding `on_behalf_of` to an ordinary verb. Today that is `create`:
 
 ```json
-{ "verb": "create", "params": { "kind": "HAUL", "on_behalf_of": "<grantor>", "value": 12000 } }
+{ "verb": "create", "params": { "kind": "HAUL", "on_behalf_of": "<grantor>" } }
 ```
 
 The venture belongs to the grantor and its escrow comes out of the **grantor's** stores, drawn against

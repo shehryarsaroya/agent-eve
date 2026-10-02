@@ -6,7 +6,52 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-02 (latest) — NO MEMBER BEARS THE DOCKET: §5.2's MAX SHARE, OWNER CALL (3) (branch `season1-levy-cap` off `season1-voices` `876dfa6`; not merged, not deployed)
+> ### 2026-10-02 (latest) — A BLIND PLAYTEST OF THE MERGED SEASON 1, TWO VERIFIERS, AND FOUR RULES FIXES BEFORE ANY WORLD RAN IT (on `master`, after the merge of all Season 1 branches)
+>
+> A blind probe played the merged tree for ~50 minutes on a local turbo world (`s1blind-ada`, `s1blind-bo`,
+> five Reckonings) and reported 21 findings; two read-only verifier agents checked every one against the code
+> and the probe's saved artifacts (scripts in the session scratchpad). **Probes are wrong about engine facts
+> often; these were mostly right** — and the verifiers found two exploits the probe had only glimpsed. Still
+> `RULES_VERSION` 41, a new block in its note; the four RULES-layer fixes land before the cutover because
+> any of them after it would be a declared divergence:
+>
+> - **A seal the rulebook taught could only be marked against you.** `agent.md` §8's example sealed
+>   `deliver` on a venture whose deed is recorded as `haul`; the door accepted it and it came back
+>   CONTRADICTED from the absence. The door now refuses a verb no deed is recorded under
+>   (`SealWorldIndex.deedVerbs`), and §8's example is the offered row. `a-seal-the-rulebook-taught.spec.ts`
+>   (mutation: drop `deedVerbs` → 2 red).
+> - **EXPOSURE is locked value; a grant's `max_direct_loss` is a LIMIT.** `RULES_VERSION` 26 (D43) counted
+>   granted authority as EXPOSURE; under the published default `INVERSE_EXPOSURE` a never-used, two-tick,
+>   900,000,000 grant took its grantor's bill 20,000 → 0 and billed its neighbours 26,667 each.
+>   `Runtime.exposureOf` is the encumbrance term again; SPEC §3's EXPOSURE row says so.
+>   `a-grant-buys-no-relief.spec.ts` (mutation → the grantor's bill reads 0 against 20,000).
+>   ⚑ **Consequence for the max share:** with grants out, the bound held **0 lines on 16 house-only seeds**
+>   (8 members, 6 Reckonings) — the 5–9x bills owner call (3) was raised about came from the cast's grants.
+>   The bound stays as a guard for agents that stake hard; its real-world test is now three members staking
+>   150,000 beside an idle one (`no-member-bears-the-docket.spec.ts` ★8), and `exposure-high-water.spec.ts`
+>   gets a scripted staker that never votes (its held-ballot cast stopped staking once grants stopped
+>   carrying the mark — all 24 candidates had gone to 0).
+> - **`value` is the kind's yield.** Terms were priced off the creator's `value`, while every role is paid a
+>   share of the yield: `value: 1` escrowed nothing and a creator that then elected nothing kept 12,273
+>   while its fillers were paid 0. A `value` other than the yield is refused (PROP-V5, naming it); the house
+>   cast never sends one. ~60 test `create`s dropped an incidental `value`; the grant tests that pinned
+>   figures off `value: 8000` now read them off the venture.
+> - **Only a party countersigns.** A stranger's `sign` bound nothing but was written into the public
+>   `countersigned` list, and a filler whose fill had lost was told its echo mismatched a take of 0.
+>   `only-a-party-signs-and-value-is-the-yield.spec.ts`.
+>
+> **Verified and NOT fixed here — SURFACE (a projection, not hashed), so a normal deploy can carry them
+> after the cutover, before the first Reckoning writes a frame:** the rundown names an arbitrary filler as
+> the victim (`render.ts:headlineFor`), the authority line and the grantor's briefing count gross draws
+> and revoked grants, a refused action costs a wake (can drain all 16), the standing intent's affordance says
+> "each Reckoning" for a per-tick amount, `revoke`/`apply`/delegate rows are never offered, `nearest_legal`
+> offers a different verb, the ticker is oldest-first and every reader takes its head (including
+> `mcp/spectator.mjs`), no map for the first 24 hours of a new season, Levy bills unexplained (no rule,
+> total or weight in the block), Reckoning numbering mixed 0/1-based, `your_standing_here` reuses a canon word.
+> **DOC:** the Levy is location-blind by design and `agent.md`/SPEC §5.2 say it is not. **DESIGN (owner):**
+> `distinct_counterparties` counts identities (known).
+
+> ### 2026-10-02 — NO MEMBER BEARS THE DOCKET: §5.2's MAX SHARE, OWNER CALL (3) (branch `season1-levy-cap` off `season1-voices` `876dfa6`; merged to master)
 >
 > Still `RULES_VERSION` 41 (a fifth bullet in its launch-fixes note; Season 1 is a fresh world, so no bump
 > and no divergence), verbs 40/40, observe keys 11/11, kinds 8/8, no new §3 term and no new captured field.

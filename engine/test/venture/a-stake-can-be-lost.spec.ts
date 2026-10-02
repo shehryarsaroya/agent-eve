@@ -66,7 +66,7 @@ function staked(seed: string, stake = STAKE): Staked {
   const { runtime, principals, stage } = levyWorld(seed, 3, 0);
   const [creator, filler] = principals as readonly [PrincipalId, PrincipalId];
 
-  expect(act(runtime, creator, 'create', { kind: 'HAUL', stage, value: 40_000 })).toBeNull();
+  expect(act(runtime, creator, 'create', { kind: 'HAUL', stage })).toBeNull();
   const venture = runtime.ventures.all().find((v) => v.creator === creator && v.state === 'FORMING');
   expect(venture, 'create minted no FORMING venture, so the fixture proves nothing').toBeDefined();
   if (venture === undefined) throw new Error('fixture: no venture');
@@ -131,7 +131,7 @@ describe('★ 1. filling a role ESCROWS the stake (§7.3), so a slot is not a fr
     // correction on the next wake.
     const { runtime, principals, stage } = levyWorld('stake-refuse', 3, 0);
     const [creator, filler] = principals as readonly [PrincipalId, PrincipalId];
-    act(runtime, creator, 'create', { kind: 'HAUL', stage, value: 40_000 });
+    act(runtime, creator, 'create', { kind: 'HAUL', stage });
     const venture = runtime.ventures.all().find((v) => v.creator === creator);
     if (venture === undefined) throw new Error('fixture: no venture');
     const hand = [...runtime.world.hands.values()].find(

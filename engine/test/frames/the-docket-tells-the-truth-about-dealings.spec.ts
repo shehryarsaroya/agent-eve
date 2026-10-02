@@ -54,7 +54,7 @@ function idleOf(runtime: Runtime, principal: PrincipalId, skip = 0): HandId {
 /** A HAUL created by `creator`, its two roles filled by `a` and `b` (either may be the creator). */
 function filled(runtime: Runtime, stage: SystemId, creator: PrincipalId, a: PrincipalId, b: PrincipalId): VentureId {
   const before = new Set(runtime.ventures.all().map((v) => String(v.id)));
-  submit(runtime, creator, 'create', { kind: 'HAUL', stage, value: 4_000 });
+  submit(runtime, creator, 'create', { kind: 'HAUL', stage });
   tick(runtime);
   const v = runtime.ventures.all().find((x) => !before.has(String(x.id)) && x.creator === creator);
   if (v === undefined || openIndices(v).length !== 2) throw new Error('create did not mint a two-role venture');

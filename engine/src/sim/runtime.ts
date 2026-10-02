@@ -80,7 +80,7 @@ import type {
   ZoneTier,
   Standing,
 } from '../core/types.js';
-import { addMinor, BPS_ONE, bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
+import { BPS_ONE, bps, minor, qty, sumMinor, type Bps, type Minor, type Qty } from '../core/units.js';
 import { EventLedger, eventsStateTable, type NewEvent } from '../events/index.js';
 import {
   CURRENCY_FAUCET,
@@ -2550,6 +2550,28 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  *     through it, INV-24 halts a pool line above it, and the house cast's ballot compares the bill each
  *     rule would cut (`previewShares`) instead of the weight ratio, which the bound no longer equals.
  *
+ * ── 41 · WHAT A BLIND PLAYTEST OF THE MERGED TREE FOUND, AND TWO VERIFIERS CONFIRMED ──
+ *
+ *   - **A seal the rulebook taught could only be marked against you.** `agent.md` §8's example sealed
+ *     `deliver` on a venture whose deed is recorded as `haul`; the door accepted it and the verdict came
+ *     back CONTRADICTED from the absence — a permanent public mark on an agent that did what it said.
+ *     The door now refuses a verb no deed is recorded under (`SealWorldIndex.deedVerbs`), and the
+ *     example is the row the observation offers.
+ *   - **Only a party countersigns** (`venture/venture.ts:countersign`). A stranger's `sign` bound
+ *     nothing but was written into the public `countersigned` list, and a filler whose fill had lost
+ *     the slot was told its echo mismatched a take of 0 instead of that it was not a party.
+ *   - **EXPOSURE is locked value; a grant's `max_direct_loss` is a LIMIT** (`Runtime.exposureOf`).
+ *     Counting granted authority — a ceiling nothing funds — let a never-used, two-tick grant zero its
+ *     grantor's Levy under the published default (20,000 → 0, measured) and bill its neighbours for it.
+ *   - **`value` is the kind's yield** (`vCreate`). Terms were priced off the creator's `value` while
+ *     every role is paid a share of the yield, so `value: 1` escrowed nothing and a creator that then
+ *     elected nothing kept 12,273 while its fillers were paid 0. A `value` other than the yield is
+ *     refused; the house cast never sends one.
+ *
+ *   The cast never seals another verb, signs a stranger's venture or sends `value`, so those three
+ *   change no house-only world; the house cast does issue grants, so EXPOSURE moves the Levy's weights
+ *   from the first tick a grant is live.
+ *
  * Still a fresh world at genesis, so there is no divergence to accept. The `say` table's shape is
  * unchanged; a world in which a letter outlives its windows hashes differently from the tick that
  * letter is retired, and a world in which nobody writes one hashes exactly as before. The same holds
@@ -3058,6 +3080,9 @@ export const DELIVERY_MEASURE: SealMeasure = 'MINOR';
  * becoming an unjudgeable seal at the Reckoning (scar #8).
  */
 export const DELIVERY_VERB = 'haul';
+
+/** The verbs this world records a deed under — the only ones a seal can be judged against. */
+const SEAL_DEED_VERBS: ReadonlySet<string> = new Set([DELIVERY_VERB]);
 
 /** Reckonings of settlement summaries the report keeps. Bounded (INV-26, scar #3). */
 export const MAX_RECKONING_SUMMARIES = 8;
@@ -7037,12 +7062,12 @@ export class Runtime {
       // Everything else answers `null`. **`null` narrows nothing.** Its own contract
       // says so — "`null` is honest and is treated as *no opinion*; it never widens
       // what a verdict may mark" (`SealWorldIndex.measureOfVerb`) — and "never widens"
-      // is not "closes". All it does is skip the measure comparison at commit, so a
-      // seal naming a verb this world records no deed for is **accepted** and then
-      // resolves `CONTRADICTED` from the absence, as soon as its principal is
-      // witnessed. Verified: a seal on `verb: 'sign'` against a real venture, with its
-      // delivery intact, comes back `CONTRADICTED` with `contradictedSeals: 1` and
-      // `deedSetFaults: 0`.
+      // is not "closes". All it does is skip the measure comparison at commit, so until
+      // `deedVerbs` below a seal naming a verb this world records no deed for was
+      // **accepted** and then resolved `CONTRADICTED` from the absence, as soon as its
+      // principal was witnessed. Verified: a seal on `verb: 'sign'` against a real
+      // venture, with its delivery intact, came back `CONTRADICTED` with
+      // `contradictedSeals: 1` and `deedSetFaults: 0`.
       //
       // An earlier version of this comment claimed the opposite — that such a seal
       // "can only ever close UNMARKED — never a mark from an absence". That is the
@@ -7054,6 +7079,11 @@ export class Runtime {
       // verb unregistered is, until those two call sites move onto {@link DELIVERY_VERB}.
       measureOfVerb: (verb: string): SealMeasure | null =>
         verb === DELIVERY_VERB ? DELIVERY_MEASURE : null,
+      // ★ And the door now CLOSES on every other verb (`RULES_VERSION` 41, `seal/intent.ts`): the
+      // affordance and the cast were moved onto `DELIVERY_VERB` long ago, but `agent.md` §8's example
+      // still named `deliver`, so a player who copied the rulebook sealed a deed this world never
+      // records and was marked CONTRADICTED from the absence. Refused at the door, with the verb named.
+      deedVerbs: SEAL_DEED_VERBS,
     };
   }
 
@@ -8818,13 +8848,25 @@ export class Runtime {
       });
       if (refused !== null) return refused;
     }
-    const value =
-      grandSeason !== null
-        ? grandMarkerFor(grandSeason).baseYieldMinor
-        : (readInt(req.params, ['value', 'value_minor']) ?? kindSpec(kind).baseYieldMinor);
-    if (value <= 0 || value > 1_000_000_000) {
-      return reject('PROP-V5', `value must be a positive amount under 1000000000, got ${String(value)}.`);
+    // ── ★ `value` IS THE KIND'S YIELD, NOT A FREE PARAMETER (`RULES_VERSION` 41) ──────────────
+    //
+    // The terms a filler reads — its escrowed and elective halves — were priced off whatever `value`
+    // the creator sent, while every role is PAID a share of the kind's yield (`yieldBasisOf`). So the
+    // two could be set apart at will: `value: 1` priced every role at 1 minor with nothing escrowed,
+    // and a creator that then elected nothing kept the whole yield while its fillers were paid 0 — the
+    // escrow floor A7 promises, defeated by one parameter; a high `value` made the elective half an
+    // offer the proceeds could never honour. The house cast never sends `value`, so it is unchanged.
+    const basis = grandSeason !== null ? grandMarkerFor(grandSeason).baseYieldMinor : kindSpec(kind).baseYieldMinor;
+    const sentValue = readInt(req.params, ['value', 'value_minor']);
+    if (sentValue !== null && sentValue !== basis) {
+      return reject(
+        'PROP-V5',
+        `a ${kind}'s terms are priced from what it yields — ${String(basis)} — because that is what its roles ` +
+          `are paid out of; a value of ${String(sentValue)} would quote an escrow and an elective half its ` +
+          `proceeds could not honour. Omit value, or send ${String(basis)}. Nothing was created.`,
+      );
     }
+    const value = basis;
     // ── HOW MUCH OF THIS IS A PROMISE, AND WHO DECIDES ──────────────────────
     //
     // The creator does, inside the band the kind publishes. Before this, every venture in the world
@@ -10390,36 +10432,31 @@ export class Runtime {
   }
 
   /**
-   * ★ **EXPOSURE — Σ this principal's open `max_direct_loss`, and now that includes its grants.**
+   * ★ **EXPOSURE — Σ the `max_direct_loss` of this principal's open LOCKS, and nothing else.**
    *
    * ══════════════════════════════════════════════════════════════════════════
-   * **THE ONE HOME OF THE FIGURE §3 DEFINES, AND IT WAS MISSING ITS DELEGATED HALF.**
+   * **A GRANT'S `max_direct_loss` IS ONE OF ITS LIMITS, NOT AN OPEN POSITION — AND COUNTING IT WAS A
+   * FREE LEVY EXEMPTION (`RULES_VERSION` 41).**
    *
-   * §3: *"EXPOSURE means Σ of your open `max_direct_loss`, **and nothing else**."* Two things in
-   * this engine carry a `max_direct_loss`: an **encumbrance** and a **grant**. Only the first was
-   * ever summed. So a blind probe with five live grants totalling 160,000 of `max_direct_loss` read
-   * `obligations.exposure.mine: 0` for a whole run, and `levy.exposure_peak_this_cycle: 0` with it.
+   * From `RULES_VERSION` 26 this summed live grants' `max_direct_loss` beside the encumbrances, after a
+   * blind probe with 160,000 of granted authority read `exposure.mine: 0`. But a grant's
+   * `max_direct_loss` is a CEILING on what a delegate may draw, set by the grantor, unbounded, funded by
+   * nothing and locked nowhere — and the Levy's published default, `INVERSE_EXPOSURE`, bills the more
+   * exposed LESS. Measured on the Season 1 tree: four principals, no ballot, one elect-only grant of
+   * 900,000,000 to a neighbour that expired two ticks later and was never used, and the grantor's bill
+   * went 20,000 → 0 while the other three paid 26,667 · 26,667 · 26,666 — the high-water mark kept the
+   * relief for the whole Reckoning. A gate priced in nothing is unpriced (A15), and a delegate the
+   * grantor controls is an identity.
    *
-   * Two of the Levy's four allocation rules read this figure and the published default is
-   * `INVERSE_EXPOSURE` — so a principal loaded up by its delegate registered as the **least**
-   * exposed in its constellation and was *shielded* by the rule. §5 says hiding is the most taxed
-   * posture in the game; the arithmetic paid for it.
-   *
-   * `RULES_VERSION` 17 added the per-Reckoning high-water mark for exactly this reading, and the
-   * grant half was never in its subject — the sampler read `cachedExposure` directly. It reads this
-   * instead, which is why there is a method here rather than a second sum at each call site.
-   *
-   * The two terms cannot double-count: `EncumbranceBook` locks live in STORES and a grant opens no
-   * lock, while escrow committed by a delegated `create` leaves the grantor's stores as a transfer
-   * and appears in neither. INV-5 still checks the encumbrance term against its own recompute; the
-   * delegated term has no cache to drift, because it is computed from the grant rows every time.
+   * So EXPOSURE is what `agent.md` always said it was — *"a stake is the main way that number stops
+   * being zero"*: locked value (a role's stake, a raid or `join` stake) that the world can actually
+   * take. A grant's limits are shown on the grant (`grants.granted[]`, with its headroom), and when a
+   * delegate does commit the grantor's money the lock it opens is counted here like any other.
+   * `GrantBook.delegatedExposureOf` keeps the old sum for anyone who needs the figure under its own name.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  exposureOf(principal: PrincipalId, tick = this.engine.tick): Minor {
-    return addMinor(
-      this.ledger.encumbrances.cachedExposure(principal),
-      this.grantBook.delegatedExposureOf(principal, tick),
-    );
+  exposureOf(principal: PrincipalId, _tick = this.engine.tick): Minor {
+    return this.ledger.encumbrances.cachedExposure(principal);
   }
 
   /** `withdraw` — an ADAPTER. The operation lives in `venture/withdraw.ts` (D21). */
@@ -12586,12 +12623,10 @@ export class Runtime {
    * is order-independent, idempotent within a tick, and cannot lower a mark. `levy/book.ts`
    * carries the argument for the quantity; this carries the argument for the *reader*.
    *
-   * ★ `exposureOf` and not `cachedExposure`: the cache is the ENCUMBRANCE term only, and §3's
-   * EXPOSURE is Σ open `max_direct_loss` over everything that has one — which includes a **grant**.
-   * Sampling the cache directly is how a principal that had handed out 160,000 of authority came to
-   * be billed as the least exposed member of its constellation. `Runtime.exposureOf` carries the
-   * whole argument and is the one home; this reads it so the high-water mark and the affordance can
-   * never be computed from different sums.
+   * ★ `exposureOf`, the one home, so the high-water mark and the affordance can never be computed
+   * from different sums. Since 41 that is the ENCUMBRANCE term alone: a grant's `max_direct_loss` is a
+   * limit nothing funds, and counting it let a never-used grant zero its grantor's Levy under the
+   * published default. `Runtime.exposureOf` carries the measurement.
    *
    * `principalOrder` and not the holding table, so a principal whose holding the map has lost is
    * still observed — the roll is lifetime enrolments (A10) and the Levy assesses all of it.

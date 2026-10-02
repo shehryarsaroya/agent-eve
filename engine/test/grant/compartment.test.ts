@@ -347,7 +347,6 @@ describe('the verb fence (SPEC §8: a grant specifies VERBS × … × limits)', 
     const refusal = act(w.runtime, w.delegate, 'create', {
       kind: 'HAUL',
       on_behalf_of: w.grantor,
-      value: 100,
     });
     expect(refusal?.invariant).toBe('INV-22');
     // The hint has to name the fix or the refusal is a wall: which templates carry `create`.
@@ -361,7 +360,7 @@ describe('the verb fence (SPEC §8: a grant specifies VERBS × … × limits)', 
     const w = world('f2');
     act(w.runtime, w.grantor, 'grant', GRANT({ template: 'quartermaster' }));
     // The grantor creates a venture of its own so there is something to elect on.
-    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 100 })).toBeNull();
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL' })).toBeNull();
     const mine = w.runtime.ventures.forPrincipal(w.grantor)[0];
     expect(mine).toBeDefined();
     const refusal = act(w.runtime, w.delegate, 'elect', {

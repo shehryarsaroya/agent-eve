@@ -161,6 +161,16 @@ export interface SealWorldIndex {
    * may mark.
    */
   measureOfVerb(verb: string): SealMeasure | null;
+  /**
+   * ★ Every verb this world records a deed under, when the caller can say (`RULES_VERSION` 41).
+   *
+   * A seal naming any other verb can never be HONOURED — no deed will ever match it — and resolves
+   * CONTRADICTED from the absence once its principal is witnessed: a permanent public mark against an
+   * agent that did what it said. `agent.md` §8's own example named `deliver` on a venture, whose deed
+   * is recorded as `haul`, so a player who copied the rulebook was marked. With this set the door
+   * refuses such a seal instead. Omitted means "cannot say", and nothing is refused on that ground.
+   */
+  readonly deedVerbs?: ReadonlySet<string>;
 }
 
 /**
@@ -281,6 +291,16 @@ export function intentWorldFaults(intent: SealIntent, world: SealWorldIndex): st
           ` two exactly, so seal '${canonical}'.`,
       );
     }
+  }
+
+  if (world.deedVerbs !== undefined && !world.deedVerbs.has(intent.verb)) {
+    const known = [...world.deedVerbs].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0)).map((v) => `'${v}'`).join(', ');
+    faults.push(
+      `this world records no '${intent.verb}' deed — a seal is judged against a role's delivery, recorded as ` +
+        `${known} — so a seal naming '${intent.verb}' could only ever be contradicted. Copy the seal row ` +
+        'your observation offers.',
+    );
+    return faults;
   }
 
   const declared = world.measureOfVerb(intent.verb);

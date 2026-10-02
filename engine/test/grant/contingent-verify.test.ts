@@ -192,7 +192,7 @@ describe('1. the max_direct_loss:0 + un-escrowable attack', () => {
     // that N draws cost N times one draw.
     const probe = world('atk-repeat-probe');
     issueGrant(probe, 0, 10_000_000);
-    expect(delegatedCreate(probe, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(delegatedCreate(probe, { kind: 'BUILD' })).toBeNull();
     const step = probe.runtime.grants.forGrantor(probe.grantor)[0]?.spentContingent ?? 0;
     expect(step).toBeGreaterThan(0);
 
@@ -200,7 +200,7 @@ describe('1. the max_direct_loss:0 + un-escrowable attack', () => {
     const id = issueGrant(w, 0, step * 5);
     const seen: number[] = [];
     for (let n = 0; n < 5; n += 1) {
-      const r = delegatedCreate(w, { kind: 'BUILD', value: 40_000 });
+      const r = delegatedCreate(w, { kind: 'BUILD' });
       expect(r, `create ${String(n)}: ${r?.hint ?? ''}`).toBeNull();
       seen.push(w.runtime.grants.headroom(id).contingent);
     }
@@ -211,7 +211,7 @@ describe('1. the max_direct_loss:0 + un-escrowable attack', () => {
     expect(w.runtime.grants.allSpends()).toHaveLength(5);
 
     // The sixth has nowhere to go.
-    const refusal = delegatedCreate(w, { kind: 'BUILD', value: 40_000 });
+    const refusal = delegatedCreate(w, { kind: 'BUILD' });
     expect(refusal?.invariant).toBe('INV-22');
     expect(refusal?.hint).toContain('contingent headroom of 0');
     expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(5);
@@ -246,13 +246,13 @@ describe('2. an ordinary delegate inside both LIMITS still works', () => {
     const probe = world('ok-exact-probe');
     // Learn the exact elective figure from a wide-open world, then grant precisely that.
     issueGrant(probe, 5_000_000, 5_000_000);
-    expect(delegatedCreate(probe, { kind: 'HAUL', value: 12_000 })).toBeNull();
+    expect(delegatedCreate(probe, { kind: 'HAUL' })).toBeNull();
     const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
     if (pv === undefined) throw new Error('probe venture missing');
     const need = { direct: escrowRequired(pv), contingent: p90ElectiveCeiling(pv) };
 
     const id = issueGrant(w, need.direct, need.contingent);
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     expect(w.runtime.grants.headroom(id)).toEqual({ direct: 0, contingent: 0 });
     // One unit less on either limit and the same act is refused — so the boundary is the
     // limit itself, not the limit plus slack.
@@ -262,7 +262,7 @@ describe('2. an ordinary delegate inside both LIMITS still works', () => {
     ]) {
       const tight = world(`ok-short-${short.expect}`);
       issueGrant(tight, short.direct, short.contingent);
-      const refusal = delegatedCreate(tight, { kind: 'HAUL', value: 12_000 });
+      const refusal = delegatedCreate(tight, { kind: 'HAUL' });
       expect(refusal?.invariant).toBe('INV-22');
       expect(refusal?.hint).toContain(short.expect);
     }
@@ -271,7 +271,7 @@ describe('2. an ordinary delegate inside both LIMITS still works', () => {
   it('never charges the grant for a venture the grantor created itself', () => {
     const w = world('ok-self');
     const id = issueGrant(w, 5_000_000, 5_000_000);
-    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage })).toBeNull();
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', stage: w.stage })).toBeNull();
     expect(w.runtime.grants.get(id)?.spentDirect).toBe(0);
     expect(w.runtime.grants.get(id)?.spentContingent).toBe(0);
     expect(w.runtime.grants.allSpends()).toHaveLength(0);
@@ -281,9 +281,16 @@ describe('2. an ordinary delegate inside both LIMITS still works', () => {
 // ── 3. IS THE NUMBER RIGHT? ──────────────────────────────────────────────────
 
 describe('3. the charged elective total, recomputed independently', () => {
-  it('equals the p90 worst case on every kind at several values, and the price is a different number', () => {
+  it('equals the p90 worst case on every kind, and a value other than the yield is refused', () => {
     for (const kind of REACHABLE) {
-      for (const value of [1, 4_000, kindSpec(kind).baseYieldMinor, 250_000]) {
+      // ★ `RULES_VERSION` 41: `value` is the kind's yield, so the price can no longer be set apart from
+      // the bound by a parameter — `value: 1` used to escrow nothing. Any other value is refused whole.
+      for (const other of [1, 250_000]) {
+        const w = world(`num-${kind}-refused-${String(other)}`);
+        issueGrant(w, 5_000_000, 5_000_000);
+        expect(delegatedCreate(w, { kind, value: other })?.invariant, `${kind}@${String(other)}`).toBe('PROP-V5');
+      }
+      for (const value of [kindSpec(kind).baseYieldMinor]) {
         const w = world(`num-${kind}-${String(value)}`);
         const id = issueGrant(w, 5_000_000, 5_000_000);
         const refusal = delegatedCreate(w, { kind, value });
@@ -301,7 +308,8 @@ describe('3. the charged elective total, recomputed independently', () => {
         // ── WHY THERE IS NO UNIVERSAL INEQUALITY BETWEEN THE TWO, AND WHY THAT IS RIGHT ──
         //
         // The bound is **not** always above the price, and asserting that it was is how this test
-        // first went red. Both directions occur and both are correct:
+        // first went red. Both directions occurred while `value` was free (before 41), and both were
+        // correct:
         //
         //   · HAUL @ 8 000 — price 2 000, bound 7 800. The under-charge the probe found.
         //   · BUILD @ 250 000 — price 250 000, bound 44 000. The claim is a share of PROCEEDS and
@@ -310,6 +318,8 @@ describe('3. the charged elective total, recomputed independently', () => {
         //   · DIG @ 250 000 — bound **0**. The escrow locked up front already exceeds the largest
         //     claim the venture can produce, so `electiveDue` is zero at every percentile and the
         //     grantor can never be asked for anything on the elective half.
+        //
+        // At the yield they are the same two quantities, still independent, so the check below stays.
         //
         // So the checkable claim is that a zero bound has a REASON: escrow swallows the whole
         // maximum claim. Anything else would be a bound that quietly stopped binding.
@@ -339,7 +349,7 @@ describe('4. nothing is counted twice', () => {
     const w = world('dbl');
     const id = issueGrant(w, 5_000_000, 5_000_000);
     const before = w.runtime.ledger.freeBalance(storesAccount(w.grantor));
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     const escrow = escrowRequired(v);
@@ -366,8 +376,8 @@ describe('5. INV-22 after the new accruals', () => {
   it('round-trips through the grant state table with the contingent half intact', () => {
     const w = world('rt');
     const id = issueGrant(w, 5_000_000, 5_000_000);
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     const live = w.runtime.grants.get(id);
     expect(live?.spentContingent).toBeGreaterThan(0);
 
@@ -403,7 +413,7 @@ describe('5. INV-22 after the new accruals', () => {
   it('an aborted tick rolls the contingent counter back, and INV-22 agrees afterwards', () => {
     const w = world('abort');
     const id = issueGrant(w, 5_000_000, 5_000_000);
-    expect(delegatedCreate(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'HAUL' })).toBeNull();
     const good = {
       direct: w.runtime.grants.get(id)?.spentDirect,
       contingent: w.runtime.grants.get(id)?.spentContingent,
@@ -440,7 +450,7 @@ describe('6. the authority line reads both limits', () => {
   it('renders DRAWN with the contingent amount when only the contingent half moved', () => {
     const w = world('render');
     issueGrant(w, 0, 400_000);
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 60_000 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     const bound = p90ElectiveCeiling(
       w.runtime.ventures.forPrincipal(w.grantor)[0] ?? (undefined as never),
     );
@@ -477,10 +487,10 @@ describe('7. the gate charges the worst case, so the LIMIT bounds what can actua
    * REFUSED at the door, and a grant that authorises the whole worst case can still be defaulted on
    * for no more than the number its grantor was shown.
    */
-  it('a BUILD priced at 1 is REFUSED against a 10-unit contingent limit, because the bill is 44 000', () => {
+  it('a BUILD is REFUSED against a 10-unit contingent limit, because the bill is 44 000', () => {
     const w = world('gap');
     const id = issueGrant(w, 0, 10);
-    const refusal = delegatedCreate(w, { kind: 'BUILD', value: 1 });
+    const refusal = delegatedCreate(w, { kind: 'BUILD' });
     expect(refusal?.invariant).toBe('INV-22');
     // The refusal quotes both numbers, so an agent can see the gap it used to be charged on.
     expect(refusal?.hint).toContain('contingent headroom of 10');
@@ -496,15 +506,17 @@ describe('7. the gate charges the worst case, so the LIMIT bounds what can actua
     // A5′ violated from the other side, and would make `max_contingent_liability` unusable.
     const probe = world('gap-ok-probe');
     issueGrant(probe, 0, 10_000_000);
-    expect(delegatedCreate(probe, { kind: 'BUILD', value: 1 })).toBeNull();
+    expect(delegatedCreate(probe, { kind: 'BUILD' })).toBeNull();
     const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
     if (pv === undefined) throw new Error('no probe venture');
     const bound = p90ElectiveCeiling(pv);
-    expect(bound).toBeGreaterThan(sigmaRoleElective(pv) * 1_000);
+    // While `value` was free this BUILD was priced at 1 and the bound was over a thousand times the
+    // price. At the yield (`RULES_VERSION` 41) the gap cannot be manufactured; the bound still binds.
+    expect(bound).toBeGreaterThan(0);
 
     const w = world('gap-ok');
     const id = issueGrant(w, 0, bound);
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 1 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     expect(w.runtime.grants.get(id)?.spentContingent).toBe(bound);
     expect(w.runtime.grants.headroom(id).contingent).toBe(0);
   });
@@ -515,14 +527,14 @@ describe('7. the gate charges the worst case, so the LIMIT bounds what can actua
     // same DECLINED cause — the difference is that the number is now inside the bound.
     const probe = world('gap-e2e-probe');
     issueGrant(probe, 0, 10_000_000);
-    expect(delegatedCreate(probe, { kind: 'BUILD', value: 1 })).toBeNull();
+    expect(delegatedCreate(probe, { kind: 'BUILD' })).toBeNull();
     const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
     if (pv === undefined) throw new Error('no probe venture');
     const bound = p90ElectiveCeiling(pv);
 
     const w = world('gap-e2e');
     const id = issueGrant(w, 0, bound);
-    expect(delegatedCreate(w, { kind: 'BUILD', value: 1 })).toBeNull();
+    expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('no venture');
     const ventureId: VentureId = v.id;

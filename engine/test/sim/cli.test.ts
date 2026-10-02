@@ -163,7 +163,7 @@ describe('the runtime holds the line no agent may cross', () => {
     const submitted = runtime.engine.submit({
       principal: 'p:pauper' as never,
       verb: 'create',
-      params: { kind: 'HAUL', value: 1_000_000 },
+      params: { kind: 'HAUL' },
       clientSequence: 1,
       arrivalMs: 0,
       decisionSource: 'LIVE',
@@ -192,7 +192,7 @@ describe('the runtime holds the line no agent may cross', () => {
       { venture: 'nope', role: 999_999_999, hand: '' },
       { kind: 'NOT_A_KIND', value: -5 },
       { kind: 'HAUL', value: Number.MAX_SAFE_INTEGER },
-      { kind: 'SIEGE', value: 0 },
+      { kind: 'SIEGE' },
       { text: 'x'.repeat(5_000) },
       { terms_hash: 'deadbeef', venture: 'nope' },
       // The election is agent-supplied and reaches the settlement set, so every shape

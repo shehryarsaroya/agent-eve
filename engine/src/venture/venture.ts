@@ -569,6 +569,18 @@ export function countersign(
   if (venture.termsHash === null) {
     return reject('PROP-W1', `${venture.id} has no terms_hash to countersign.`);
   }
+  // ★ A signature from somebody the venture does not need (`RULES_VERSION` 41). It could never bind
+  // anything — `isFullyCountersigned` asks for the signatories by name — but it was written into the
+  // public `countersigned` list, and a filler whose fill had lost the slot was told its echo did not
+  // match a take of 0 instead of the reason: it is not a party.
+  if (!signatoriesRequired(venture).includes(principal)) {
+    return reject(
+      'PROP-W1',
+      `you are not a party to ${venture.id}: only its creator and the holders of its roles sign it. If you ` +
+        'asked to fill one of its roles, read your corrections — a fill that did not win the slot leaves ' +
+        'you nothing to sign.',
+    );
+  }
   if (hash !== venture.termsHash) {
     return reject(
       'PROP-W1',

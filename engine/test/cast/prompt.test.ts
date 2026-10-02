@@ -1009,7 +1009,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
     // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
     // ★ Then the launch fixes, and then §5.2's max share (+89) — see the cell below.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_396);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_466);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1136,7 +1136,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // the default "loads the bill onto you" and not that the bill has a ceiling would vote — and budget
     // its presence share — against a docket the engine no longer cuts. One sentence, the shortest that
     // still names both halves. Analytic margin **1,604**.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_396);
+    //
+    // Then +70 for the blind playtest's rules fixes: §8's seal example is the offered row and §4's
+    // `create` example has no `value`, which is no longer a free parameter. Analytic margin **1,534**.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_466);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1225,7 +1228,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // 111,537, margin **8,463** against a required 4,000.
     // ★ Then +89 for §5's max-share sentence (FLOOR, every position): 111,626, margin **8,374** against a
     // required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_626);
+    // ★ Then +70 for the playtest's rules fixes (§8's seal example, §4's create example): 111,696,
+    // margin **8,304** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_696);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2962,13 +2967,18 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // block is FLOOR, and it now says, after the warning that `INVERSE_EXPOSURE` loads the bill onto a
       // member at an exposure peak of 0, that no rule bills a member above 3x an even share and the
       // others take the excess by that rule. MEASURED.
-      54_872, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share)
-      65_383, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share)
-      75_078, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share)
-      80_164, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89)
-      110_384, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30, +89)
-      92_011, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89)
-      111_626, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30, +89)
+      // Then the blind playtest's four rules fixes (41): §8's seal example is the row the observation
+      // offers (`haul`, `role`, the venture's proceeds) instead of the `deliver` example that could only
+      // ever be marked CONTRADICTED, and §4's `create` example has no `value` and says why. +86 on the
+      // rows that read §8; +70 on the four that also read the delegated-create example, which lost its
+      // `"value": 12000` (−16); +97 on the newcomer. MEASURED.
+      54_969, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +97 playtest)
+      65_469, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +86 playtest)
+      75_164, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1, +30 offer, +89 share, +86 playtest)
+      80_250, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89, +86)
+      110_454, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30, +89, +70)
+      92_081, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1, +30, +89, +70)
+      111_696, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1, +30, +89, +70)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3143,7 +3153,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      118_396, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer, +89 share)
+      118_466, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7, +30 offer, +89 share, +70 playtest)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

@@ -178,7 +178,6 @@ describe('the dilemma names the delegate, the grant and the leak', () => {
     act(w.rt, w.delegate, 'create', {
       kind: 'DIG',
       stage: w.stage,
-      value: 4_000,
       elective_bps: 2_000,
       on_behalf_of: w.grantor,
     });
@@ -204,7 +203,7 @@ describe('the dilemma names the delegate, the grant and the leak', () => {
     // arrives unelected writes a DEFAULTED row no verb removes. So the permanent one goes first.
     // This is the branch whose absence let "nothing is waiting on you" sit beside a 7,800 default.
     const w = world('elective-riding');
-    act(w.rt, w.grantor, 'create', { kind: 'DIG', stage: w.stage, value: 6_000, elective_bps: 3_000 });
+    act(w.rt, w.grantor, 'create', { kind: 'DIG', stage: w.stage, elective_bps: 3_000 });
     const venture = w.rt.ventures.all().find((v) => v.creator === w.grantor);
     expect(venture, 'the fixture needs a venture').toBeDefined();
     if (venture === undefined) return;

@@ -399,6 +399,78 @@ interface Seen {
   readonly ballots: readonly { tick: number; principal: PrincipalId; rule: unknown; bill: LevyRule | null; ratio: LevyRule | null }[];
 }
 
+const STAKERS = ['p:mstakeone', 'p:mstaketwo', 'p:mstakethree'] as PrincipalId[];
+const IDLE = 'p:midle' as PrincipalId;
+
+/**
+ * ★ A real world the bound binds in, through the real verbs (`RULES_VERSION` 41).
+ *
+ * This fixture used to be `g08`'s house cast, whose first held line was at R3 — but that spread came
+ * from the cast's GRANTS, whose `max_direct_loss` counted as EXPOSURE until 41 made EXPOSURE locked
+ * value again (`test/levy/a-grant-buys-no-relief.spec.ts`). Measured after: 0 held lines and 0 moved
+ * ballots on sixteen house-only seeds, eight members, six Reckonings — the cast stakes at 300 bps, so
+ * its peaks sit within a factor of two. The bound is a guard for agents that stake hard, so the world
+ * here is one: three members each stake 150,000 on a role in Reckoning 2, one does nothing, nobody
+ * votes, and Reckoning 3's docket falls to the published default, `INVERSE_EXPOSURE`.
+ */
+function playStaked(): Seen {
+  setSpeed('instant');
+  const seed = 'max-share-staked';
+  const runtime = new Runtime({ seed });
+  const stage = runtime.seatInTier('COMMONS', Rng.fromSeed(`${seed}:stage`));
+  if (stage === undefined) throw new Error('the launch map has no COMMONS system');
+  for (const p of [...STAKERS, IDLE]) {
+    runtime.seat(p, p.replace('p:', ''), stage);
+    runtime.standing.open(p);
+  }
+  let sequence = 1;
+  const submit = (principal: PrincipalId, verb: string, params: Readonly<Record<string, unknown>>): void => {
+    const outcome = runtime.engine.submit({ principal, verb, params, clientSequence: sequence, arrivalMs: sequence, decisionSource: 'LIVE' });
+    sequence += 1;
+    if (!outcome.ok) throw new Error(`${verb} refused at the door: ${outcome.hint}`);
+  };
+  const held: { reckoning: number; principal: PrincipalId; amount: number; free: number; bound: number }[] = [];
+  const shown = new Map<string, number>();
+  const step = (): void => {
+    const report = runtime.runTick();
+    if (report.halted) {
+      throw new Error(`halted at ${String(report.tick)}: ${report.violations.map((v) => `${v.id} ${v.message}`).join(' | ')}`);
+    }
+    if (report.tick % TICKS_PER_RECKONING !== 1) return;
+    const reckoning = reckoningIndex(report.tick);
+    for (const plan of runtime.levy.plansIn(reckoning)) {
+      const pool = plan.lines.filter((l) => !l.newcomerFloored && !l.spared);
+      if (pool.length === 0) continue;
+      const remainder = minor(pool.reduce((n, l) => n + l.amount, 0));
+      const bound = maxShareOf(remainder, pool.length);
+      const free = largestRemainder(remainder, pool.map((l) => l.weight));
+      for (const [k, line] of pool.entries()) {
+        if ((free[k] ?? 0) <= bound) continue;
+        held.push({ reckoning, principal: line.principal, amount: line.amount, free: free[k] ?? 0, bound });
+        shown.set(
+          `${String(reckoning)}::${line.principal}`,
+          Number(runtime.levyBlockFor(line.principal, report.tick)?.my_assessment ?? -1),
+        );
+      }
+    }
+  };
+  while (runtime.engine.tick < 2 * TICKS_PER_RECKONING + 10) step();
+  for (const staker of STAKERS) {
+    submit(staker, 'create', { kind: 'HAUL', stage });
+    step();
+    const venture = runtime.ventures.all().find((v) => v.creator === staker && v.state === 'FORMING');
+    if (venture === undefined) throw new Error(`${staker}'s HAUL did not form`);
+    const hand = [...runtime.world.hands.values()].find((h) => h.principal === staker && h.state === 'IDLE');
+    if (hand === undefined) throw new Error(`${staker} has no idle hand`);
+    submit(staker, 'fill_role', { venture: venture.id, role: 0, hand: hand.id, stake: 150_000 });
+    step();
+    const refused = runtime.takeCorrections(staker);
+    if (refused.length > 0) throw new Error(`${staker}'s staked fill was refused: ${refused.map((r) => r.hint).join(' | ')}`);
+  }
+  while (runtime.engine.tick < 3 * TICKS_PER_RECKONING + 2) step();
+  return { held, shown, ballots: [] };
+}
+
 /**
  * `g08`, eight members, six Reckonings: the after-tree sweep put its first held line at R3 (`p:sable`,
  * free 104,059, held at 69,750 with one member spared) and its first ballot the bound moved at R5.
@@ -463,19 +535,19 @@ function playG08(): Seen {
   return { held, shown, ballots };
 }
 
-describe('★ 8. the max share in a real world — g08, eight members, six Reckonings', () => {
+describe('★ 8. the max share in a real world — three heavy stakers and an idle member', () => {
   let seen: Seen;
   beforeAll(() => {
-    seen = playG08();
+    seen = playStaked();
   }, 300_000);
 
   it('holds a real docket line at the bound, and the member is shown the bound as its bill', () => {
     expect(
       seen.held.length,
-      'no docket line in six Reckonings of g08 had a free share above the max share, so nothing below ' +
-        'is about the bound. The sweep that chose this fixture saw g08 R3; find out what moved.',
+      'no docket line had a free share above the max share, so nothing below is about the bound',
     ).toBeGreaterThan(0);
     for (const row of seen.held) {
+      expect(row.principal, 'the member holding no stake is the one the default bills most').toBe(IDLE);
       expect(row.amount, `R${String(row.reckoning)} ${row.principal}: free ${String(row.free)}`).toBe(row.bound);
       expect(row.free).toBeGreaterThan(row.bound);
       expect(
@@ -485,25 +557,6 @@ describe('★ 8. the max share in a real world — g08, eight members, six Recko
     }
   });
 
-  it('casts every LEVY ballot for the rule whose BILL is lowest — and the bound moved at least one', () => {
-    expect(seen.ballots.length, 'the cast cast no LEVY ballot in six Reckonings').toBeGreaterThan(0);
-    for (const ballot of seen.ballots) {
-      expect(
-        ballot.rule,
-        `tick ${String(ballot.tick)}: ${ballot.principal} voted ${String(ballot.rule)} where its lowest previewed ` +
-          `bill is ${String(ballot.bill)} (the weight ratio said ${String(ballot.ratio)})`,
-      ).toBe(ballot.bill);
-    }
-    // The mutation-killer: a ballot where the bill and the old ratio disagree. Without one, a cast
-    // reading the ratio would pass the loop above.
-    const moved = seen.ballots.filter((b) => b.bill !== b.ratio);
-    expect(
-      moved.length,
-      'no ballot in six Reckonings of g08 was one the max share changed, so nothing here distinguishes a ' +
-        'cast that reads the bill from one that reads the weight ratio',
-    ).toBeGreaterThan(0);
-  });
-
   it('never assesses a line above the bound — every docket the world cut', () => {
     // Redundant with INV-24 by design (the world would have halted above), and kept as the second road:
     // the bound here is restated from the plan's own lines, not handed over by the engine.
@@ -511,6 +564,27 @@ describe('★ 8. the max share in a real world — g08, eight members, six Recko
     const multiple = (n: Minor | number): number => Number(n) / LEVY_DUTY_PER_PRINCIPAL;
     for (const row of seen.held) {
       expect(multiple(row.amount), 'a held line is about three duties, not five or nine').toBeLessThan(4);
+    }
+  });
+});
+
+describe('★ 8b. the house cast votes the bill — g08, eight members, six Reckonings', () => {
+  let seen: Seen;
+  beforeAll(() => {
+    seen = playG08();
+  }, 300_000);
+
+  it('casts every LEVY ballot for the rule whose BILL is lowest', () => {
+    // Before 41 this also demanded a ballot the bound had MOVED off the weight ratio's rule. In a
+    // house-only world the bound no longer binds at all (EXPOSURE is locked value and the cast stakes
+    // at 300 bps), so that half lives in case 7, where the docket is built to bind.
+    expect(seen.ballots.length, 'the cast cast no LEVY ballot in six Reckonings').toBeGreaterThan(0);
+    for (const ballot of seen.ballots) {
+      expect(
+        ballot.rule,
+        `tick ${String(ballot.tick)}: ${ballot.principal} voted ${String(ballot.rule)} where its lowest previewed ` +
+          `bill is ${String(ballot.bill)} (the weight ratio said ${String(ballot.ratio)})`,
+      ).toBe(ballot.bill);
     }
   });
 });

@@ -195,20 +195,40 @@ function aged(
  * cast, and a fixture that stopped at phase 0 would quote a zero into the golden clause below.
  *
  * The fixture therefore withholds the cast's **LEVY ballots only**, from the last Reckoning onward.
- * Everything else — the fills, the stakes that make the mark, the deliveries — runs untouched. That
- * models a member that simply has not voted yet, which is the exact state the affordance exists for,
- * rather than a world bent to make an assertion pass.
+ * That models a member that simply has not voted yet, which is the exact state the affordance exists
+ * for, rather than a world bent to make an assertion pass.
+ *
+ * ★ **But it is not "everything else untouched", and since 41 that matters.** A member whose ballot is
+ * withheld chooses its vote again every tick, so it never gets to its fills — and it stakes nothing in
+ * the cycle being read. Until 41 the cast's GRANTS carried a non-zero mark regardless; 41 made EXPOSURE
+ * locked value only (`test/levy/a-grant-buys-no-relief.spec.ts`), and all 24 candidates went to 0. So
+ * one scripted member sits beside the cast: it stakes on a HAUL of its own in the previous cycle and
+ * in this one, through the real verbs, and never votes — a principal inside the window, unvoted,
+ * holding a non-zero mark on both figures, by construction rather than by the cast's luck.
  *
  * A separate run rather than advancing the shared one: the other tests read snapshots captured during
  * {@link aged}'s loop, and a test that mutated the shared runtime would make them order-dependent —
  * which is how a suite starts passing for the wrong reason.
  * ══════════════════════════════════════════════════════════════════════════
  */
+const WINDOW_STAKER = 'p:wstaker' as PrincipalId;
+
 function agedToBallotWindow(seed: string, reckonings: number, members = 8): Runtime {
   setSpeed('instant');
   const runtime = new Runtime({ seed });
   const cast = new HeuristicCast(runtime, { size: members });
   cast.seat(seed);
+  // The scripted staker sits with the first cast member, so it shares that constellation's docket.
+  const neighbour = runtime.world.principalOrder[0];
+  const home = neighbour === undefined ? undefined : runtime.world.holdingByPrincipal.get(neighbour);
+  const homeSystem = home === undefined ? undefined : runtime.world.holdings.get(home)?.system;
+  if (homeSystem === undefined) throw new Error('the cast seated nobody to sit beside');
+  runtime.seat(WINDOW_STAKER, 'wstaker', homeSystem);
+  runtime.standing.open(WINDOW_STAKER);
+  const stakeAt = new Set([(reckonings - 2) * TICKS_PER_RECKONING + 20, (reckonings - 1) * TICKS_PER_RECKONING + 20]);
+  let sequence = 1;
+  let pendingFill = false;
+
   const holdBallotsFrom = (reckonings - 1) * TICKS_PER_RECKONING;
   const stop = reckonings * TICKS_PER_RECKONING - 40;
   while (runtime.engine.tick < stop) {
@@ -219,6 +239,19 @@ function agedToBallotWindow(seed: string, reckonings: number, members = 8): Runt
         action.params["ballot"] === LEVY_BALLOT;
       if (isLevyBallot && next >= holdBallotsFrom) continue;
       runtime.engine.submit(action);
+    }
+    if (stakeAt.has(next)) {
+      runtime.engine.submit({ principal: WINDOW_STAKER, verb: 'create', params: { kind: 'HAUL', stage: homeSystem }, clientSequence: sequence, arrivalMs: sequence, decisionSource: 'LIVE' });
+      sequence += 1;
+      pendingFill = true;
+    } else if (pendingFill) {
+      const venture = runtime.ventures.all().find((v) => v.creator === WINDOW_STAKER && v.state === 'FORMING');
+      const hand = [...runtime.world.hands.values()].find((h) => h.principal === WINDOW_STAKER && h.state === 'IDLE');
+      if (venture !== undefined && hand !== undefined) {
+        runtime.engine.submit({ principal: WINDOW_STAKER, verb: 'fill_role', params: { venture: venture.id, role: 0, hand: hand.id, stake: 5_000 }, clientSequence: sequence, arrivalMs: sequence, decisionSource: 'LIVE' });
+        sequence += 1;
+      }
+      pendingFill = false;
     }
     const report = runtime.runTick();
     expect(report.halted, `halted at ${String(report.tick)}`).toBe(false);

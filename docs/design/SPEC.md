@@ -133,7 +133,7 @@ Four consequences run through everything below:
 | **SURETY** | another principal's capital staked on your conduct | a guarantee generally |
 | **STANDING** | the public factual vectors | a score |
 | **TRACK** | the wall-clock development queue | progression generally |
-| **EXPOSURE** | Σ of your open `max_direct_loss`, and nothing else | value committed; peril scope |
+| **EXPOSURE** | Σ of your open `max_direct_loss`, and nothing else — the `max_direct_loss` of your open LOCKS (a role's stake, a raid or `join` stake). A grant's `max_direct_loss` is one of its LIMITS, a ceiling nothing funds, and is **not** EXPOSURE (`RULES_VERSION` 41: counting it let a never-used grant zero its grantor's Levy under `INVERSE_EXPOSURE`) | value committed; peril scope; a grant's LIMITS |
 | **LEVY** | the scheduled world obligation | a tax generally |
 | **RECKONING · SEASON · TICK** | the three horizons | — |
 | **FINALE** | ★ the **last Reckoning of a SEASON**. The grand venture settles at its settlement, and the season boundary runs at that settlement's close (A10) | a campaign's last PULSE; a battle's AFTERMATH; the passes' "core finale" of a structure siege |

@@ -168,7 +168,7 @@ describe('the un-escrowable attack: max_direct_loss 0 buys unbounded contingent 
     // BUILD is top-yield, therefore legally un-escrowable, therefore 100% elective.
     // Required escrow is 0, which is why `required > headroom.direct` (0 > 0) let this
     // through at zero headroom and recorded nothing.
-    const refusal = createOnBehalf(w, { kind: 'BUILD', value: 40_000 });
+    const refusal = createOnBehalf(w, { kind: 'BUILD' });
 
     expect(refusal?.invariant).toBe('INV-22');
     const hint = refusal?.hint ?? '';
@@ -193,7 +193,7 @@ describe('the un-escrowable attack: max_direct_loss 0 buys unbounded contingent 
     // says nothing about how much unsecured promise a delegate may make in your name.
     const w = world('c-separate');
     grant(w, { direct: 10_000_000, contingent: 100 });
-    const refusal = createOnBehalf(w, { kind: 'BUILD', value: 40_000 });
+    const refusal = createOnBehalf(w, { kind: 'BUILD' });
     expect(refusal?.invariant).toBe('INV-22');
     expect(refusal?.hint).toContain('contingent headroom of 100');
     expect(w.runtime.ventures.forPrincipal(w.grantor)).toHaveLength(0);
@@ -206,14 +206,14 @@ describe('the un-escrowable attack: max_direct_loss 0 buys unbounded contingent 
     // asserted is the ENGINE's recorded number rather than a figure typed in beside the change.
     const probe = world('c-allowed-probe');
     grant(probe, { direct: 0, contingent: 10_000_000 });
-    expect(createOnBehalf(probe, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(createOnBehalf(probe, { kind: 'BUILD' })).toBeNull();
     const pv = probe.runtime.ventures.forPrincipal(probe.grantor)[0];
     if (pv === undefined) throw new Error('the probe venture did not land');
     const need = worstCaseElective(pv);
 
     const w = world('c-allowed');
     const id = grant(w, { direct: 0, contingent: need });
-    expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'BUILD' })).toBeNull();
 
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     expect(v?.creator).toBe(w.grantor);
@@ -231,7 +231,7 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     const w = world('c-split');
     const id = grant(w, { direct: 250_000, contingent: 250_000 });
     const before = w.runtime.ledger.freeBalance(storesAccount(w.grantor));
-    expect(createOnBehalf(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'HAUL' })).toBeNull();
 
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('the venture did not land');
@@ -281,7 +281,7 @@ describe('the elective total is accrued as contingent spend, and the split is ho
   it('the grantor watches BOTH headrooms fall in its own observation (A6 is visible or it is nothing)', () => {
     const w = world('c-observe');
     const id = grant(w, { direct: 250_000, contingent: 250_000 });
-    expect(createOnBehalf(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'HAUL' })).toBeNull();
 
     const v = w.runtime.ventures.forPrincipal(w.grantor)[0];
     if (v === undefined) throw new Error('the venture did not land');
@@ -309,14 +309,14 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     const w = world('c-cumulative');
     const budget = 100_000;
     const id = grant(w, { direct: 0, contingent: budget });
-    expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
-    expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'BUILD' })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'BUILD' })).toBeNull();
     const both = w.runtime.ventures
       .forPrincipal(w.grantor)
       .reduce((n, v) => n + worstCaseElective(v), 0);
     expect(w.runtime.grants.get(id)?.spentContingent).toBe(both);
 
-    const refusal = createOnBehalf(w, { kind: 'BUILD', value: 40_000 });
+    const refusal = createOnBehalf(w, { kind: 'BUILD' });
     expect(refusal?.invariant).toBe('INV-22');
     // Read off the engine's own recorded spend, not a literal: the whole point of this change is
     // that the number the gate charges is no longer the one a reader would guess from the params.
@@ -330,8 +330,8 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     // were written with different arithmetic), the world halts at tick close.
     const w = world('c-inv22');
     grant(w, { direct: 250_000, contingent: 250_000 });
-    expect(createOnBehalf(w, { kind: 'HAUL', value: 12_000 })).toBeNull();
-    expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'HAUL' })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'BUILD' })).toBeNull();
     const report = w.runtime.runTick();
     expect(report.halted).toBe(false);
     expect(report.violations.map((v) => v.id)).not.toContain('INV-22');
@@ -342,7 +342,7 @@ describe('the elective total is accrued as contingent spend, and the split is ho
     // The grantor's own creates are its own business and must never touch the grant.
     const w = world('c-selfcreate');
     const id = grant(w, { direct: 250_000, contingent: 250_000 });
-    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage })).toBeNull();
+    expect(act(w.runtime, w.grantor, 'create', { kind: 'HAUL', stage: w.stage })).toBeNull();
     expect(w.runtime.grants.get(id)?.spentContingent).toBe(0);
     expect(w.runtime.grants.get(id)?.spentDirect).toBe(0);
     expect(w.runtime.grants.allSpends()).toHaveLength(0);
@@ -374,7 +374,7 @@ describe('a refusal is a refusal, never a tick abort (the recordSpend guard)', (
     }
 
     // `act` throws if the world halts, so reaching the assertions at all is half the test.
-    const refusal = createOnBehalf(w, { kind: 'HAUL', value: 12_000 });
+    const refusal = createOnBehalf(w, { kind: 'HAUL' });
     expect(refusal?.invariant).toBe('INV-26');
     expect(refusal?.hint).toContain(String(MAX_GRANT_SPENDS));
     // Refused before anything moved: no venture, no debit, no extra journal line.
@@ -500,7 +500,7 @@ describe('scar #1 — agent.md and the engine describe the same gate', () => {
     // Not just the un-escrowable kinds: "anything", because every role carries an
     // elective part, which is the reason the document states it that broadly.
     for (const kind of ['HAUL', 'DIG', 'SURVEY', 'BUILD']) {
-      const refusal = createOnBehalf(w, { kind, value: 4_000 });
+      const refusal = createOnBehalf(w, { kind });
       expect(refusal?.invariant, `${kind} should have been refused`).toBe('INV-22');
       expect(refusal?.hint).toContain('max_contingent_liability 0');
     }
@@ -516,7 +516,7 @@ describe('A13 — contingent draw renders, so the attack cannot look UNUSED', ()
     // signature over an unbounded liability is worse than no pixel signature (A13).
     const w = world('c-render');
     grant(w, { direct: 0, contingent: 400_000 });
-    expect(createOnBehalf(w, { kind: 'BUILD', value: 40_000 })).toBeNull();
+    expect(createOnBehalf(w, { kind: 'BUILD' })).toBeNull();
     const drawn = w.runtime.ventures
       .forPrincipal(w.grantor)
       .reduce((n, v) => n + worstCaseElective(v), 0);

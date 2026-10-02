@@ -98,7 +98,7 @@ function betray(seed: string, expiresBeforeSettlement: boolean): { w: World; gra
   const grant = w.rt.grants.forGrantor(w.grantor).find((g) => !before.has(g.id))?.id;
   if (grant === undefined) throw new Error('the grant did not land');
 
-  act(w, w.delegate, 'create', { on_behalf_of: w.grantor, stage: w.stage, kind: 'HAUL', value: 8_000 });
+  act(w, w.delegate, 'create', { on_behalf_of: w.grantor, stage: w.stage, kind: 'HAUL' });
   const v = w.rt.ventures.forPrincipal(w.grantor)[0];
   if (v === undefined) throw new Error('the delegated create did not land');
   // NON-VACUITY: without these two the whole file is about an ordinary venture and proves nothing

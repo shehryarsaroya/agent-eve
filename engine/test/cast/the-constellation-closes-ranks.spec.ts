@@ -314,14 +314,18 @@ describe('the constellation closes ranks — the carry at the aged horizon', () 
         'line must be the residue\'s own and no other. `season1` read 0; master read 1; the launch fixes 1.',
     ).toBe(presenceOnly.length);
 
-    // ★ The docket owner call (3) was raised about, on the same trajectory, held at the bound.
+    // ★ The docket owner call (3) was raised about. Until 41 R6 was INVERSE_EXPOSURE and billed p:varrow
+    // 101,844 (5.1x the duty) — and the spread behind it came from the cast's GRANTS, whose
+    // `max_direct_loss` counted as EXPOSURE. 41 made EXPOSURE locked value (`a-grant-buys-no-relief`), the
+    // constellation votes another rule on the new trajectory, and the 5x bill is gone at its root rather
+    // than held at the max share. What must hold on any rule: never above three even shares, paid in full.
     const r6 = world.dockets.find((d) => d.reckoning === 6 && d.lines.some((l) => l.principal === ('p:varrow' as PrincipalId)));
     const varrow = r6?.lines.find((l) => l.principal === ('p:varrow' as PrincipalId));
-    expect(r6?.rule, 'R6 is still the INVERSE_EXPOSURE docket the finding was made on').toBe('INVERSE_EXPOSURE');
+    expect(varrow, 'R6 still bills p:varrow').toBeDefined();
     expect(
-      varrow?.assessment,
-      'R6 p:varrow is held at the max share — 3 x ceil(119,500 / 5) — where it was billed 101,844',
-    ).toBe(71_700);
+      (varrow?.assessment ?? 0) / LEVY_DUTY_PER_PRINCIPAL,
+      'R6 p:varrow is never billed above about three duties again',
+    ).toBeLessThan(4);
     expect(varrow?.owed, 'and pays it in full').toBe(0);
   });
 
