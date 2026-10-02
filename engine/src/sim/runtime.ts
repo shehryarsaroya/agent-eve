@@ -182,6 +182,7 @@ import type {
   CompactLink,
   ConvoyLine,
   LiveFrame,
+  MapSystem,
   TributeLine,
   ReckoningFrame,
   SeasonLine,
@@ -190,8 +191,10 @@ import { authorityLinesFor } from '../frames/authority.js';
 import {
   compactLinksFor,
   convoyLinesFor,
+  payeesOf,
   type CompactVentureRead,
   type ConvoyHandRead,
+  type SettledPayee,
 } from '../frames/motion.js';
 import { assertInertPublicFacts } from '../frames/projection.js';
 import { renderFrame, type FrameSource, type SettledView } from '../frames/render.js';
@@ -18087,6 +18090,9 @@ export class Runtime {
     return {
       grants: this.grantBook.all(),
       draws: this.grantBook.allSpends(),
+      // ★ Subtracted, as INV-22 and the row cache subtract them: a draw given back is headroom the
+      // LIMIT has again, so a gross sum is not bounded by it (`spent 14400` of a `10000` grant).
+      releases: this.grantBook.allReleases(),
       headroom: (id) => this.grantBook.headroom(id),
       boundVentures,
       dossiers,
@@ -18144,13 +18150,21 @@ export class Runtime {
    * A principal with no holding draws no end: `compactLinksFor` drops the row rather than inventing a
    * position, because a link to nowhere asserts a relationship that does not exist (A5′).
    */
-  compactLinks(extra: readonly VentureRecord[] = []): readonly CompactLink[] {
+  compactLinks(
+    extra: readonly VentureRecord[] = [],
+    /**
+     * ★ The settlement's payees for the ventures in `extra`, by venture id — so a link that settled
+     * tonight names the counterparty the rundown's deed names (`motion.ts:counterpartiesOf`).
+     */
+    settledPayees: ReadonlyMap<string, readonly SettledPayee[]> = new Map(),
+  ): readonly CompactLink[] {
     const seen = new Set<string>();
     const rows: CompactVentureRead[] = [];
     for (const v of [...this.ventures.live(), ...extra]) {
       if (seen.has(String(v.id))) continue;
       seen.add(String(v.id));
       rows.push({
+        payees: settledPayees.get(String(v.id)) ?? null,
         venture: v.id,
         kind: v.kind,
         stage: v.stage,
@@ -18169,6 +18183,44 @@ export class Runtime {
       ventures: rows,
       holdingAt: (p) => this.world.holdingByPrincipal.get(p) === undefined ? null : holdingOf(this.world, p).system,
     });
+  }
+
+  /**
+   * ★ **THE MAP** as a frame carries it — the topology, the lode and the straits, one row per system.
+   *
+   * One builder for both artifacts: the nightly frame always carries it, and the live frame carries it
+   * until the first Reckoning settles (see {@link liveFrame}), so the two can never draw different
+   * graphs of one world.
+   *
+   * ★ `straits` is **THE PINCH** (§16.12 #1, §16.1 MUST-3): the subset of `lanes` the region cannot
+   * cheaply route around, with the detour a renderer notches the waist with. A pure function of the
+   * topology already on this row, so it publishes nothing new — and derived rather than stored for
+   * `world/strait.ts`'s reason: a field on `Lane` would move `mapHash`, which every snapshot carries and
+   * compares on restore.
+   */
+  private frameMap(): readonly MapSystem[] {
+    return [...this.world.map.systems.values()].map((sys) => ({
+      id: sys.id,
+      name: sys.name,
+      tier: sys.tier,
+      constellation: sys.constellation,
+      lanes: [...sys.lanes],
+      // ★ THE LODE (§16.12 #1's resource-distinct clause). A pure function of the fixed map and
+      // two published constants, so it adds no disclosure — and it is what lets a renderer size a
+      // node by what its ground is worth instead of drawing eighteen identical Marches dots.
+      yieldPerTick: systemYield(this.world.map, sys.id),
+      fuelPerTick: systemFuelYield(this.world.map, sys.id),
+      richnessBps: systemLode(this.world.map, sys.id).richnessBps,
+      straits: straitsAt(this.world.map, sys.id).map((strait) => ({
+        // The other end, from this row's point of view. Both rows of a strait carry the same
+        // numbers and name each other; `assertFrameBudgets` checks that, because a one-sided
+        // strait would draw a pinch on one half of a lane.
+        to: strait.a === sys.id ? strait.b : strait.a,
+        detourHops: strait.detourHops,
+        severs: strait.severs,
+        severed: strait.severed,
+      })),
+    }));
   }
 
   /**
@@ -18250,6 +18302,12 @@ export class Runtime {
       ticker: this.raidTicker.all,
       // ★ THE SEASON LINE, from the block every agent's `header.season` is built by, with no viewer.
       season: this.seasonLine(Math.max(0, tick)),
+      // ★ THE MAP, until the first Reckoning settles — and only then. A new season clears the frames
+      // (`deploy/new-season-standalone.sh`), so for its first 288 ticks there is no `latest.json` and
+      // the topology rode nothing a viewer could fetch: the site drew "NO MAP UNTIL THE FIRST
+      // RECKONING" for a day. The nightly frame carries it from then on, so the per-tick artifact stops
+      // paying for it — `assertLiveFrameBudgets` refuses a map beside a `lastReckoning`.
+      ...(this.outcome === null ? { map: this.frameMap() } : {}),
     };
     // The same boundary `reckoningFrame` crosses, with one clause of its own: a live frame is
     // published BEFORE settlement, so it is the one artifact on which a `PARTIES`, `SENSED` or
@@ -18355,10 +18413,15 @@ export class Runtime {
     // the settled views, the compact links (so a SNAP is drawn at all — a defaulted venture has left
     // `live()` by now), and `retain` (so §14's grant pointer resolves). One walk, three readers.
     const settledRecords: VentureRecord[] = [];
+    // ★ Each settled venture's payees — due, paid and shortfall per principal — read by the deed (whom it
+    // names, what it counts) and by the compact link (whom the snap is drawn to), so both name one agent.
+    const settledPayees = new Map<string, readonly SettledPayee[]>();
     for (const st of outcome.settlements) {
       const v = this.ventures.get(st.venture);
       if (v === undefined) continue;
       settledRecords.push(v);
+      const payees = payeesOf(st.payouts);
+      settledPayees.set(String(st.venture), payees);
       const filled = v.roles.filter((r) => r.filledByPrincipal !== null).length;
       const electiveDue = sumMinor(st.payouts.map((pp) => pp.electiveDue));
       settled.push({
@@ -18389,6 +18452,9 @@ export class Runtime {
         // carries only the *attributable* ones, and a sentence that quietly dropped an
         // unattributable shortfall would be wrong in the other direction on the same field.
         withheld: sumMinor(st.payouts.map((pp) => pp.electiveShortfall)),
+        // ★ …and WHOM it was withheld from. The total alone left the deed to name the first role-holder
+        // in id order — a filler paid in full, on the playtest's `v:932`. See `SettledView.payees`.
+        payees,
         defaulted: st.terminalState === 'DEFAULTED',
         deferred: st.terminalState === 'DEFERRED',
         parties: partiesOf(v),
@@ -18491,7 +18557,8 @@ export class Runtime {
       handles,
       standings,
       // The raid ticker, drained into the frame. Bounded by the Ring, and 140-char
-      // capped by `raidTickerLine`; `renderFrame` drops anything longer anyway.
+      // capped by `raidTickerLine`; `renderFrame` drops anything longer anyway. Oldest
+      // first, as the ring keeps it — the frame publishes it NEWEST first (`publishedTicker`).
       ticker: this.raidTicker.all,
       // ── TOMORROW'S DOCKET, WHICH WAS HARDCODED EMPTY ────────────────────────
       //
@@ -18616,33 +18683,8 @@ export class Runtime {
       // and x/y on a system would put presentation inside `state_hash`, where a layout tweak becomes
       // a replay divergence. `lanes` is a graph and a graph is enough.
       //
-      // ★ `straits` is **THE PINCH** (§16.12 #1, §16.1 MUST-3): the subset of `lanes` the region
-      // cannot cheaply route around, with the detour a renderer notches the waist with. A pure
-      // function of the topology already on this row, so it publishes nothing new — and derived
-      // rather than stored for `world/strait.ts`'s reason: a field on `Lane` would move `mapHash`,
-      // which every snapshot carries and compares on restore.
-      map: [...this.world.map.systems.values()].map((sys) => ({
-        id: sys.id,
-        name: sys.name,
-        tier: sys.tier,
-        constellation: sys.constellation,
-        lanes: [...sys.lanes],
-        // ★ THE LODE (§16.12 #1's resource-distinct clause). A pure function of the fixed map and
-        // two published constants, so it adds no disclosure — and it is what lets a renderer size a
-        // node by what its ground is worth instead of drawing eighteen identical Marches dots.
-        yieldPerTick: systemYield(this.world.map, sys.id),
-        fuelPerTick: systemFuelYield(this.world.map, sys.id),
-        richnessBps: systemLode(this.world.map, sys.id).richnessBps,
-        straits: straitsAt(this.world.map, sys.id).map((strait) => ({
-          // The other end, from this row's point of view. Both rows of a strait carry the same
-          // numbers and name each other; `assertFrameBudgets` checks that, because a one-sided
-          // strait would draw a pinch on one half of a lane.
-          to: strait.a === sys.id ? strait.b : strait.a,
-          detourHops: strait.detourHops,
-          severs: strait.severs,
-          severed: strait.severed,
-        })),
-      })),
+      // One projection with the live frame's genesis map — see {@link frameMap}.
+      map: this.frameMap(),
       swayLines: this.swayLines(),
       // ★ THE RISE (§4.2). The same reader `observe`'s `header.growth` uses, plus the whole history.
       growth: (() => {
@@ -18678,7 +18720,7 @@ export class Runtime {
       // indistinguishable from one that was never there — which is the same reason `ruins` is a key
       // of its own rather than an absence in `worksLines`.
       convoyLines: this.convoyLines(outcome.tick),
-      compactLinks: this.compactLinks(settledRecords),
+      compactLinks: this.compactLinks(settledRecords, settledPayees),
       // ★ THE SEASON LINE and THE SEASON RECORD (SPEC §5, §7.6, A10, A13). On the FINALE's frame the
       // record already carries the season that just closed, because the boundary ran in this tick.
       season: this.seasonLine(outcome.tick),

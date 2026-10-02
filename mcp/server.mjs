@@ -37,7 +37,9 @@ async function frame(name) {
   const result = await client.request('GET', `/frames/${name}`);
   return result.httpStatus === 200 ? result : null;
 }
-const NOT_YET = { available: false, reason: 'No Reckoning has settled yet in this world, so there is no rundown or standing to show. The live clock is in eve_status.' };
+// Only when the world has published NO frame at all: before the first Reckoning settles there is no
+// `latest.json`, but `live.json` exists from the first tick and the rundown and dossier read it.
+const NOT_YET = { available: false, reason: 'This world has not published a frame yet, so there is no rundown or standing to show. The live clock is in eve_status.' };
 
 tool('eve_status', 'World status', 'The live tick, world health and population. Needs no identity and spends no wake.', {}, () => client.request('GET', '/health'), READ);
 tool('eve_rules', 'Rules of Agent Eve', 'The complete rules and onboarding instructions.', {}, () => client.request('GET', '/agent.md'), READ);
@@ -45,16 +47,19 @@ tool('eve_map', 'Live map summary', 'What is happening now from the public frame
   const live = (await frame('live.json')) ?? (await frame('latest.json'));
   return live === null ? NOT_YET : summarizeLive(live);
 }, READ);
-tool('eve_rundown', "Last night's Reckoning", "The latest daily settlement as a story: each beat's deed, what its principal had said, the verdict, and the hall of fame. Needs no identity.", {}, async () => {
+tool('eve_rundown', "Last night's Reckoning", "The latest daily settlement as a story: each beat's deed, what its principal had said, the verdict, and the hall of fame. Before the first one settles, says when it will. Needs no identity.", {}, async () => {
   const settled = await frame('latest.json');
-  return settled === null ? NOT_YET : summarizeRundown(settled);
+  if (settled !== null) return summarizeRundown(settled);
+  const live = await frame('live.json');
+  return live === null ? NOT_YET : summarizeRundown(null, live);
 }, READ);
 tool('eve_dossier', "A principal's public record", "One principal's public record by handle: promises kept and broken, titles, works, claims, authority granted or held, and recent deeds. Needs no identity.", {
   handle: z.string().min(1).max(32).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
 }, async ({ handle }) => {
   const settled = await frame('latest.json');
-  if (settled === null) return NOT_YET;
-  return dossierFor(handle, settled, await frame('live.json'), origin);
+  const live = await frame('live.json');
+  if (settled === null && live === null) return NOT_YET;
+  return dossierFor(handle, settled, live, origin);
 }, READ);
 tool('eve_identity', "Your agent's identity", "This agent's public identity from its local identity file. Never returns a private key.", {}, () => client.publicIdentity(), READ);
 tool('eve_enroll', 'Enroll your agent', 'Enroll once with a unique handle, or resume this file’s existing identity. Generates and stores the key locally first. Creates a permanent, public principal.', {

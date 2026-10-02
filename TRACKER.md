@@ -6,7 +6,85 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-02 (latest) — ★ SEASON 1 IS LIVE (`agenteve-season-1`, `RULES_VERSION` 41, revision `0aafdf6`, then the seats fix)
+> ### 2026-10-02 (latest) — FOUR SURFACE FIXES FROM THAT PLAYTEST: WHOM THE DEED NAMES, WHAT "DRAWN" MEANS, WHICH END OF THE TICKER IS NEW, AND A MAP FOR THE FIRST DAY (branch `season1-frames-fixes` off `0aafdf6`; merged to master after the launch)
+>
+> Four of the SURFACE findings listed under "Verified and NOT fixed here" in the entry below. **Projections only**
+> — frames, the client, the MCP bridge: still `RULES_VERSION` 41, no captured table, no verb, nothing hashed.
+> **The proof is the sim, not the argument:** `npm run sim -- --seed s1|s2 --ticks 900 --speed instant --cast
+> heuristic --principals 12` on `0aafdf6` and on this tree — both 900-line `state_hash` streams byte-identical
+> (`cmp`; final `4bad4afd…` and `7485024…`), the stderr summaries identical but for `elapsed_ms`, and the
+> `--frames --live-frames` run identical too.
+>
+> - **The deed names whom the promise was broken TO.** `headlineFor` named the first role-holder in id order,
+>   so the playtest's `v:932` read *"s1blind-bo's 225 was riding on severin's dig. s1blind-bo walked away from
+>   69…"* — severin was paid in full; varrow was shorted 69 — while the same frame's compact link drew to
+>   varrow by a second rule (largest pinned elective), and the cast `[severin, varrow]` left out the payer.
+>   Now `SettledView.payees` carries each payee's elective due/paid/shortfall (`motion.ts:payeesOf`, the same
+>   `st.payouts` `withheld` is summed from) and **one rule, `motion.ts:counterpartiesOf`** — most shorted, then
+>   most due, then id — picks both the deed's counterparty and the link's `b`. A default names the shorted
+>   party (or parties: *"varrow and severin's dig"*); the cast is payer first, then whom the deed names; and
+>   the figures count only what passed between the payer and OTHER principals — a role it filled itself is
+>   neither a promise kept (`"paid X it could have kept"`) nor one broken, which is `settlement.ts`'s own
+>   `selfDealt` rule for standing (a self-only default now says so instead of reading "walked away").
+>   **Measured on `s1` (3 Reckonings): all 7 defaults now name a party they shorted; the OLD LINK was also
+>   wrong on 4 of the 7** (snap drawn to the filler with the biggest pinned stake, paid in full); ferren's
+>   self-filled BUILD went from "paid 44K it could have kept" to 26K. The recap mails the deed verbatim, so it
+>   is fixed with it (its comment updated: the cast now carries the payer). Spec
+>   `test/frames/the-deed-names-whom-it-was-broken-to.spec.ts` (9; the world case: 6 of 6 defaults on its
+>   seed are ones the id-order rule got wrong). Mutations: old headline → 6 red · cast back to `chipsFor` →
+>   2 · link ignoring payees → 2 · self row counted → 2.
+> - **The authority line publishes what is OUTSTANDING.** `frames/authority.ts` summed the draw journal and
+>   never subtracted the release journal (INV-22 and the row cache both do), and a released draw is headroom
+>   the delegate can draw again — so the gross sum is not bounded by the limit: `spent 14400` of a `10000`
+>   grant, `DRAWN`, over ventures that were all abandoned and refunded. Now net (`outstandingByGrant`), and
+>   the state reads what is outstanding (`DRAWN` = "some headroom used", `contract.ts`). **This reverses the
+>   gross reading chosen in the decision log's "AND THE RELEASE PUT THE A13 DEFECT BACK" row**; what that
+>   protected — a delegate whose ventures lapsed still being visible — stays on the line as `boundVentures`,
+>   which counts every binding and ranks right behind an outstanding draw. `contingent-verify` §6 and
+>   `contingent.test.ts`'s A13 case now check `DRAWN` on the live frame while the draw is outstanding and
+>   `UNUSED` + `boundVentures: 1` (equal to the row cache) after the release. The recap printed `spent` alone
+>   as "N drawn so far", so a contingent-only draw — the A6 attack's shape — was mailed as "0 drawn so far";
+>   it now prints both limits ("1,800 of it drawn"), and the client's two direct-only cells sum both too.
+>   Heuristic worlds cannot reach the bug (**0 releases** on `s1`, `s2`, `fz-13`, `g01` at 900 ticks), so
+>   `the-authority-line-is-net-of-releases.spec.ts` scripts the delegate: three BUILDs, each lapsing, on a
+>   1.5×-one-draw limit — gross 3× the draw, published 0. Mutation: drop the release fold → 6 red across
+>   three files.
+> - **The ticker is published NEWEST FIRST, on both frames** (`contract.ts:publishedTicker`, documented on
+>   both `ticker` fields). It was the 32-line ring's order, oldest first, and every reader took the head —
+>   the map strip's `slice(0, 6)`, the RECORD panel's numbering, and `mcp/spectator.mjs`'s
+>   `take(frame.ticker, 12)` under a tool described as "the latest ticker lines". Newest first makes every
+>   head-taker right, including an old cached client; the RECORD panel now says "newest first".
+>   `the-ticker-reads-newest-first.spec.ts` drives 5 Reckonings (the ring first fills at tick 1220): every new
+>   line lands at the head, 4 of them into a full ring, and the nightly ticker equals the live one at each
+>   settlement. Mutation: drop the reverse → 3 red. `mcp/test`: the summary keeps the head (mutation: take the
+>   tail → red).
+> - **The map from genesis.** A new season clears the frames, so for 288 ticks there was no `latest.json`,
+>   the site drew "NO MAP UNTIL THE FIRST RECKONING", and the MCP rundown/dossier said NOT_YET. The live frame
+>   now carries `map` — from one builder, `Runtime.frameMap`, extracted from `reckoningFrame` (the nightly
+>   maps are byte-identical) — **while `lastReckoning === null`, and `[]` after**; no archive file or index row
+>   is written before the first settlement. `assertLiveFrameBudgets` refuses a map beside a `lastReckoning`
+>   and runs the nightly frame's strait rules (`mapProblems`, extracted from `assertFrameBudgets`); `map` joins
+>   `LIVE_FACT_KEYS` on its `PUBLIC_FACT_KEYS` argument. Client `derive()` hands every screen a
+>   Reckoning-shaped `R` with that map (no `reckoningIndex`, so meters still say "awaiting the first
+>   settlement"), keeping the last one seen so the map does not blink while `latest.json` loads; the empty
+>   state now reads "NO MAP YET". MCP `eve_rundown`/`eve_dossier` fall back to `live.json` (the clock, the
+>   live claims and authority, `status`). The engine's `GET /frames/:name` serves `live.json` (it answered
+>   "no frame live.json" on every local world). Cost: +7 KB on `live.json` for the first 287 ticks only,
+>   +0.05 ms per live frame. Headless screenshots at tick 100: before "0 CHARTED SYSTEMS · 0 LANES", after
+>   "30 CHARTED SYSTEMS · 35 LANES · 10 STRAITS". `the-map-from-genesis.spec.ts` (6) and a new MCP protocol
+>   subtest against the built engine. Mutations: the map spread, the refusal, the graph rules, the route —
+>   each red.
+> - Client asset version **`?v=42`** (index.html, INFRA.md, COMPLETION.md, `client-surface.test.ts`).
+>
+> **`npm run gate0`:** tsc 0 · lint 0 · DET-8 and PROP-O3 pass · budgets 15/15 · 40/40 · 11/11 · 8/8 ·
+> **380 files, 4,408 passed, 1 skipped, 0 failed** (537 s). **`mcp`:** `npm test` **16 passed, 0 failed**
+> (engine rebuilt first — the protocol test imports `engine/dist`). Thirteen mutations run, thirteen red.
+>
+> **Doc sentences for the agent that owns `agent.md`** (not edited here): §8 could add that until the first
+> Reckoning settles `/frames/live.json` also carries `map`, and §11G's *"`frames/latest.json`'s
+> `map[].straits` names them"* is true of `live.json` too until then; neither frame's ticker order is stated.
+
+> ### 2026-10-02 — ★ SEASON 1 IS LIVE (`agenteve-season-1`, `RULES_VERSION` 41, revision `0aafdf6`, then the seats fix)
 >
 > Cut over at ~10:38 UTC with `deploy/new-season-standalone.sh --seed agenteve-season-1 --cast 20 --seats 1000
 > --memory-gb 8 --yes-end-the-current-world`, after a `--dry-run` against the live box (genesis pre-flight
@@ -27,7 +105,7 @@
 > `season1-surface-fixes`) must deploy before the first Reckoning writes a frame (tick 287, ~24 h after
 > genesis); the connector (`connector-phase1`, built, not deployed) waits on four owner decisions.
 
-> ### 2026-10-02 (latest) — A BLIND PLAYTEST OF THE MERGED SEASON 1, TWO VERIFIERS, AND FOUR RULES FIXES BEFORE ANY WORLD RAN IT (on `master`, after the merge of all Season 1 branches)
+> ### 2026-10-02 — A BLIND PLAYTEST OF THE MERGED SEASON 1, TWO VERIFIERS, AND FOUR RULES FIXES BEFORE ANY WORLD RAN IT (on `master`, after the merge of all Season 1 branches)
 >
 > A blind probe played the merged tree for ~50 minutes on a local turbo world (`s1blind-ada`, `s1blind-bo`,
 > five Reckonings) and reported 21 findings; two read-only verifier agents checked every one against the code

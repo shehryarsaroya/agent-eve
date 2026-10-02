@@ -314,14 +314,15 @@ function recordFor(h: string, row: StandingRow, d: Delta | null): string {
  * The night's settled ventures that name this principal.
  *
  * ══════════════════════════════════════════════════════════════════════════
- * **`cast` IS THE ROLE-HOLDERS, NOT EVERY PARTY** — measured, not assumed. A segment's chips
- * come from `venture.partiesOf`, which is "distinct principals holding a role", and the
+ * **`cast` WAS THE ROLE-HOLDERS, NOT EVERY PARTY** — measured, not assumed. A segment's chips
+ * came from `venture.partiesOf`, which is "distinct principals holding a role", and the
  * creator who PAYS usually holds none. On the first world this was run against, `sable`'s own
  * default ("sable walked away from 382 of the 2K it had promised") carried
  * `cast: [varrow, vex]`, so a cast-only filter dropped the one beat sable's followers most
- * needed. The creator is therefore found two more ways: the compact link for the same venture
- * (`CompactLink.a` is the creator, by contract), and the frame's own deed template, which
- * always opens with the payer's handle and a possessive.
+ * needed. Since 2026-10-02 the renderer puts the payer FIRST in the cast (`render.ts:settlementCast`),
+ * and the two other ways the creator is found stay, for a frame written before that and read back off
+ * disk: the compact link for the same venture (`CompactLink.a` is the creator, by contract), and the
+ * frame's own deed template, which always opens with the payer's handle and a possessive.
  * ══════════════════════════════════════════════════════════════════════════
  */
 function settlementBeats(ctx: Ctx): readonly Ranked[] {
@@ -508,13 +509,20 @@ function grantLines(ctx: Ctx): readonly Ranked[] {
     const iAmDelegate = a.delegate === pid;
     const other = name(iAmDelegate ? a.grantor : a.delegate);
     const limits = `up to ${fmt(a.granted)} of direct loss and ${fmt(a.grantedContingent)} of contingent liability`;
+    // ★ BOTH limits, as they stand. `spent`/`spentContingent` are what is drawn and not given back
+    // (net of releases — `frames/authority.ts`), and this sentence used to print the direct half alone
+    // as "drawn so far": a delegate that had bound its grantor to 44,000 of contingent liability and
+    // moved no escrow was mailed to the grantor's followers as "0 drawn so far" — the A6 attack's
+    // innocent pixel, one medium over.
+    const drawnNow = a.spent + a.spentContingent;
+    const drawnText = drawnNow === 0 ? 'none of it drawn' : `${fmt(drawnNow)} of it drawn`;
     const prior = before.get(String(a.grant));
     if (ctx.baseline === null) {
       out.push({
         rank: 10,
         text: iAmDelegate
-          ? `${other} has given ${h} authority to act in its name, ${limits}; ${fmt(a.spent)} drawn so far.`
-          : `${h} has given ${other} authority to act in its name, ${limits}; ${fmt(a.spent)} drawn so far.`,
+          ? `${other} has given ${h} authority to act in its name, ${limits}; ${drawnText}.`
+          : `${h} has given ${other} authority to act in its name, ${limits}; ${drawnText}.`,
       });
       continue;
     }
@@ -526,8 +534,8 @@ function grantLines(ctx: Ctx): readonly Ranked[] {
       out.push({
         rank: 23,
         text: iAmDelegate
-          ? `${other} has given ${h} authority to act in its name, ${limits}; ${fmt(a.spent)} drawn so far.`
-          : `${h} has given ${other} authority to act in its name, ${limits}; ${fmt(a.spent)} drawn so far.`,
+          ? `${other} has given ${h} authority to act in its name, ${limits}; ${drawnText}.`
+          : `${h} has given ${other} authority to act in its name, ${limits}; ${drawnText}.`,
       });
       continue;
     }

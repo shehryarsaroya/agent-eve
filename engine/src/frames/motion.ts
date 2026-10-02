@@ -108,6 +108,105 @@ export function convoyLinesFor(args: ConvoyLinesArgs): readonly ConvoyLine[] {
     .slice(0, args.limit ?? MAX_FRAME_CONVOY_LINES);
 }
 
+// ── ★ WHO A COMPACT IS "WITH" — ONE RULE FOR THE LINK AND THE DEED ─────────
+
+/**
+ * One payee of a compact that has SETTLED: its elective half as the settlement computed it, summed
+ * over every role the principal held. `electiveDue - electivePaid === electiveShortfall`, exactly as on
+ * each `RolePayout` it is folded from (`venture/settlement.ts`) — the same three words, because they
+ * are the same three quantities (HARD RULE 4).
+ */
+export interface SettledPayee {
+  readonly principal: PrincipalId;
+  readonly electiveDue: Minor;
+  readonly electivePaid: Minor;
+  /** What the payer withheld from this principal. Zero on a role paid in full. */
+  readonly electiveShortfall: Minor;
+}
+
+/** The fields of a `RolePayout` the fold reads — structural, so this file stays off the venture module. */
+export interface PayoutRead {
+  readonly holder: PrincipalId | null;
+  readonly electiveDue: Minor;
+  readonly electivePaid: Minor;
+  readonly electiveShortfall: Minor;
+}
+
+/**
+ * A settlement's payouts, folded per PRINCIPAL and in id order. A role nobody held pays nobody and is
+ * dropped; a principal holding two roles is one payee, because the deed and the link name agents, not
+ * slots. The payer itself appears when it filled a role of its own — the readers decide what that means.
+ */
+export function payeesOf(payouts: readonly PayoutRead[]): readonly SettledPayee[] {
+  const by = new Map<PrincipalId, { due: number; paid: number; short: number }>();
+  for (const p of payouts) {
+    if (p.holder === null) continue;
+    const acc = by.get(p.holder) ?? { due: 0, paid: 0, short: 0 };
+    acc.due += p.electiveDue;
+    acc.paid += p.electivePaid;
+    acc.short += p.electiveShortfall;
+    by.set(p.holder, acc);
+  }
+  return [...by.entries()]
+    .sort((a, b) => compareIds(a[0], b[0]))
+    .map(([principal, v]) => ({
+      principal,
+      electiveDue: minor(v.due),
+      electivePaid: minor(v.paid),
+      electiveShortfall: minor(v.short),
+    }));
+}
+
+/** One party to a compact, as {@link counterpartiesOf} reads it. */
+export interface CompactPartyRead {
+  readonly principal: PrincipalId;
+  /** What rides on this party's roles: the pinned elective while the compact is live, the DUE once settled. */
+  readonly riding: Minor;
+  /** What the creator withheld from it at settlement. Zero while the compact is live. */
+  readonly shorted: Minor;
+}
+
+/**
+ * ★ **The creator's counterparties, most-wronged first** — the ONE ordering both THE COMPACT LINK's `b`
+ * and the rundown's deed (`render.ts:headlineFor`) read.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * **THE DEED NAMED A FILLER PAID IN FULL AS THE VICTIM OF A DEFAULT, AND THE SAME FRAME'S LINK DREW TO
+ * THE REAL ONE.** A blind playtest's frame: `v:932` was `s1blind-bo`'s own DIG, `varrow` was elected
+ * 100 of 169 due and `severin` was paid in full — and the deed read *"s1blind-bo's 225 was riding on
+ * severin's dig. s1blind-bo walked away from 69 of the 225 it had promised"*. `headlineFor` named the
+ * first non-creator party in id order; `compactLinksFor` named the one with the largest elective. Two
+ * rules, one venture, two agents — and the deed is the half that is archived and emailed (A5′).
+ * ══════════════════════════════════════════════════════════════════════════
+ *
+ * So one rule, here: among the parties other than the creator, the one the creator **shorted** most
+ * comes first — a broken compact is a story about its victim — then the one with the most **riding**
+ * on it, then the lower id (DET-2). On a live compact nobody has been shorted yet, so this is exactly
+ * the previous link rule. Per PRINCIPAL rather than per role, so a party holding two roles is weighed
+ * by both.
+ */
+export function counterpartiesOf(
+  creator: PrincipalId,
+  parties: readonly CompactPartyRead[],
+): readonly CompactPartyRead[] {
+  const by = new Map<PrincipalId, { riding: number; shorted: number }>();
+  for (const p of parties) {
+    if (p.principal === creator) continue;
+    const acc = by.get(p.principal) ?? { riding: 0, shorted: 0 };
+    acc.riding += p.riding;
+    acc.shorted += p.shorted;
+    by.set(p.principal, acc);
+  }
+  return [...by.entries()]
+    .map(([principal, v]) => ({ principal, riding: minor(v.riding), shorted: minor(v.shorted) }))
+    .sort((a, b) => b.shorted - a.shorted || b.riding - a.riding || compareIds(a.principal, b.principal));
+}
+
+/** A settled compact's payees as the counterparty rule reads them. One mapping, for the link and the deed. */
+export function settledParties(payees: readonly SettledPayee[]): readonly CompactPartyRead[] {
+  return payees.map((p) => ({ principal: p.principal, riding: p.electiveDue, shorted: p.electiveShortfall }));
+}
+
 // ── ★ THE COMPACT LINK ──────────────────────────────────────────────────────
 
 /** One venture, as this builder needs it. A projection, never the record. */
@@ -122,6 +221,13 @@ export interface CompactVentureRead {
   /** The unsecured proportion of the whole compact, in bps. A7's half that stays a promise. */
   readonly electiveBps: number;
   readonly grant: GrantId | null;
+  /**
+   * ★ The settlement's payees, when this compact settled on the frame being built — null or absent
+   * while it is live. With them the link's `b` is chosen from what the settlement DID (who was
+   * shorted, who was due what), by {@link counterpartiesOf} — the rule the rundown's deed reads — so
+   * the snap and the sentence name the same agent.
+   */
+  readonly payees?: readonly SettledPayee[] | null;
 }
 
 export interface CompactLinksArgs {
@@ -171,13 +277,16 @@ function compactLegend(kind: string, atStake: Minor, state: VentureState, partie
 export function compactLinksFor(args: CompactLinksArgs): readonly CompactLink[] {
   const links: CompactLink[] = [];
   for (const v of args.ventures) {
-    // The counterparty with the most riding on it. `null` while no role is filled — a compact with
-    // one party is not a link, and drawing one to nowhere would assert a relationship that does not
-    // exist (A5′). That state has its own signature already: `glyph.state: FORMING` is the socket.
-    const other = [...v.filled]
-      .filter((r) => r.principal !== v.creator)
-      .sort((a, b) => b.elective - a.elective || compareIds(a.principal, b.principal))[0];
-    const b = other?.principal ?? null;
+    // The counterparty, by THE rule the rundown's deed reads ({@link counterpartiesOf}): the one the
+    // creator shorted most on a compact that settled tonight, else the one with the most riding on it.
+    // `null` while no role is filled — a compact with one party is not a link, and drawing one to
+    // nowhere would assert a relationship that does not exist (A5′). That state has its own signature
+    // already: `glyph.state: FORMING` is the socket.
+    const counted =
+      v.payees === undefined || v.payees === null
+        ? v.filled.map((r) => ({ principal: r.principal, riding: r.elective, shorted: minor(0) }))
+        : settledParties(v.payees);
+    const b = counterpartiesOf(v.creator, counted)[0]?.principal ?? null;
     const bAt = b === null ? null : args.holdingAt(b);
     const aAt = args.holdingAt(v.creator);
     if (aAt === null) continue;

@@ -515,12 +515,22 @@ describe('A13 — contingent draw renders, so the attack cannot look UNUSED', ()
     // grantor's name — moving no escrow at all — rendered as `UNUSED`. An innocent pixel
     // signature over an unbounded liability is worse than no pixel signature (A13).
     const w = world('c-render');
-    grant(w, { direct: 0, contingent: 400_000 });
+    const id = grant(w, { direct: 0, contingent: 400_000 });
     expect(createOnBehalf(w, { kind: 'BUILD' })).toBeNull();
     const drawn = w.runtime.ventures
       .forPrincipal(w.grantor)
       .reduce((n, v) => n + worstCaseElective(v), 0);
     expect(drawn).toBeGreaterThan(0);
+
+    // While the draw is OUTSTANDING — the venture's window still open — the line must show it. This is
+    // the frame published every tick; the nightly one below meets the draw after it was given back.
+    const line = w.runtime.liveFrame().authorityLines.find((l) => l.grantor === w.grantor);
+    if (line === undefined) throw new Error('the grant drew no authority line at all');
+    expect(line.spent).toBe(0); // no escrow moved — this is why the old state read UNUSED
+    expect(line.spentContingent).toBe(drawn);
+    expect(line.grantedContingent).toBe(400_000);
+    expect(line.state).toBe('DRAWN');
+    expect(line.state).not.toBe('UNUSED');
 
     while (w.runtime.engine.tick <= SETTLE_TICK) {
       const report = w.runtime.runTick();
@@ -530,15 +540,14 @@ describe('A13 — contingent draw renders, so the attack cannot look UNUSED', ()
         );
       }
     }
-    const frame = w.runtime.reckoningFrame();
-    const line = frame?.authorityLines.find((l) => l.grantor === w.grantor);
-    if (line === undefined) throw new Error('the grant drew no authority line at all');
-
-    expect(line.spent).toBe(0); // no escrow moved — this is why the old state read UNUSED
-    expect(line.spentContingent).toBe(drawn);
-    expect(line.grantedContingent).toBe(400_000);
-    expect(line.state).toBe('DRAWN');
-    expect(line.state).not.toBe('UNUSED');
+    // The BUILD's window closed with no role filled, so its draw was RELEASED (`RULES_VERSION` 26) and
+    // the headroom is back on the limit. The nightly line is NET of that release (2026-10-02 — a gross
+    // sum is not bounded by the limit, see `frames/authority.ts`), and the binding is still counted.
+    const settled = w.runtime.reckoningFrame()?.authorityLines.find((l) => l.grantor === w.grantor);
+    if (settled === undefined) throw new Error('the grant drew no authority line on the nightly frame');
+    expect(settled.spentContingent).toBe(w.runtime.grants.get(id)?.spentContingent);
+    expect(settled.spentContingent).toBe(0);
+    expect(settled.boundVentures).toBe(1);
     expect(FREEZE_TICK).toBeLessThan(SETTLE_TICK); // the clock the loop above relies on
   });
 

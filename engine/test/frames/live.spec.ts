@@ -410,6 +410,7 @@ describe('★ A6 — the authority line ranks by whether anything HAPPENED', () 
         grant('g:small', { maxDirectLoss: minor(10) }),
       ],
       draws: [{ grant: 'g:small' as GrantId, direct: minor(5), contingent: minor(0) }],
+      releases: [],
       headroom: (id) => (id === ('g:small' as GrantId) ? { direct: minor(5), contingent: minor(0) } : { direct: minor(900_000), contingent: minor(0) }),
       boundVentures: new Map(),
       dossiers: new Map(),
@@ -431,6 +432,7 @@ describe('★ A6 — the authority line ranks by whether anything HAPPENED', () 
         { grant: 'g:2' as GrantId, direct: minor(1), contingent: minor(0) },
         { grant: 'g:1' as GrantId, direct: minor(4), contingent: minor(1) },
       ],
+      releases: [],
       headroom: () => ({ direct: minor(100), contingent: minor(100) }),
       boundVentures: new Map(),
       dossiers: new Map(),
@@ -453,6 +455,7 @@ describe('★ A6 — the authority line ranks by whether anything HAPPENED', () 
     const args = {
       grants: [grant('g:gone', { expiresTick: 5 })],
       draws: [{ grant: 'g:gone' as GrantId, direct: minor(9), contingent: minor(0) }],
+      releases: [],
       headroom: () => ({ direct: minor(0), contingent: minor(0) }),
       boundVentures: new Map(),
       dossiers: new Map(),
@@ -469,6 +472,7 @@ describe('★ A6 — the authority line ranks by whether anything HAPPENED', () 
       ...authorityLinesFor({
         grants: [grant('g:huge', { maxDirectLoss: minor(9_000_000) })],
         draws: [],
+        releases: [],
         headroom: () => ({ direct: minor(1), contingent: minor(1) }),
         boundVentures: new Map(),
         dossiers: new Map(),
@@ -485,6 +489,7 @@ describe('★ A6 — the authority line ranks by whether anything HAPPENED', () 
     const lines = authorityLinesFor({
       grants: [grant('g:x', { expiresTick: 5, revokedAtTick: 3 })],
       draws: [],
+      releases: [],
       headroom: () => ({ direct: minor(0), contingent: minor(0) }),
       boundVentures: new Map(),
       dossiers: new Map(),

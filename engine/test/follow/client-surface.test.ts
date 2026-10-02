@@ -22,15 +22,17 @@ const LANDING = read('lib/landing.js');
 const SCREENS = read('lib/screens.js');
 
 describe('the client loads the follow form, on one asset version', () => {
-  it('every asset carries the same ?v=, and it is 41', () => {
+  it('every asset carries the same ?v=, and it is 42', () => {
     const versions = [...INDEX.matchAll(/\?v=(\d+)/g)].map((m) => m[1]);
     expect(versions.length).toBeGreaterThanOrEqual(8);
-    expect(new Set(versions)).toEqual(new Set(['41']));
+    // 42: the frames fixes changed `app.js`, `lib/screens.js` and `lib/mapview.js` (the genesis map,
+    // the ticker read newest first, the authority cells on both limits).
+    expect(new Set(versions)).toEqual(new Set(['42']));
     const infra = readFileSync(new URL('../../../docs/background/INFRA.md', import.meta.url), 'utf8');
-    expect(infra).toContain('?v=41');
+    expect(infra).toContain('?v=42');
     // Season 1's four lanes each pre-assigned their own number (35, 35, 40) on top of master's 34;
     // the merge took one, and none of the others may survive in the doc an operator reads.
-    for (const stale of ['?v=34', '?v=35', '?v=40']) expect(infra).not.toContain(stale);
+    for (const stale of ['?v=34', '?v=35', '?v=40', '?v=41']) expect(infra).not.toContain(stale);
   });
 
   it('follow.js loads after ui.js (it uses U) and before both screens that mount it', () => {

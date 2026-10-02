@@ -360,12 +360,13 @@ var Screens = (function () {
       // that restates the header is 200px of nothing.
       tile('LIVE COMPACTS', String((L && L.meters ? L.meters.live : 0) + (L && L.meters ? L.meters.forming : 0)),
         { note: (L && L.meters ? L.meters.forming : 0) + ' still forming' }),
-      // NOT "0". The lane graph is published at settlement; a live world with
-      // fifteen rows in eight named systems that says it has zero of them is
-      // the only false statement this client can make.
+      // NOT "0". A live world with fifteen rows in eight named systems that
+      // says it has zero of them is the only false statement this client can
+      // make. The lane graph rides the live frame until the first settlement
+      // and the Reckoning frame after it, so a dash means neither was read.
       (R.map || []).length
         ? tile('SYSTEMS', String(R.map.length), { note: D.laneCount + ' lanes · ' + D.straitCount + ' straits' })
-        : tile('SYSTEMS', '—', { dim: true, note: 'the lane graph is published at settlement' }),
+        : tile('SYSTEMS', '—', { dim: true, note: 'no frame with the lane graph has been read' }),
       tile('ON A PROMISE NOW', U.n((L && L.meters ? L.meters.onAPromise : M.onAPromise)),
         { note: 'live · riding on nothing but a word' }),
       // ★ SCOPE IN THE LABEL. `meters.keptRecent`/`brokenRecent` count ELECTIVE HALVES
@@ -509,7 +510,9 @@ var Screens = (function () {
       }))));
 
     stack.appendChild(panel('THE RECORD', {
-      sub: 'the export surface · 140 chars, bounded',
+      // NEWEST FIRST: both frames publish the ticker that way (`frames/contract.ts:publishedTicker`),
+      // so 01 is the latest line. It used to be the oldest of the ring's 32.
+      sub: 'the export surface · newest first · 140 chars, bounded',
       right: 'tick ' + (L ? L.tick : R.tick),
     },
       (D.ticker.length ? el('div', { class: 'log' }, D.ticker.slice(0, 60).map(function (t, i) {
@@ -768,7 +771,18 @@ var Screens = (function () {
       { k: 'grant', t: 'grant', w: '116px', cell: function (a) { return el('span', { class: 'dim', text: a.grant }); } },
       { k: 'granted', t: 'max direct loss', w: '112px', num: true, cell: function (a) { return U.n(a.granted); } },
       { k: 'grantedContingent', t: 'max contingent', w: '112px', num: true, cell: function (a) { return U.n(a.grantedContingent); } },
-      { k: 'spent', t: 'drawn', w: '68px', num: true, cell: function (a) { return a.spent ? U.n(a.spent) : el('span', { class: 'dim', text: '0' }); } },
+      // BOTH limits, as the GRANTS screen's own cell already sums them: the A6 attack draws only the
+      // contingent one, and a cell reading `spent` alone printed 0 over it. Outstanding, never above
+      // the limit — the engine nets the draws of ventures that retired unbound.
+      {
+        k: 'spent', t: 'drawn', w: '68px', num: true,
+        cell: function (a) {
+          var d = (a.spent || 0) + (a.spentContingent || 0);
+          return d ? el('span', { title: 'direct ' + U.n(a.spent) + ' · contingent ' + U.n(a.spentContingent), text: U.n(d) })
+            : el('span', { class: 'dim', text: '0' });
+        },
+        sort: function (a) { return (a.spent || 0) + (a.spentContingent || 0); },
+      },
       { k: 'clearance', t: 'clearance', w: '74px', cell: function (a) { return U.pips(a.clearance); } },
       { k: 'state', t: 'state', cell: function (a) { return U.tag(a.state, a.state === 'DRAWN' ? 'solid' : a.state === 'REVOKED' ? 'am' : 'cy'); } },
     ], auth, { sort: 'granted', dir: -1, rerender: D.rerender })
@@ -1227,7 +1241,9 @@ var Screens = (function () {
       }, S('title', {
         text: U.handleOf(a.grantor) + ' → ' + U.handleOf(a.delegate) + ' · MAX DIRECT LOSS ' +
           U.n(a.granted) + ' · MAX CONTINGENT ' + U.n(a.grantedContingent) + ' · ' + a.state +
-          (a.spent ? ' · spent ' + U.n(a.spent) : ''),
+          (a.spent || a.spentContingent
+            ? ' · drawn ' + U.n(a.spent || 0) + ' direct, ' + U.n(a.spentContingent || 0) + ' contingent'
+            : ''),
       })));
       if (revoked) {
         // the mock's double-slash across a revoked edge
@@ -1672,7 +1688,8 @@ var Screens = (function () {
         sel: function (s) { return s.id === MapView.selected(); },
         onRow: function (s) { MapView.select(s.id); draw(); markRail(); },
       }) : empty('no topology on the frame',
-        'The lane graph is on the Reckoning frame only. Nothing to lay out until the first settlement.'),
+        'The lane graph rides the live frame until the first Reckoning settles, and the Reckoning frame ' +
+        'after it. Neither has been read yet.'),
       { style: 'flex:1 1 58%;min-height:0' });
     rail.appendChild(sysPanel);
     rail.appendChild(promisesRail(D, function (s) { MapView.select(s); draw(); markRail(); }));
@@ -2001,6 +2018,8 @@ var Screens = (function () {
     wrap.appendChild(rail);
 
     // ── the record strip along the bottom, as the concept has it ────────
+    // The six NEWEST lines: the ticker is published newest first. It used to be
+    // oldest first, so this strip showed the six oldest of 32.
     var lines = (D.ticker || []).slice(0, 6);
     wrap.appendChild(el('div', {
       class: 'zlog', style: 'left:320px;right:' + (RAIL_W + 6) + 'px',

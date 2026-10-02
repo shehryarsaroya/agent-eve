@@ -18,6 +18,16 @@
  * A re-seeded world has no `latest.json` at all (404 until the first
  * settlement). That is a NORMAL STATE, not an error, and every screen has to
  * read as "nothing yet" rather than as a broken layout when it happens.
+ *
+ * ★ THE MAP FROM GENESIS. Until that first settlement the live frame carries
+ * the topology itself (`live.json`'s `map`, empty after it), and `derive()`
+ * hands every screen a Reckoning-shaped `R` holding that map and nothing else —
+ * no `reckoningIndex`, so every meter still reads "awaiting the first
+ * settlement" while the chart draws. A new season used to show
+ * "NO MAP UNTIL THE FIRST RECKONING" for its whole first day.
+ *
+ * ★ THE TICKER IS NEWEST FIRST on both frames (`frames/contract.ts:
+ * publishedTicker`), so every reader that takes the head takes the latest.
  */
 /* eslint-env browser */
 'use strict';
@@ -36,6 +46,7 @@ var App = (function () {
     lastLiveAt: 0,
     liveFail: 0,
     derived: null,
+    genesisMap: null,   // the live frame's map, kept until a Reckoning frame brings its own
   };
 
   var TABS = [
@@ -64,6 +75,9 @@ var App = (function () {
       if (!j) { S.liveFail++; return; }
       S.liveFail = 0; S.lastLiveAt = Date.now();
       var settled = S.L && j.lastReckoning !== S.L.lastReckoning;
+      // Kept rather than read fresh each time: the tick that settles the first
+      // Reckoning drops the map from live.json before latest.json has loaded here.
+      if (j.map && j.map.length) S.genesisMap = j.map;
       S.L = j;
       if (settled && !S.pinned) { loadIndex(); loadLatest(); }
       render();
@@ -92,6 +106,17 @@ var App = (function () {
   // live frame is NEWER, so for anything both frames carry it wins.
   function derive() {
     var R = S.R || {}, L = S.L;
+    if (!(R.map && R.map.length)) {
+      // ★ GENESIS: no settled frame carries the lane graph yet, so the live
+      // frame's does. A shallow copy, so the frame object itself is untouched.
+      var topology = (L && L.map && L.map.length) ? L.map : S.genesisMap;
+      if (topology && topology.length) {
+        var withMap = {};
+        for (var key in R) if (Object.prototype.hasOwnProperty.call(R, key)) withMap[key] = R[key];
+        withMap.map = topology;
+        R = withMap;
+      }
+    }
     var sysIndex = {};
     (R.map || []).forEach(function (s) { sysIndex[s.id] = s; });
     var byPrincipal = {};
@@ -101,6 +126,7 @@ var App = (function () {
     glyphs.forEach(function (g) { glyphIndex[g.venture] = g; });
     var links = (L && L.compactLinks && L.compactLinks.length) ? L.compactLinks : (R.compactLinks || []);
     var authority = (L && L.authorityLines && L.authorityLines.length) ? L.authorityLines : (R.authorityLines || []);
+    // Newest first on both frames, so `ticker[0]` is the latest line everywhere it is read.
     var ticker = (L && L.ticker && L.ticker.length) ? L.ticker : (R.ticker || []);
     // ★ 41 — who is dealing, and the letters that have declassified. Live first, like every other
     // moving line: the live frame is newer, and both frames build these from one builder.

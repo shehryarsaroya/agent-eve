@@ -447,24 +447,43 @@ describe('5. INV-22 after the new accruals', () => {
 // ── 6. A13: the attack cannot render as UNUSED ───────────────────────────────
 
 describe('6. the authority line reads both limits', () => {
-  it('renders DRAWN with the contingent amount when only the contingent half moved', () => {
+  it('renders DRAWN with the contingent amount while only the contingent half is outstanding', () => {
     const w = world('render');
-    issueGrant(w, 0, 400_000);
+    const id = issueGrant(w, 0, 400_000);
     expect(delegatedCreate(w, { kind: 'BUILD' })).toBeNull();
     const bound = p90ElectiveCeiling(
       w.runtime.ventures.forPrincipal(w.grantor)[0] ?? (undefined as never),
     );
+    // While the venture's window is open its draw is OUTSTANDING, and the live frame — the artifact
+    // published every tick — must show it: no escrow moved, so `spent` is 0 and a line that read the
+    // direct half alone would render the A6 attack `UNUSED`, which is the defect this case forbids.
+    const live = w.runtime.liveFrame().authorityLines.find((l) => l.grantor === w.grantor);
+    if (live === undefined) throw new Error('no authority line on the live frame');
+    expect(live.spent).toBe(0);
+    expect(live.spentContingent).toBe(bound);
+    expect(live.grantedContingent).toBe(400_000);
+    expect(live.state).toBe('DRAWN');
+
     while (w.runtime.engine.tick <= SETTLE_TICK) runTick(w.runtime);
     const line = w.runtime.reckoningFrame()?.authorityLines.find((l) => l.grantor === w.grantor);
     if (line === undefined) throw new Error('no authority line');
+    // ★ NET of the release journal, 2026-10-02. This venture's window closed unfilled inside the
+    // cycle, so its draw was RELEASED (`RULES_VERSION` 26): the headroom is back on the LIMIT and the
+    // delegate may draw it again. This case used to pin the GROSS figure here — and a gross sum is not
+    // bounded by the limit, which is how a grant whose ventures were all abandoned published `spent
+    // 14400` of a `10000` limit, `DRAWN`. `contract.ts` defines `DRAWN` as "some headroom used", and
+    // none is. What the delegate DID is still on the line: the venture it bound in the grantor's name.
+    //
+    // MUTATION: drop `releases` from `outstandingByGrant` (`frames/authority.ts`) and this reads
+    // `spentContingent: bound`, `DRAWN` again — RED on the next three assertions.
     expect(line.spent).toBe(0);
-    // ★ GROSS, from the spend journal. This venture's window closed unfilled inside the cycle, so
-    // its draw was RELEASED (`RULES_VERSION` 26) and the live row cache is back at zero — reading
-    // that here would render the A6 attack `UNUSED` again, which is the exact defect this case
-    // exists to forbid. The line's question is what the delegate DID.
-    expect(line.spentContingent).toBe(bound);
+    expect(line.spentContingent, 'a released draw is not outstanding').toBe(0);
+    expect(line.spentContingent, 'and the line agrees with the book INV-22 checks').toBe(
+      w.runtime.grants.get(id)?.spentContingent,
+    );
+    expect(line.state).toBe('UNUSED');
+    expect(line.boundVentures, 'the binding the delegate made is still counted').toBe(1);
     expect(line.grantedContingent).toBe(400_000);
-    expect(line.state).toBe('DRAWN');
     expect(FREEZE_TICK).toBeLessThan(SETTLE_TICK);
   });
 });
