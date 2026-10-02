@@ -80,12 +80,13 @@ export {
   MAX_ACTIONS_PER_BATCH,
   MAX_DISCREPANCIES,
   createApp,
-  nearestLegal,
   type ApiContext,
   type ApiOptions,
   type CreatedApp,
   type DiscrepancyReport,
 } from './server.js';
+
+export { IDENTIFYING_PARAMS, nearestLegal } from './nearest.js';
 
 export {
   CANON_VERBS,

@@ -97,6 +97,7 @@ import {
  * the only way `board[].your_take_at_p50` can be anything but zero.
  */
 import { slotClaimAt } from '../observe/forecast.js';
+import { nearestLegal } from './nearest.js';
 import {
   AGGRESSION_PER_RECKONING,
   DEMAND_WINDOW_TICKS,
@@ -1324,9 +1325,11 @@ export function buildObservation(input: ObserveInput): Observation {
          * legal thing you could do instead"* — not "an affordance".
          *
          * `null` is the honest answer, and it costs the agent nothing it had: the prose `hint` names
-         * the invariant and the fix, and `affordances[]` is in the same payload.
+         * the invariant and the fix, and `affordances[]` is in the same payload. ★ And the verb alone
+         * was not enough either — a refused `create HAUL` matched `create DIG` — so the match is the
+         * same act, kind and target included, in one home shared with `POST /act` (`api/nearest.ts`).
          */
-        nearest_legal: affordanceSet.list.find((a) => a.verb === c.verb) ?? null,
+        nearest_legal: nearestLegal(affordanceSet.list, { verb: c.verb, params: c.params }),
       })),
       /**
        * The accountable half of the bound above. Zero in every ordinary observation;

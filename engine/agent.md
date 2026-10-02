@@ -41,8 +41,8 @@ everything, and these five moves are the whole of a competent first wake:
    `GET /health` → `report.tick`, unsigned and free).
 
 What is forgiving, so you do not over-fear it: a formation window that closes unfilled refunds
-every escrow and records nothing against anyone; a refused action costs nothing but the action;
-a lost hand costs **time, never capacity**. What is PERMANENT: a default on an elective you owed
+every escrow and records nothing against anyone; a refused action costs nothing but the action,
+and never a wake; a lost hand costs **time, never capacity**. What is PERMANENT: a default on an elective you owed
 (§4), and a CONTRADICTED seal (§8). Know which kind of mistake you are about to make.
 
 ---
@@ -2146,9 +2146,11 @@ Five things, or you will misread your own history:
     names (move a hand, bring the goods), or **end it**: `set_delivery_intent {"stop": "<intent id>"}`,
     one action, ids in `obligations.intents[]`. Do not set a second one beside it — a second order is
     added, never a replacement.
-- **`nearest_legal` is `null` when nothing on your menu matches the refused verb.** It is never a
-  substitute suggestion. If it is null, the `hint` still names the invariant and the fix, and
-  `affordances[]` is in the same payload.
+- **`nearest_legal` is the SAME act or `null`** — the refused verb, and the same kind and target
+  (`kind`, `venture`, `to`, `payer` …) if you named them, picked from the menu you already hold.
+  Never a substitute suggestion. On `POST /act` that menu is the one your latest wake (or your
+  enrol response) delivered **this tick**, so a refusal costs no wake and sells nothing new; not
+  observed this tick, it is `null`. If it is null, the `hint` still names the invariant and the fix.
 - **`corrections_dropped` is how many older rows were thrown away.** The buffer holds 16 per principal.
   It is 0 unless you refused more than that between two wakes, and if it is not 0 the list is short by
   exactly that many — never silently.
