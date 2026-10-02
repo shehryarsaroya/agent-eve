@@ -31,11 +31,15 @@
 
 import { describe, expect, it } from 'vitest';
 import { inFreeze, setSpeed, TICKS_PER_RECKONING } from '../../src/core/time.js';
-import type { PrincipalId, SystemId } from '../../src/core/types.js';
+import type { EventId, PrincipalId, SystemId } from '../../src/core/types.js';
+import { minor } from '../../src/core/units.js';
 import { buildObservation } from '../../src/api/observe.js';
 import { HeuristicCast } from '../../src/cast/index.js';
-import { commonsSystems, handsOf, holdingOf } from '../../src/world/index.js';
+import { CURRENCY_FAUCET, storesAccount } from '../../src/ledger/index.js';
+import { finaleTickOf } from '../../src/season/index.js';
+import { commonsSystems, handsOf, holdingOf, tierOf } from '../../src/world/index.js';
 import { Runtime, type PendingCorrection } from '../../src/sim/runtime.js';
+import { finaleWorld, idleAt, WINDOW } from '../season/fixture.js';
 
 type Row = Record<string, unknown>;
 
@@ -379,5 +383,158 @@ describe('across a world nobody steers, no delegate is offered a fill the engine
     ).toBe(0);
     expect(barredCounted, 'and when a slot was barred, the menu must have said so in withheld').toBeGreaterThan(0);
     // A heuristic world of 900 ticks; slow under a loaded machine, hence the bound.
+  }, 900_000);
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// ★ THE TWO CREATES SEASON 1 ADDED TO THE MENU, HELD TO THE SAME RULE (Season 1 merge)
+//
+// The season lane offers `create {"kind":"BUILD","grand":true}` in the FINALE and the contact lane offers
+// `create {"kind":"SIEGE"}` outside the Commons. Both were written against a base where the menu asked
+// its questions at the tick it was READ; the stakes lane moved every question to the tick the act LANDS
+// and put the verb table's gates in front of every create. These cases hold both new offers to that.
+// ══════════════════════════════════════════════════════════════════════════
+
+/** The create affordances an observation offers, by kind (`GRAND` for the grand venture). */
+function createsOffered(o: Row): Map<string, Row> {
+  const out = new Map<string, Row>();
+  for (const a of (o['affordances'] ?? []) as Row[]) {
+    if (a['verb'] !== 'create') continue;
+    const params = a['params'] as Row;
+    out.set(params['grand'] === true ? 'GRAND' : String(params['kind']), a);
+  }
+  return out;
+}
+
+describe('the season’s grand create and the SIEGE create are offered exactly when the engine takes them', () => {
+  it('★ the grand create is offered from the tick before its window to the tick before it closes — never after — and each offer is taken', () => {
+    const early = 'p:early' as PrincipalId;
+    const late = 'p:late' as PrincipalId;
+    const tooLate = 'p:toolate' as PrincipalId;
+    // The world's first tick is the FINALE's first, so the observation before it reads `opens - 1`.
+    const w = finaleWorld('menu-engine-grand', [early, late, tooLate]);
+    const rt = w.runtime;
+    expect(rt.engine.tick, 'non-vacuity: reading the tick before the window opens').toBe(WINDOW.opens_tick - 1);
+
+    // ── THE OPENING EDGE: an act sent now lands on the window's first tick, so it is offered ──
+    const atOpen = createsOffered(observe(rt, early)).get('GRAND');
+    expect(atOpen, 'REGRESSION: the tick before the window withholds a create that lands inside it').toBeDefined();
+    expect(act(rt, early, 'create', atOpen?.['params'] as Row), 'offered, sent verbatim, accepted').toBeNull();
+    expect(rt.ventures.all().filter((v) => v.grand !== null && v.creator === early)).toHaveLength(1);
+
+    // ── THE CLOSING EDGE: offered on the last tick whose act still lands inside the window ──
+    while (rt.engine.tick < WINDOW.closes_tick - 1) rt.runTick();
+    const lastChance = createsOffered(observe(rt, late)).get('GRAND');
+    expect(lastChance, 'the last tick an act can still land inside the window offers it').toBeDefined();
+
+    // ── AND NOT ONE TICK LATER, WITH THE ENGINE'S OWN SENTENCE ─────────────────────────────
+    rt.runTick();
+    expect(rt.engine.tick).toBe(WINDOW.closes_tick);
+    const closed = observe(rt, tooLate);
+    expect(
+      createsOffered(closed).has('GRAND'),
+      'REGRESSION: the window’s last tick offers a create that lands after it closes',
+    ).toBe(false);
+    expect(reasonOf(closed), 'withheld, and told why (PROP-O1)').toContain(`was ${String(WINDOW.closes_tick)}`);
+    // The engine agrees about the act the menu withheld.
+    const refused = act(rt, tooLate, 'create', { kind: 'BUILD', stage: w.stage, grand: true });
+    expect(refused?.invariant, 'the engine refuses what the menu withheld').toBe('A14');
+  }, 300_000);
+
+  it('★ a principal that owes a seal is offered neither the grand create nor a SIEGE — and the engine agrees', () => {
+    const payer = 'p:payer' as PrincipalId;
+    const hauler = 'p:hauler' as PrincipalId;
+    const w = finaleWorld('menu-engine-grand-seal', [payer, hauler]);
+    const rt = w.runtime;
+    // A HAUL the two of them bind, so each holds a role in a LIVE venture it has not sealed (PROP-D4).
+    expect(act(rt, payer, 'create', { kind: 'HAUL', value: 12_000, stage: w.stage })).toBeNull();
+    rt.runTick();
+    const v = rt.ventures.forPrincipal(payer).find((x) => x.grand === null);
+    if (v === undefined) throw new Error('no HAUL formed');
+    for (const [who, role] of [
+      [payer, 0],
+      [hauler, 1],
+    ] as const) {
+      expect(act(rt, who, 'fill_role', { venture: v.id, role, hand: idleAt(rt, who, w.stage) })).toBeNull();
+    }
+    for (const who of [payer, hauler]) {
+      const sign = ((observe(rt, who)['affordances'] ?? []) as Row[]).find(
+        (a) => a['verb'] === 'sign' && (a['params'] as Row)['venture'] === v.id,
+      );
+      if (sign !== undefined) expect(act(rt, who, 'sign', sign['params'] as Row)).toBeNull();
+    }
+    expect(rt.ventures.get(v.id)?.state, 'non-vacuity: the HAUL bound').toBe('LIVE');
+    expect(rt.sealableRoles(hauler, rt.engine.tick + 1).length, 'non-vacuity: and the hauler owes a seal').toBeGreaterThan(0);
+    expect(rt.grandCreateRefusal(hauler, rt.engine.tick + 1), 'non-vacuity: the grand gates alone would take it').toBeNull();
+    expect(tierOf(rt.world.map, w.stage), 'non-vacuity: outside the Commons, where SIEGE is legal').not.toBe('COMMONS');
+
+    const seen = observe(rt, hauler);
+    const offered = createsOffered(seen);
+    expect(offered.has('GRAND'), 'REGRESSION: the grand create offered to a principal owing a seal').toBe(false);
+    expect(offered.has('SIEGE'), 'REGRESSION: a SIEGE offered to a principal owing a seal').toBe(false);
+    expect(reasonOf(seen)).toContain('PROP-D4');
+    const refused = act(rt, hauler, 'create', { kind: 'BUILD', stage: w.stage, grand: true });
+    expect(refused?.invariant, 'the engine refuses it for the reason the menu gave').toBe('PROP-D4');
+  }, 300_000);
+
+  it('★ across a FINALE the cast plays, every grand and SIEGE create the menu offers is accepted, sent verbatim', () => {
+    setSpeed('instant');
+    const seed = 'menu-engine-finale';
+    const start = WINDOW.opens_tick - 1;
+    const runtime = new Runtime({ seed, startTick: start });
+    const cast = new HeuristicCast(runtime, { size: 12 });
+    const members = cast.seat(seed);
+    // A world started this late has had no season to earn in (`the-cast-takes-the-finale.spec.ts`).
+    for (const m of members) {
+      runtime.ledger.issueCurrency({
+        eventId: `test.earn:${m.principal}` as EventId,
+        tick: start + 1,
+        faucet: CURRENCY_FAUCET.CIVIC_PROCUREMENT,
+        to: storesAccount(m.principal),
+        amount: minor(150_000),
+      });
+    }
+    const offered = { GRAND: 0, SIEGE: 0 };
+    const tried = new Set<string>();
+    const sent: { principal: PrincipalId; key: string; clientSequence: number }[] = [];
+    let refusals = 0;
+    while (runtime.engine.tick < finaleTickOf(1) - 1) {
+      const next = runtime.engine.tick + 1;
+      for (const action of cast.decide(next, seed)) runtime.engine.submit(action);
+      // Every 6 ticks, read every member's menu and send each new-kind create it is offered, verbatim,
+      // once per member and kind — the act an agent copying its menu would send.
+      if (next % 6 === 0) {
+        for (const m of members) {
+          for (const [key, a] of createsOffered(observe(runtime, m.principal))) {
+            if (key !== 'GRAND' && key !== 'SIEGE') continue;
+            offered[key] += 1;
+            const once = `${String(m.principal)}:${key}`;
+            if (tried.has(once)) continue;
+            tried.add(once);
+            const clientSequence = 50_000 + tried.size;
+            const out = runtime.engine.submit({
+              principal: m.principal,
+              verb: 'create',
+              params: a['params'] as Row,
+              clientSequence,
+              arrivalMs: 0,
+              decisionSource: 'LIVE',
+            });
+            expect(out.ok, `the door refused an offered ${key} create from ${m.principal}`).toBe(true);
+            sent.push({ principal: m.principal, key, clientSequence });
+          }
+        }
+      }
+      const report = runtime.runTick();
+      expect(report.halted, 'the world must not halt').toBe(false);
+      for (const s of sent.splice(0)) {
+        for (const c of runtime.peekCorrections(s.principal)) {
+          if (c.verb === 'create' && c.clientSequence === s.clientSequence) refusals += 1;
+        }
+      }
+    }
+    expect(offered.GRAND, 'non-vacuity: the FINALE offered the grand create to somebody').toBeGreaterThan(0);
+    expect(offered.SIEGE, 'non-vacuity: a member outside the Commons was offered a SIEGE').toBeGreaterThan(0);
+    expect(refusals, 'REGRESSION: an offered grand or SIEGE create, sent verbatim, was refused').toBe(0);
   }, 900_000);
 });

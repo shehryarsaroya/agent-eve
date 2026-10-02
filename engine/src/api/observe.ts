@@ -3186,12 +3186,25 @@ function affordancesFor(
   //     ceiling a delegated create is charged against a grant. Outside the window it is not offered and
   //     not counted: that is a clock, published in `header.season.grand`, not a refusal of this reader.
   //     ══════════════════════════════════════════════════════════════════════
+  //
+  //     ── ★ ASKED AT THE TICK THE ACT LANDS, BEHIND THE GATES EVERY create STANDS BEHIND (merge) ──
+  //
+  //     The stakes lane's rule, applied to the season lane's offer: an observation at `tick` sends a
+  //     create that resolves at `tick + 1`. Asked at `tick`, the window's last tick offered a create the
+  //     engine refuses one tick later (A14, "the last tick a grand candidate can be formed"), and the
+  //     tick before the window opened withheld one it would accept. And `create` sits behind
+  //     `committing ?? sealCompliance ?? commonsCapacityRejection` whatever its kind, so a principal that
+  //     owes a seal is counted in `createsGated` with that sentence instead of being offered a prize.
   let grandCreateWithheld: string | null = null;
   {
     const seasonNow = runtime.seasonBlock(tick, principal);
     const grand = seasonNow.grand;
-    if (grand.open_now && grand.stage !== null) {
-      const refused = runtime.grandCreateRefusal(principal, tick);
+    const landsAt = tick + 1;
+    const inPlay = grand.open_now || (landsAt >= grand.opens_tick && landsAt <= grand.closes_tick);
+    if (inPlay && grand.stage !== null && createGate !== null) {
+      createsGated += 1;
+    } else if (inPlay && grand.stage !== null) {
+      const refused = runtime.grandCreateRefusal(principal, landsAt);
       if (refused === null) {
         const ceiling = runtime.grandElectiveCeiling(seasonNow.season);
         eligible.push({
