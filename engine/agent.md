@@ -618,6 +618,7 @@ header            tick · serverNow · next_reckoning · actions_remaining · wa
                   · season (§5 — the FINALE countdown and the grand venture)
                   · parley{} (openings, answers owed, awaiting_reply[] — the letters
                   waiting on you, quoted — and the price; §4)
+                  · growth (§11H — qualified against needed, the newest constellation)
 hands[]           where each hand is, what it is doing, when it is free, what it carries
 holding           your holding's state, threats, upkeep due, commons_bound, graduation
 obligations       levy{ my_assessment, paid, deliverable_to, shortfall_if_unpaid,

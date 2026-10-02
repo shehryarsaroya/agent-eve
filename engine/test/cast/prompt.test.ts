@@ -1008,7 +1008,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
     // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_132);
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_219);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1105,12 +1105,14 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 112,787 = **7,213**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 106,276 — leaving **13,724**, against a required 4,000.
     //
-    // ── ★ ALL FOUR LANES, MERGED AND MEASURED: 118,132 ──
+    // ── ★ ALL FOUR LANES, MERGED AND MEASURED: 118,219 ──
     //
-    // Scale's §11H is not excerpted (`CONTRACT_NOT_EXCERPTED`), so it costs no cell. The three lanes that
-    // write excerpted rules composed exactly — 108,946 + 2,308 + 3,037 + 3,841 — so none displaced
-    // another. Analytic margin 120,000 − 118,132 = **1,868**.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_132);
+    // Scale's §11H is not excerpted (`CONTRACT_NOT_EXCERPTED`). The three lanes that write excerpted
+    // rules composed exactly — 108,946 + 2,308 + 3,037 + 3,841 = 118,132 — so none displaced another;
+    // then +87 on every position for the merge's own line, §6's `· growth (§11H …)`, because scale's
+    // `header.growth` was in every observation and named nowhere in the observe block. Analytic margin
+    // 120,000 − 118,219 = **1,781**: the analytic maximum still fits whole, and nothing is dropped.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_219);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1190,10 +1192,10 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ★ Then +2,784 for the season lane: its FLOOR unit and its two one-line mentions, on every
     // position.
     // ★ Then +3,841 for the contact lane: the PARLEY block rewritten (+1,893) on top of +1,948 every
-    // position pays (§4's four-role kinds, `ventures.directory`, §6's key lines). All four lanes merged
-    // and measured: 111,368, margin 120,000 − 111,368 = **8,632** against a
-    // required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_368);
+    // position pays (§4's four-role kinds, `ventures.directory`, §6's key lines), then +87 for §6's
+    // `· growth` line. All four lanes merged and measured: 111,455, margin 120,000 − 111,455 = **8,545**
+    // against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_455);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2912,14 +2914,15 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // pay nothing for eight rungs they cannot use. Measured by heading; the sums are exact.
       //
       // The three lanes composed exactly: every merged reading below is the sum of the lanes' own
-      // deltas on that row, so none displaced another. MEASURED on the merged tree, not added.
-      54_665, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact at 41)
-      65_176, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact at 41)
-      74_871, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact at 41)
-      79_906, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact at 41)
-      110_120, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact at 41)
-      91_753, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact at 41)
-      111_368, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841 at 41)
+      // deltas on that row, so none displaced another — then +87 on every row for §6's `· growth (§11H …)`
+      // line, the merge naming scale's `header.growth` in the observe block. MEASURED, not added.
+      54_752, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41)
+      65_263, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41)
+      74_958, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41)
+      79_993, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87 at 41)
+      110_207, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87 at 41)
+      91_840, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87 at 41)
+      111_455, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87 at 41)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3094,7 +3097,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      118_132, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact at 41)
+      118_219, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87 at 41)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
