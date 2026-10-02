@@ -6195,7 +6195,7 @@ export class Runtime {
         }
       },
 
-      standingOf: (principal, stage, good) => {
+      availableAt: (principal, stage, good) => {
         let total = 0;
         for (const pile of assailable(principal)) {
           if (pile.location !== stage || pile.good !== good) continue;

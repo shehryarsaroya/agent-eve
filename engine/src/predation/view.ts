@@ -210,8 +210,12 @@ export interface RaidView {
     readonly stage_held_ticks: number;
     /** Live WORKS the READER holds at the stage. What the hold would protect. */
     readonly your_works_here: number;
-    /** The reader's own stock at the stage in the raided good. Its own only, never the target's. */
-    readonly your_standing_here: Qty;
+    /**
+     * The reader's own unpledged units of the raided good at the stage. Its own only, never the target's.
+     * ★ Was `your_standing_here`: STANDING is §3's word for the public record vectors (HARD RULE 4), and
+     * `available_here` is the name the claim view already gives this quantity.
+     */
+    readonly available_here: Qty;
     /**
      * ★ The two above reduced to the decision they exist for: **does a repulse protect something
      * of yours?**
@@ -309,7 +313,7 @@ export interface RaidViewPort {
   /** The target's own present, IDLE hands at the stage — the force a `fight` musters. */
   handsDefending(principal: PrincipalId, stage: SystemId): readonly HandId[];
   /** What the reader still has at the stage in the raided good. Its OWN stock only. */
-  standingOf(principal: PrincipalId, stage: SystemId, good: string): Qty;
+  availableAt(principal: PrincipalId, stage: SystemId, good: string): Qty;
   /**
    * Live WORKS this principal holds at the stage — what a rout would end.
    *
@@ -369,12 +373,12 @@ function repulseBuys(
   // a hold that would never be written. `grantWorldProtections` is the rule this mirrors.
   const heldTicks = raid.initiator === null ? RAID_STAGE_HELD_TICKS : 0;
   const works = port.worksAt(reader, raid.stage).length;
-  const standing = port.standingOf(reader, raid.stage, raid.good);
+  const available = port.availableAt(reader, raid.stage, raid.good);
   return {
     stage_held_ticks: heldTicks,
     your_works_here: works,
-    your_standing_here: standing,
-    protects_you: heldTicks > 0 && (works > 0 || standing > 0),
+    available_here: available,
+    protects_you: heldTicks > 0 && (works > 0 || available > 0),
   };
 }
 
@@ -481,7 +485,7 @@ function viewOf(
 
   // Priced for the TARGET, because the target is the one with a decision. A joiner sees
   // the same figures and reads them as what it is fighting over.
-  const standing = port.standingOf(raid.target, raid.stage, raid.good);
+  const available = port.availableAt(raid.target, raid.stage, raid.good);
   // The counterfactual, not the current state: the field is named
   // `defender_if_you_fight` and it answers "what would the sum be if the target
   // answered". An agent deciding needs the number its decision would produce, which is
@@ -547,10 +551,10 @@ function viewOf(
       raiders_out_of_sway: reading.terms.raidersOutOfSway,
     },
     costs: {
-      pay: payFor(raid.demandQty, standing),
+      pay: payFor(raid.demandQty, available),
       // The consequence of silence, exactly: an unanswered raid musters no defence, so
       // it takes the multiple capped by what is actually there.
-      if_you_do_nothing: takeFor(raid.demandQty, standing),
+      if_you_do_nothing: takeFor(raid.demandQty, available),
       join_stake: RAID_JOIN_STAKE_MINOR,
       // ── ★ AND WHAT SILENCE COSTS IN CAPITAL, NOT ONLY IN GOODS ────────────
       //

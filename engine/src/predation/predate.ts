@@ -387,8 +387,8 @@ function resolveOne(
   // What is lost is GOODS, and only goods. Never the identity, never the holding, never
   // a hand's existence — a hand that fought and lost goes RECOVERING, which is time and
   // position rather than capacity (INV-8, SPEC §6.2).
-  const standingNow = port.standingOf(raid.target, raid.stage, raid.good);
-  const want = takeFor(raid.demandQty, standingNow);
+  const availableNow = port.availableAt(raid.target, raid.stage, raid.good);
+  const want = takeFor(raid.demandQty, availableNow);
   const raiders = raid.parties.filter((p) => p.side === 'RAIDER');
 
   let lost = 0;
@@ -605,8 +605,8 @@ export function payDemand(args: {
   readonly tick: number;
   readonly onFault: (message: string) => void;
 }): RaidOutcome | null {
-  const standingNow = args.port.standingOf(args.raid.target, args.raid.stage, args.raid.good);
-  const want = payFor(args.raid.demandQty, standingNow);
+  const availableNow = args.port.availableAt(args.raid.target, args.raid.stage, args.raid.good);
+  const want = payFor(args.raid.demandQty, availableNow);
   const moved =
     want <= 0
       ? qty(0)

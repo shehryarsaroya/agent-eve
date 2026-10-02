@@ -51,7 +51,9 @@ describe('what a repulse buys the reader (RaidView.if_repulsed)', () => {
 
     const asTarget = viewOf(target);
     if (asTarget === undefined) throw new Error('the target cannot see its own standoff');
-    expect(asTarget.if_repulsed.your_standing_here).toBeGreaterThan(0);
+    expect(asTarget.if_repulsed.available_here).toBeGreaterThan(0);
+    // HARD RULE 4: this goods figure was `your_standing_here`, and STANDING is §3's public record.
+    expect(Object.keys(asTarget.if_repulsed).filter((k) => k.includes('standing'))).toEqual([]);
     expect(asTarget.if_repulsed.protects_you).toBe(true);
     expect(asTarget.if_repulsed.stage_held_ticks).toBe(RAID_STAGE_HELD_TICKS);
 
@@ -72,7 +74,7 @@ describe('what a repulse buys the reader (RaidView.if_repulsed)', () => {
       .raidsFor(stranger, w.runtime.engine.tick, 8)
       .find((v) => v.raid === raid.id);
     if (asStranger !== undefined) {
-      expect(asStranger.if_repulsed.your_standing_here).toBe(qty(0));
+      expect(asStranger.if_repulsed.available_here).toBe(qty(0));
       expect(asStranger.if_repulsed.your_works_here).toBe(0);
       expect(asStranger.if_repulsed.protects_you).toBe(false);
     }
@@ -180,9 +182,9 @@ describe('a target can send for its own hands', () => {
 });
 
 describe('the good the fixture raids is the one the Levy is assessed in', () => {
-  it('holds, so `your_standing_here` is not measuring a good nobody has', () => {
+  it('holds, so `available_here` is not measuring a good nobody has', () => {
     // Guards the non-vacuity of `protects_you` above: if the raided good were one the fixture
-    // never seats, `your_standing_here` would be 0 for everybody and the field would read
+    // never seats, `available_here` would be 0 for everybody and the field would read
     // `false` universally while looking like it discriminated.
     const w = raidWorld('good-check', 3);
     const raid = runToFirstRaid(w.runtime);
