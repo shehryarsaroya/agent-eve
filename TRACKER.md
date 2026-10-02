@@ -48,7 +48,9 @@
 >   second hand into a standoff its member is already marching to** (`doubleMarches` 5 → 0, seed g06).
 > - **A WORKS line reads SPINNING UP, DORMANT, EXTRACTING or CROWDED OUT**, in that order.
 > - **The contact and season reads share the read epoch** — reach, the parley block, the directory's
->   ranking, the season block, the grand index, the probe venture, the venture-tie and seal-gate walks.
+>   ranking, the season block, the grand index, the probe venture, the venture-tie and seal-gate walks —
+>   and `header.season` is ONE shared fragment for every reader outside a crew (a crew member's own
+>   stake stays in its envelope).
 >   The merge had put an O(P) term back into every observation (1,000 principals: 1.94 → 3.23 ms, the
 >   burst 1.9 → 3.2 s); profiled and removed, the merged observation costs ~20% more than the scale
 >   lane's at 300 and at 1,000 alike — it is ~11% larger — and the burst is O(P) again.
