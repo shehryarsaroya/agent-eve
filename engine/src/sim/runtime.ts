@@ -8346,8 +8346,21 @@ export class Runtime {
    * own crew's sealed stake. The ONE reader of the season for both readerships.
    */
   seasonBlock(tick: number, viewer: PrincipalId | null): SeasonBlock {
-    // Once per read epoch per reader: an observation reads it three times (the header, the grand create,
-    // the briefing) and the cast once per member per tick. Every input is hashed state.
+    // Once per read epoch: an observation reads it three times (the header, the grand create, the
+    // briefing) and the cast once per member per tick, and every input is hashed state. And SHARED by
+    // every reader who is party to no grand candidate this season — their block IS the public one (a
+    // candidate line differs only by its own party's `your_crew_staked`), so `header.season` is one
+    // frozen object for all of them, a fragment `api/fragments.ts` serializes once: world-wide content in
+    // the fragment, the party's own stake in its own envelope.
+    const shared = this.perEpoch(`seasonBlock:public:${String(tick)}`, () => this.seasonBlockNow(tick, null));
+    if (viewer === null) return shared;
+    const season = tick < 0 ? 1 : seasonOf(tick);
+    const party = this.grandVenturesOf(season).some(
+      (v) =>
+        (v.state === 'FORMING' || v.state === 'LIVE') &&
+        (v.creator === viewer || v.roles.some((r) => r.filledByPrincipal === viewer)),
+    );
+    if (!party) return shared;
     return this.perEpoch(`seasonBlock:${String(viewer)}:${String(tick)}`, () => this.seasonBlockNow(tick, viewer));
   }
 
