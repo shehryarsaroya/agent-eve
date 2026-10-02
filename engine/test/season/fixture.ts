@@ -180,9 +180,11 @@ export function formCandidate(
   const filled = runtime.ventures.require(made.id);
   const hash = filled.termsHash;
   if (hash === null) throw new Error('no terms_hash');
+  // Every FILLER signs. The creator does not: since `RULES_VERSION` 41 its own `create` is its
+  // countersignature (`venture/create.ts:CREATE_IS_COUNTERSIGNATURE`), and a delegate's create binds its
+  // grantor the same way — the grant is the consent.
   const signers = new Set<PrincipalId>([...args.crew]);
-  // The creator signs its own terms unless a delegate bound it at formation (the grant is the consent).
-  if (args.onBehalfOf === undefined) signers.add(args.creator);
+  signers.delete(args.creator);
   for (const [i, p] of [...signers].entries()) submit(runtime, p, 'sign', { venture: made.id, terms_hash: hash }, i);
   tick(runtime);
   tick(runtime);

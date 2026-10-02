@@ -5177,6 +5177,11 @@ export class HeuristicCast {
     const ordinal = Math.max(0, this.members.findIndex((m) => m.principal === member.principal));
     for (const venture of runtime.ventures.live()) {
       if (venture.state !== 'FORMING' || !isTopYield(venture.kind)) continue;
+      // ★ Never the season's grand venture. It is a BUILD, so every test above admits it, but a grand
+      // role is presence at the stage and a stake of earned capital (`grandFillFor`), and a slot taken
+      // here would be refused by `grandFillRejection` every tick — the creator's included, whose top
+      // role this branch would otherwise claim with no stake, whatever its creed says about the yield.
+      if (venture.grand !== null) continue;
       if (tick > venture.windowClosesTick) continue;
       if (tierOf(runtime.world.map, venture.stage) !== tier) continue;
       if (roleOfPrincipal(venture, member.principal) !== null) continue;
@@ -5237,6 +5242,10 @@ export class HeuristicCast {
     if (this.topYieldTiersThisTick.has(tier)) return null;
     for (const venture of runtime.ventures.live()) {
       if (!isTopYield(venture.kind)) continue;
+      // ★ The season's grand venture is not one of the tier's four-role ventures: it is the season's
+      // prize, staged by published rule, and neither its creator nor its stage's tier is barred from an
+      // ordinary BUILD by it — {@link grandFor} is the only branch that touches it.
+      if (venture.grand !== null) continue;
       if (venture.creator === member.principal) return null;
       if (tierOf(runtime.world.map, venture.stage) === tier) return null;
     }
