@@ -3,10 +3,14 @@
  * and the canon names the two new concepts once.
  *
  * Scar #1 was the engine and the agent-facing text disagreeing about one word, and it survived a full
- * build and three critic passes because every component was correct on its own. So the statements an
- * agent reads in `header.season.rule` and `header.season.grand.rule` are compared byte for byte against
- * the document it plays from — and because the statements are built from the constants, changing a
- * number in `season/params.ts` turns this red until the document follows.
+ * build and three critic passes because every component was correct on its own. So the two statements
+ * are compared byte for byte against the document an agent plays from — and because they are built from
+ * the constants, changing a number in `season/params.ts` turns this red until the document follows.
+ *
+ * Since the Season 1 merge `header.season.rule` and `header.season.grand.rule` carry a one-line summary
+ * and the name of the `agent.md` section with the statements in it — the scale lane's `header.growth`
+ * precedent, because static prose in every observation is paid for out of the cast's own affordances.
+ * The last describe below checks the pointer resolves and the header carries it.
  */
 
 import { readFileSync } from 'node:fs';
@@ -17,8 +21,12 @@ import {
   GRAND_RESIDUAL_PERCENT,
   GRAND_ROLE_STAKE_MINOR,
   GRAND_VENTURE_STATEMENT,
+  GRAND_VENTURE_SUMMARY,
   SEASON_RECKONINGS,
+  SEASON_SECTION_TITLE,
   SEASON_STATEMENT,
+  SEASON_SUMMARY,
+  seasonClockAt,
 } from '../../src/season/index.js';
 import { kindSpec } from '../../src/venture/kinds.js';
 
@@ -79,5 +87,26 @@ describe('the canon names the season’s two new concepts once', () => {
   it('§7.6 records how it was built, and §17 carries the calibration', () => {
     expect(SPEC).toContain('### ★ As built (`RULES_VERSION` 41, `src/season/`)');
     expect(SPEC).toContain(`**${String(SEASON_RECKONINGS)} Reckonings** (\`SEASON_RECKONINGS\`)`);
+  });
+});
+
+describe('the header carries a pointer to the season\'s rules, and the pointer resolves', () => {
+  it('both summaries name the agent.md section that carries the statements, and it is a real heading', () => {
+    expect(AGENT_MD).toContain(`### ${SEASON_SECTION_TITLE}\n`);
+    for (const summary of [SEASON_SUMMARY, GRAND_VENTURE_SUMMARY]) {
+      expect(summary).toContain(`agent.md, "${SEASON_SECTION_TITLE}"`);
+    }
+  });
+
+  it('each is under half the statement it stands for, so the header stops paying for the prose', () => {
+    // 169 of 380 and 277 of 685 characters at the merge: ~620 fewer bytes in every observation of every
+    // principal, which in the house cast's 24,000-character projection is affordances kept.
+    expect(SEASON_SUMMARY.length).toBeLessThan(SEASON_STATEMENT.length / 2);
+    expect(GRAND_VENTURE_SUMMARY.length).toBeLessThan(GRAND_VENTURE_STATEMENT.length / 2);
+    expect(SEASON_SUMMARY).toContain(`${String(SEASON_RECKONINGS)} Reckonings`);
+  });
+
+  it('the clock serves the summary, not the statement', () => {
+    expect(seasonClockAt(0).rule).toBe(SEASON_SUMMARY);
   });
 });

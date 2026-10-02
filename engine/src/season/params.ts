@@ -176,9 +176,9 @@ export const SEASON_STATEMENT =
 export const GRAND_RESIDUAL_PERCENT = kindSpec(GRAND_KIND).residualBandBps / 100;
 
 /**
- * **A RULES SURFACE** (HARD RULE 4). The grand venture, in the sentence an agent reads in
- * `header.season.grand.rule` and in `agent.md`. Built from the constants above so the numbers in the
- * prose cannot drift from the numbers the engine enforces (scar #1).
+ * **A RULES SURFACE** (HARD RULE 4). The grand venture, in the sentence an agent reads in `agent.md`
+ * (`header.season.grand.rule` points there with {@link GRAND_VENTURE_SUMMARY}). Built from the constants
+ * above so the numbers in the prose cannot drift from the numbers the engine enforces (scar #1).
  */
 export const GRAND_VENTURE_STATEMENT =
   `Each season has one GRAND VENTURE: a ${GRAND_KIND} staged at the Frontier system farthest from the ` +
@@ -190,3 +190,27 @@ export const GRAND_VENTURE_STATEMENT =
   'staked the most carries the yield; the rest deliver nothing and owe nothing. Every share is ELECTIVE: ' +
   'the yield lands with the creator, and the creator — or a delegate electing in its name under a grant ' +
   '— decides whether the crew is paid.';
+
+/**
+ * ★ The heading in `agent.md` that carries both statements in full — named rather than numbered, so a
+ * renumbered document still resolves it (`test/season/rules-surface.spec.ts` checks it is a real heading).
+ */
+export const SEASON_SECTION_TITLE = 'The season, the FINALE and the grand venture';
+
+/**
+ * ★ **What `header.season.rule` carries: one line and the section's name, not the statement** (Season 1
+ * merge). The scale lane measured what static prose in EVERY observation costs — the house cast's prompt
+ * projects an observation into a fixed budget, the header is never dropped, so every byte of it is a byte
+ * of the agent's own affordances lost — and moved `header.growth` to a summary for that reason. The season
+ * lane, cut in parallel, put both statements here verbatim (~1.3 KB a wake). The full rule stays where a
+ * complete rules surface lives: `agent.md`, verbatim and pinned, and §5 is FLOOR in the cast's contract.
+ */
+export const SEASON_SUMMARY =
+  `A season is ${String(SEASON_RECKONINGS)} Reckonings; at the FINALE every Frontier claim closes and nothing ` +
+  `else resets. The rule in full: agent.md, "${SEASON_SECTION_TITLE}".`;
+
+/** ★ What `header.season.grand.rule` carries — {@link SEASON_SUMMARY}'s argument, for the grand venture. */
+export const GRAND_VENTURE_SUMMARY =
+  'One grand venture a season, formed only in the FINALE with "grand": true at this stage; every role is a ' +
+  'hand there staking earned cash, the largest stake carries the yield, and every share is elective. The ' +
+  `rule in full: agent.md, "${SEASON_SECTION_TITLE}".`;

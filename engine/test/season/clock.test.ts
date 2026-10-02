@@ -11,7 +11,7 @@ import { describe, expect, it } from 'vitest';
 import { TICKS_PER_RECKONING } from '../../src/core/time.js';
 import {
   SEASON_RECKONINGS,
-  SEASON_STATEMENT,
+  SEASON_SUMMARY,
   TICKS_PER_SEASON,
   finaleReckoningOf,
   finaleTickOf,
@@ -79,7 +79,7 @@ describe('the season clock', () => {
     expect(isSeasonBoundaryTick(-1)).toBe(false);
   });
 
-  it('publishes the clock as one value, with the rule verbatim', () => {
+  it('publishes the clock as one value, with the rule as a one-line pointer', () => {
     const c = seasonClockAt(3_800);
     expect(c).toEqual({
       season: 1,
@@ -90,7 +90,7 @@ describe('the season clock', () => {
       finale_tick: 4_031,
       ticks_to_finale: 231,
       in_finale: true,
-      rule: SEASON_STATEMENT,
+      rule: SEASON_SUMMARY,
     });
     expect(seasonClockAt(4_031).ticks_to_finale).toBe(0);
   });

@@ -20,7 +20,7 @@ import { IN_FULL } from '../../src/venture/index.js';
 import {
   GRAND_BASE_YIELD_MINOR,
   GRAND_ROLE_STAKE_MINOR,
-  GRAND_VENTURE_STATEMENT,
+  GRAND_VENTURE_SUMMARY,
   SEASON_RECKONINGS,
   finaleTickOf,
   grandStageFor,
@@ -63,7 +63,7 @@ describe('the grand venture is announced from the season’s first tick', () => 
     expect(g.opens_tick).toBe(WINDOW.opens_tick);
     expect(g.closes_tick).toBe(WINDOW.closes_tick);
     expect(g.open_now).toBe(false);
-    expect(g.rule).toBe(GRAND_VENTURE_STATEMENT);
+    expect(g.rule).toBe(GRAND_VENTURE_SUMMARY);
     // Sited in the least-lawful space: the Frontier, as far from the Commons as the map goes.
     expect(runtime.world.map.systems.get(g.stage ?? ('' as never))?.tier).toBe('FRONTIER');
   });

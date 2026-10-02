@@ -19,7 +19,7 @@
  */
 
 import { reckoningIndex, SETTLEMENT_PHASE, TICKS_PER_RECKONING } from '../core/time.js';
-import { SEASON_RECKONINGS, SEASON_STATEMENT, TICKS_PER_SEASON } from './params.js';
+import { SEASON_RECKONINGS, SEASON_SUMMARY, TICKS_PER_SEASON } from './params.js';
 
 /** The season `tick` falls in. 1-based; a tick before genesis counts as the first season. */
 export function seasonOf(tick: number): number {
@@ -95,7 +95,7 @@ export interface SeasonClock {
   readonly ticks_to_finale: number;
   /** True for every tick of the FINALE. */
   readonly in_finale: boolean;
-  /** {@link SEASON_STATEMENT}, verbatim. */
+  /** {@link SEASON_SUMMARY}: one line and the `agent.md` section that carries the statement in full. */
   readonly rule: string;
 }
 
@@ -111,6 +111,6 @@ export function seasonClockAt(tick: number): SeasonClock {
     finale_tick: finale,
     ticks_to_finale: Math.max(0, finale - tick),
     in_finale: inFinale(tick),
-    rule: SEASON_STATEMENT,
+    rule: SEASON_SUMMARY,
   };
 }

@@ -34,7 +34,7 @@ import {
   GRAND_BASE_YIELD_MINOR,
   GRAND_KIND,
   GRAND_ROLE_STAKE_MINOR,
-  GRAND_VENTURE_STATEMENT,
+  GRAND_VENTURE_SUMMARY,
   MAX_LISTED_GRAND_CANDIDATES,
 } from './params.js';
 
@@ -89,7 +89,7 @@ export interface GrandBlock {
   readonly open_now: boolean;
   readonly candidates: readonly GrandCandidateLine[];
   readonly verdict: GrandVerdictLine | null;
-  /** {@link GRAND_VENTURE_STATEMENT}, verbatim. */
+  /** {@link GRAND_VENTURE_SUMMARY}: one line and the `agent.md` section that carries the statement. */
   readonly rule: string;
 }
 
@@ -196,7 +196,7 @@ export function grandBlockFor(port: SeasonViewPort, viewer: PrincipalId | null):
             winner: verdict.winner,
             tallies: verdict.tallies.map((t) => ({ venture: t.venture, staked: t.staked, live: t.live })),
           },
-    rule: GRAND_VENTURE_STATEMENT,
+    rule: GRAND_VENTURE_SUMMARY,
   };
 }
 
