@@ -141,7 +141,7 @@ Four consequences run through everything below:
 | **SITE** | a resource node | a structure anchorage (**BERTH**) |
 | **RAID** | predation; a venture kind | war |
 | **SYNDICATE** | the only org container in Phase 0 | mutual, alliance (Phase 3) |
-| **CLAIM** | ★ a principal's sovereign hold on **one system** outside the Commons (§6.3) | a creditor's demand in the insolvency waterfall (that is a **CHARGE-CLAIM** in prose and `Claim` only inside `ledger/`); a public assertion (that is a **statement**, the say-do gap's first layer) |
+| **CLAIM** | ★ a principal's sovereign hold on **one system** outside the Commons (§6.3). It ends `LAPSED` (the world's verdict on an unpaid CHARGE — the bond is slashed), `CEDED` (its holder's choice), or — a FRONTIER claim, at the FINALE's settlement — `CLOSED` (*Season 1, `RULES_VERSION` 41*: the season's ending, A10; nothing slashed, nobody chose it, the system re-opens; §7.6) | a creditor's demand in the insolvency waterfall (that is a **CHARGE-CLAIM** in prose and `Claim` only inside `ledger/`); a public assertion (that is a **statement**, the say-do gap's first layer); for `CLOSED`, a syndicate charter's `CLOSED` admission (a rule about who may join a house, not an ending) |
 | **ANCHOR** | the produced goods destroyed *at* a system to bring a CLAIM into being — `build {kind:"ANCHOR"}` — and the thing that then burns FUEL | a berth; a mooring; a fleet position |
 | **CHARGE** | the **recurring per-Reckoning obligation a CLAIM owes**, in goods, by tier | the LEVY (which is the constellation's, not a claim's); a fee; a market charge |
 | **RENT** | the share of a system's extraction its CLAIM-holder takes from the WORKS standing there | the CHARGE; a lease payment; upkeep |
@@ -712,10 +712,13 @@ Delta-first, local-first, **server-side eligibility filtering**, **exactly 11 to
 header        tick · serverNow · next_reckoning{ticks, what_resolves, seal_slot}
               · actions_remaining · wakes_remaining · mandate_version
               · season{season, reckoning, of, reckonings_left, finale_tick, grand, last_season}
+              · parley{openings, answers owed, awaiting_reply[] (41), price} · withheld{count, reason}
+              · growth{qualified, needed, constellations, latest} (41, §4.2)
 hands[]       location · state · committed_to · free_at_tick · in_transit_eta · cargo
 holding       state · threats · siege clock · upkeep_due
 obligations   levy{my_assessment, paid, deliverable_to, shortfall_if_unpaid, ballot}
               exposure{mine — Σ open max_direct_loss, constellation_band}
+              intents[] — every standing intent held: id, status, what it does next (41)
 ventures      mine[] {roles filled/open, my stake, projected_settlement, resolves_at}
               board[] — only slots I am eligible for, with reference_split, EV p10/p50/p90,
               worst case, expires_tick

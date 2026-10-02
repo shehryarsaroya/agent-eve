@@ -2377,7 +2377,6 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * expected to be needed; if it is, the preflight prints the exact
  * `COMPACT_ACCEPT_DIVERGENCE_AT_TICK` string (`D37`).
  *
- *
  * ── 41 · STAKES AND CHORES ───────────────────────────────────────────────────
  *
  * ★ **ABSENCE STOPS COSTING THE PRESENT, AND THE CLOCK STOPS BEING THE CHORE.**
@@ -2489,6 +2488,29 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * **From tick 0, by design: Season 1 is a fresh world** (owner decision, 2026-10-01), so no record
  * written under 40 is replayed against this build. For completeness: the `say` table changes every
  * snapshot's shape from tick 0, and the cast diverges at the first tick a member opens a BUILD.
+ *
+ * ── 41 · THE MERGE — what joining the four lanes changed, beyond each lane ─────────────────
+ *
+ * The lanes were cut from one base and never saw each other. Where two of them met on one rule the
+ * merge chose, and each choice is part of 41:
+ *
+ *   - **The grand venture is the season's, never the cast's four-role BUILD.** Contact's slot filling,
+ *     one-per-tier check and IN_FULL rule all matched a BUILD; they skip `grand` ventures, so a creator's
+ *     creed (a MERCENARY keeps the yield) answers its shares.
+ *   - **The grand create asks at the tick it lands and stands behind create's gates** (stakes' rule on
+ *     the season's offer): offered from the tick before the window, never on its last tick, never to a
+ *     principal the freeze, a seal or the Commons capacity refuses.
+ *   - **The grand stage reads the launch map's graph**, so a constellation opening mid-season (scale)
+ *     never moves the stage the season announced (season) or trips SSN-1.
+ *   - **OBLIGE closes the season, then grows the region**: growth is last of all, after the boundary.
+ *   - **`header.season` carries one-line summaries** of its two statements, scale's `header.growth`
+ *     precedent: the statements live verbatim in `agent.md` §5.
+ *   - **One stationed list** (`stationedAt`) for the three optional walks — the pledged-hand fix both
+ *     stakes and contact made, kept once — and the aimless walk never sends a second hand into a
+ *     standoff its member is already marching to.
+ *   - **A WORKS line reads SPINNING UP, DORMANT, EXTRACTING or CROWDED OUT**, in that order.
+ *   - **The contact and season reads share the read epoch** (reach, the parley block, the directory's
+ *     ranking, the season block) — scale's `perEpoch` rule, so the burst stays O(P).
  *
  * ══════════════════════════════════════════════════════════════════════════
  */
