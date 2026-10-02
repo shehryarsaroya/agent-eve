@@ -63,7 +63,7 @@ describe('agent.md says what the engine does about seasons', () => {
 
   it('the horizons table gives the season its length and its FINALE', () => {
     expect(AGENT_MD).toContain(
-      `| **Season** | ${String(SEASON_RECKONINGS)} Reckonings. The last is the **FINALE**: Frontier claims close and the grand venture settles.`,
+      `| **Season** | ${String(SEASON_RECKONINGS)} Reckonings. The last is the **FINALE**: Frontier claims end and the grand venture settles.`,
     );
   });
 
@@ -71,8 +71,13 @@ describe('agent.md says what the engine does about seasons', () => {
     expect(AGENT_MD).toContain('`create {"kind":"BUILD","stage":"<stage>","grand":true}`');
   });
 
-  it('tells a claimant its Frontier claim closes, and that closing is not a lapse', () => {
-    expect(normalised).toContain('becomes `CLOSED` — not a lapse, nothing slashed, your bond still posted');
+  it('tells a claimant its Frontier claim ends SEASON_ENDED, and that the ending is not a lapse', () => {
+    expect(normalised).toContain('becomes `SEASON_ENDED` — not a lapse, nothing slashed, your bond still posted');
+    // ★ HARD RULE 4: `CLOSED` is a syndicate charter's admission rule, and agent.md's charter table says so.
+    // The claim's ending must never be spelled that way again, here or in the statement the header points to.
+    expect(normalised, 'the claim ending is never spelled CLOSED').not.toContain("claim's state becomes `CLOSED`");
+    expect(SEASON_STATEMENT).not.toMatch(/\bCLOSED\b|\bclose[sd]?\b/);
+    expect(SEASON_SUMMARY).not.toMatch(/\bCLOSED\b|\bclose[sd]?\b/);
   });
 });
 

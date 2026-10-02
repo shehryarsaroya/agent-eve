@@ -178,13 +178,20 @@ export type EngagementState = 'MUSTER' | 'CONTACT' | 'CONTEST' | 'BREAK' | 'AFTE
  * and salvaging part of it. One is a cliff; the other is the story the collapse arc exists
  * to make possible.
  *
- * ★ `CLOSED` is the third ending and it is nobody's act: **the season ended it** (A10 — *"Frontier
- * claims … settle and re-open on a season boundary"*). Neither of the other two words could carry
- * it without lying on the record: `LAPSED` publishes *"BOND SLASHED"* and a default-shaped beat, and
- * `CEDED` says the holder chose to let go. A closed claim was paid up, slashed nothing, and its
+ * ★ `SEASON_ENDED` is the third ending and it is nobody's act: **the season ended it** (A10 —
+ * *"Frontier claims … settle and re-open on a season boundary"*). Neither of the other two words could
+ * carry it without lying on the record: `LAPSED` publishes *"BOND SLASHED"* and a default-shaped beat,
+ * and `CEDED` says the holder chose to let go. Such a claim was paid up, slashed nothing, and its
  * system is open to the next season's anchor — so it gets its own word, and the bond is untouched.
+ *
+ * ⚑ **It was `CLOSED`, and HARD RULE 4 forbade it**: a syndicate charter's `CLOSED` is an admission
+ * rule (*"the founding membership is final"*), so one word named a claim's ending and who may join a
+ * house. The charter's list is an array the repo guard could not see; `vocabulary-repo.test.ts` now
+ * reads array-declared enums too. `SEASON_ENDED` names the only thing that ends such a claim, and it
+ * appears nowhere else — not in SPEC §3, not in `src/` — where `EXPIRED` was the other candidate and
+ * already names a term a party set for itself (a resting order's, a grant's), which a claimant never does.
  */
-export type ClaimState = 'SUPPLIED' | 'STRAINED' | 'CONTESTED' | 'LAPSED' | 'CEDED' | 'CLOSED';
+export type ClaimState = 'SUPPLIED' | 'STRAINED' | 'CONTESTED' | 'LAPSED' | 'CEDED' | 'SEASON_ENDED';
 
 // ── Campaigns ───────────────────────────────────────────────────────────────
 

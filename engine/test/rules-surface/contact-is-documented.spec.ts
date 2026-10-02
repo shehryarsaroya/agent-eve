@@ -23,9 +23,9 @@ import { AUDIT_LAG_TICKS } from '../../src/grant/dossier.js';
 import { DIRECTORY_OFFER_FRESH_TICKS, MAX_DIRECTORY_ROWS } from '../../src/say/directory.js';
 import {
   MAX_AWAITING_SHOWN,
-  MAX_PARLEY_ENTRIES,
   MAX_PARLEYS_SENT_PER_RECKONING,
   PARLEY_ANSWER_WINDOW_TICKS,
+  PARLEY_THREAD_TICKS,
   PARLEYS_PER_RECKONING,
 } from '../../src/say/parley.js';
 import { PARLEY_CONSTELLATION_MIN_COUNTERPARTIES, PARLEY_TIE_TICKS } from '../../src/say/reach.js';
@@ -54,7 +54,12 @@ describe('★ the PARLEY block states the engine\'s numbers', () => {
     expect(PARLEY, 'the answer window, in ticks').toContain(`${String(PARLEY_ANSWER_WINDOW_TICKS)} ticks`);
     expect(PARLEY, 'the ceiling').toContain(`ceiling of ${String(MAX_PARLEYS_SENT_PER_RECKONING)} sends a Reckoning`);
     expect(PARLEY, 'the openings').toContain(`${String(PARLEYS_PER_RECKONING)} if you are entitled, 0 if you are not`);
-    expect(PARLEY, 'the shared book').toContain(`holds ${String(MAX_PARLEY_ENTRIES)} letters`);
+    // ★ The book rolls (`say/parley.ts` §5): no lifetime figure to print, and the old sentence ("holds 512
+    // letters") would teach an agent that talk runs out. What it keeps, and for how long, is stated instead.
+    expect(PARLEY, 'the ceiling is per sender').toContain('It is per sender, so nobody can crowd your letters out');
+    expect(PARLEY, 'the book\'s retention').toContain('A letter stays in `counterparties[]` for a\n  Reckoning after it publishes');
+    expect(PARLEY_THREAD_TICKS, '"a Reckoning after it publishes" is PARLEY_THREAD_TICKS').toBe(TICKS_PER_RECKONING);
+    expect(PARLEY, 'no lifetime book size is promised').not.toMatch(/holds \d+ letters/);
     expect(PARLEY, 'the inbox cap').toContain(`(up to ${String(MAX_AWAITING_SHOWN)})`);
     expect(PARLEY, 'the reveal clock').toContain('PUBLIC four ticks later');
     expect(AUDIT_LAG_TICKS, '"four ticks" is AUDIT_LAG_TICKS').toBe(4);

@@ -1648,8 +1648,8 @@ export interface SeasonCrewLine {
  * ★ **THE SEASON RECORD** — a closed season's FINALE and its champions. The Hall of Fame, by season.
  *
  * `PUBLIC`: read off the `season.closed` row, which is `PUBLIC` at birth, and every figure on it is
- * a settled venture's payout, a public standing vector's difference, or a closed claim. Kept forever
- * on the record; a frame carries the newest {@link MAX_FRAME_SEASONS}.
+ * a settled venture's payout, a public standing vector's difference, or a claim the season ended. Kept
+ * forever on the record; a frame carries the newest {@link MAX_FRAME_SEASONS}.
  */
 export interface SeasonRecordLine {
   readonly season: number;
@@ -1666,7 +1666,8 @@ export interface SeasonRecordLine {
   readonly crew: readonly SeasonCrewLine[];
   /** The season's titles — the Hall of Fame's four rules over the season's own play. */
   readonly titles: readonly HallOfFameRow[];
-  readonly closedClaims: number;
+  /** How many Frontier claims the boundary ended (`SEASON_ENDED`). */
+  readonly seasonEndedClaims: number;
   /** One line a stranger reads. ≤140 characters. */
   readonly legend: string;
 }

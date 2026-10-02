@@ -10,7 +10,23 @@ trusting — this file goes stale the moment someone commits.*
 
 ---
 
-## ⏱ 2026-10-01 (latest) — Season 1 integrated on branch `season1`: one `RULES_VERSION` 41 for four lanes
+## ⏱ 2026-10-02 (latest) — the Season 1 launch fixes, branch `season1-launch-fixes` off `season1`
+
+*Not merged, not deployed. `TRACKER.md`'s STATUS carries the account and the owner calls; this is the
+reading. Still `RULES_VERSION` 41 — verbs 40/40, observe keys 11/11, kinds 8/8.*
+
+| | reading, 2026-10-02 |
+|---|---|
+| `tsc` · lint · audits · vitest (`npm run gate0`) | 0 · 0 · DET-8 and PROP-O3 pass · **371 files, 4,360 passed, 1 skipped, 0 failed** (524 s) |
+| the parley book | rolls: a letter leaves once no window reads it; cap **360,000** = 36 a principal × `MAX_PRINCIPALS` (POPULATION, was a lifetime 512); 768 letters in one test world with every per-Reckoning limit intact |
+| the claim ending | `SEASON_ENDED` (was `CLOSED`, which a charter's admission rule also spells); the vocabulary guard reads array-declared enums |
+| a whole season, played (`fs-a`, 12 members, `instant`) | 226 ventures opened (was 1,465) · **176 settled** (174) · 22 defaulted (22) · **13 abandoned unfilled** (1,238); kept 377 (370), elective defaults 30 (31); 17 four-role BUILDs, 12 settled (11/10); grand venture `BROKEN` by corvid's creed, 299,136 delivered, three shares unpaid; `levyShort` 0 every Reckoning but the FINALE (19,558; was 14,767) |
+| ten seeds, one season each | opened 14,263 → 2,275 · settled 1,821 → **1,839** · abandoned unfilled 11,946 → **117** · kept 3,846 → **3,861** · elective defaults 266 → 230 · grand ventures 7 KEPT, 2 BROKEN, 1 UNCLAIMED → 8, 2, **0** · `levyShort` 1,128,783 → 1,134,354 |
+| balance gate (8 seeds × 9 Reckonings × 8 members) | kept 1,136 → 1,213 · broken 110 → 67 · `levyShort` 0 → 8,194 (one presence-only line, `g07` R6, owner call (3)) |
+
+---
+
+## ⏱ 2026-10-01 — Season 1 integrated on branch `season1`: one `RULES_VERSION` 41 for four lanes
 
 *Merged, measured, not deployed. `TRACKER.md`'s STATUS carries the account — the merge order, every
 place two lanes met on one rule and what was chosen, and the owner calls. The four lane readings below
@@ -65,7 +81,7 @@ was a projection from 20, and it is now measured.*
 
 **Still open, in order:** page the in-memory journal out (the season wall) · consolidate lots (the
 remaining per-tick term, and a raid-balance decision) · bound `postingsFor` by tick · per-constellation
-drama budgets · the parley ring's lifetime refusal (the parley lane's).
+drama budgets. (The parley ring's lifetime refusal is fixed: the book rolls — `say/parley.ts` §5.)
 
 ---
 
@@ -76,7 +92,7 @@ version and re-read these figures after the merge.*
 
 | | reading, 2026-10-01 (branch) |
 |---|---|
-| `RULES_VERSION` | **41** (the season table, `ClaimState.CLOSED`, grand ventures) |
+| `RULES_VERSION` | **41** (the season table, `ClaimState.SEASON_ENDED` — spelled `CLOSED` until the launch fixes, HARD RULE 4 —, grand ventures) |
 | `tsc` · lint | 0 · 0 |
 | vitest | **344 files, 4,205 passed, 1 skipped** (`npm ci && npm run gate0`, 3,745 s) |
 | budgets | verbs **40/40** · axioms 15/15 · observe keys **11/11** · venture kinds 8/8 — none spent |

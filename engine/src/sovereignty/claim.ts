@@ -317,9 +317,13 @@ export function chargeDeliveryFault(args: {
   readonly available: Qty;
 }): string | null {
   if (inFreeze(args.tick) || isSettlementTick(args.tick)) return CHARGE_FREEZE_REFUSAL;
-  if (args.claim.state === 'LAPSED' || args.claim.state === 'CEDED' || args.claim.state === 'CLOSED') {
+  if (args.claim.state === 'LAPSED' || args.claim.state === 'CEDED' || args.claim.state === 'SEASON_ENDED') {
     const how =
-      args.claim.state === 'LAPSED' ? 'lapsed' : args.claim.state === 'CEDED' ? 'been ceded' : 'been closed by the season';
+      args.claim.state === 'LAPSED'
+        ? 'lapsed'
+        : args.claim.state === 'CEDED'
+          ? 'been ceded'
+          : 'been ended by the season (SEASON_ENDED)';
     return `the claim on ${args.claim.system} has already ${how}; there is nothing left to supply.`;
   }
   if (args.owed <= 0) {

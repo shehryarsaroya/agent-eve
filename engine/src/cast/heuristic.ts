@@ -257,6 +257,13 @@ export interface CastOptions {
  * The middle row is the one that matters: the gate is what removes the defaults, and this constant
  * is what pays for it. Six thousand is also defensible and buys a busier board for eight more
  * breaches; four is where the world is closest to the one the corpus was measured on.
+ *
+ * ★ **And since the launch fixes the roll sets the pace only where somebody could fill the result.**
+ * `venture count` above counted every venture opened, and most of them never formed: over a whole
+ * season 84% of the cast's ventures retired unfilled, because nothing asked whether a cast-mate had a
+ * hand to give. {@link HeuristicCast.createCanFill} asks, after this roll, so a member the board cannot
+ * serve consumes the same draw and does something else — and the table's "ventures" column now reads
+ * about a sixth of what it did, with as many settled.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const DEFAULT_CREATE_CHANCE_BPS = 4_000;
@@ -1290,6 +1297,107 @@ export class HeuristicCast {
   }
 
   /**
+   * ★ **Can a venture of `kind`, opened now at `stage`, plausibly fill inside its formation window?**
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * **85% OF THE CAST'S VENTURES RETIRED UNFILLED, AND THE CREATE BRANCH NEVER ASKED WHO WOULD FILL
+   * THEM.** A 12-member season from genesis (seed `fs-a`, `instant`) opened 1,465 ventures and 1,252 were
+   * abandoned. Measured at the tick each `create` was submitted, against how the venture ended:
+   *
+   *     cast-mates in the stage's tier with an idle hand   0     1     2     3-4   5-6   7-8
+   *     abandoned                                          98%   94%   87%   59%   25%   1%
+   *
+   *     phase of the Reckoning    0-47   48-143   144-239   240-287
+   *     abandoned                 58%    97%      99%       88%
+   *
+   * A role holds its hand until the Reckoning settles, so after the opening of a cycle almost nobody has
+   * a hand to give — and every tick a member found no slot to fill, it rolled to open one more. The
+   * board ran a queue nobody could serve: an ordinary venture's roles are all filled by OTHER members
+   * (`openSlotFor` skips the creator's own), first-fit, oldest first, and a slot not taken in twelve
+   * ticks retires. Nothing in the ledger is harmed — `retireFormation` refunds in full — which is exactly
+   * why no gate caught it; what it cost was the record, the board and the frames (A13), and the hands a
+   * doomed venture held while it waited.
+   *
+   * **The rule is supply against demand, both read off the snapshot every member decides from**:
+   *
+   *   - **supply** — hands that cast-mates seated in the stage's tier could put into a role now
+   *     ({@link fillHandsOf}: `fill_role`'s own `spendable`, less a hand pledged to a standoff), never
+   *     the creator's and never a delegate the creator's grant bars from the deal (INV-23);
+   *   - **demand** — roles already open on the board in that tier, which the same hands take first,
+   *     plus whatever a cast-mate commissioned earlier in this `decide` ({@link commissionedThisTick});
+   *   - and the venture needs **one distinct filler per role**: PROP-V6, one role per principal.
+   *
+   * Open only when supply covers the demand ahead of this venture and all of its own roles. The A7 gate
+   * still decides whether the member can afford to promise; this decides whether anybody can accept.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private createCanFill(member: CastMember, kind: VentureKind, stage: SystemId, tick: number): boolean {
+    const runtime = this.runtime;
+    const needed = kindSpec(kind).roles.length;
+    const tier = tierOf(runtime.world.map, stage);
+    // A delegate of this creator may not take a role in its venture (INV-23, asked at creation). Read
+    // once, not once per cast-mate: the grant book sorts itself on every read.
+    const delegates = new Set(
+      runtime.grants
+        .forGrantor(member.principal)
+        .filter((g) => runtime.grants.isLive(g.id, tick))
+        .map((g) => g.delegate),
+    );
+    let hands = 0;
+    let fillers = 0;
+    for (const other of this.members) {
+      if (other.principal === member.principal) continue;
+      // `openSlotFor`'s own policy: a member works ventures staged in the tier it is seated in.
+      if (tierOf(runtime.world.map, other.seat) !== tier) continue;
+      if (delegates.has(other.principal)) continue;
+      const free = this.fillHandsOf(other, tick);
+      if (free <= 0) continue;
+      hands += free;
+      fillers += 1;
+    }
+    const ahead = this.openRolesIn(tier, tick) + (this.commissionedThisTick.get(tier) ?? 0);
+    return fillers >= needed && hands - ahead >= needed;
+  }
+
+  /**
+   * Hands this member could put into a role this tick: `fill_role`'s `spendable` — idle, less the hand a
+   * world bill or a coming standoff keeps home — and never one already pledged to a standoff
+   * ({@link musteredAt}). Read once per member per `decide`, because every member decides from the same
+   * snapshot.
+   */
+  private fillHandsOf(member: CastMember, tick: number): number {
+    const cached = this.fillHandsThisTick.get(member.principal);
+    if (cached !== undefined) return cached;
+    const idle = handsOf(this.runtime.world, member.principal).filter((h) => h.state === 'IDLE').length;
+    let pledged = 0;
+    for (const n of this.handsHeldAt(member, tick).values()) pledged += n;
+    const spendable = idle - this.carriageNeeded(member, tick) - this.standoffNeeded(member, tick);
+    const free = Math.max(0, Math.min(spendable, idle - pledged));
+    this.fillHandsThisTick.set(member.principal, free);
+    return free;
+  }
+
+  /** Roles still open on the board in `tier` — forming, inside the window, never the season's grand venture. */
+  private openRolesIn(tier: string, tick: number): number {
+    if (this.openRolesThisTick === null) {
+      const byTier = new Map<string, number>();
+      for (const venture of this.runtime.ventures.live()) {
+        if (venture.state !== 'FORMING' || venture.grand !== null) continue;
+        if (tick > venture.windowClosesTick) continue;
+        const at = tierOf(this.runtime.world.map, venture.stage);
+        byTier.set(at, (byTier.get(at) ?? 0) + openIndices(venture).length);
+      }
+      this.openRolesThisTick = byTier;
+    }
+    return this.openRolesThisTick.get(tier) ?? 0;
+  }
+
+  /** Stake a commission against this tier's free hands for the rest of this `decide`. */
+  private commission(tier: string, roles: number): void {
+    this.commissionedThisTick.set(tier, (this.commissionedThisTick.get(tier) ?? 0) + roles);
+  }
+
+  /**
    * How many hands this member must keep free for goods it owes the WORLD and cannot reach.
    *
    * ══════════════════════════════════════════════════════════════════════════
@@ -1688,7 +1796,23 @@ export class HeuristicCast {
     for (const claim of this.runtime.sovereignty.claimsOf(member.principal)) systems.add(claim.system);
     const pledged = this.musteredAt(member, tick);
     for (const stage of pledged.keys()) systems.add(stage);
+    // ★ And the grand stage, while this member could still crew the season's grand venture there
+    // ({@link grandPostOf}): a hand walked eight lanes to the Frontier is not the walk's to wander off.
+    const post = this.grandPostOf(member, tick);
+    if (post !== null) systems.add(post.stage);
     return { systems, pledged };
+  }
+
+  /**
+   * Hands this member keeps where they stand, by system: {@link musteredAt}'s pledges, and — from the
+   * grand window's opening — the one hand at the grand stage a crew is waiting on ({@link grandPostOf}).
+   * What `fill_role` must not spend, and what {@link fillHandsOf} does not count as free.
+   */
+  private handsHeldAt(member: CastMember, tick: number): ReadonlyMap<SystemId, number> {
+    const held = new Map(this.musteredAt(member, tick));
+    const post = this.grandPostOf(member, tick);
+    if (post !== null && post.windowOpen) held.set(post.stage, Math.max(held.get(post.stage) ?? 0, 1));
+    return held;
   }
 
   /**
@@ -1874,6 +1998,10 @@ export class HeuristicCast {
     // tick and split its four free hands between them. The claim is staked here, in roster order,
     // which is the only within-tick coordination §15.2 permits a heuristic.
     this.topYieldTiersThisTick.clear();
+    // ── ★ AND THE BOARD'S HANDS, READ ONCE A TICK: see {@link createCanFill} ──────
+    this.fillHandsThisTick.clear();
+    this.openRolesThisTick = null;
+    this.commissionedThisTick.clear();
     const wakeEvery = this.options.wakeEvery ?? 1;
     for (const [index, member] of this.members.entries()) {
       if (wakeEvery > 1 && (tick + index) % wakeEvery !== 0) continue;
@@ -1890,6 +2018,17 @@ export class HeuristicCast {
 
   /** Tiers a member has already opened a four-role venture in during the current `decide`. Scratch only. */
   private readonly topYieldTiersThisTick = new Set<string>();
+
+  /** ★ Each cast-mate's hands free to take a role this tick ({@link fillHandsOf}). Scratch only. */
+  private readonly fillHandsThisTick = new Map<PrincipalId, number>();
+  /** ★ Open roles on the board this tick, by the stage's tier — read once, on the first ask. Scratch only. */
+  private openRolesThisTick: Map<string, number> | null = null;
+  /**
+   * ★ Roles a cast-mate commissioned earlier in this `decide`, by tier — `topYieldTiersThisTick`'s rule
+   * (§15.2: within-tick actions never react to each other), so members reading one snapshot do not each
+   * open a venture for the same free hands. Scratch only.
+   */
+  private readonly commissionedThisTick = new Map<string, number>();
 
   /**
    * One member's move, in priority order.
@@ -2280,7 +2419,11 @@ export class HeuristicCast {
       const slot = this.openSlotFor(member, tick);
       // A hand you have publicly promised to defend with is not idle — {@link musteredAt} carries
       // the measurement. It reserves only as many as the reading needs, so the surplus is spendable.
-      const spare = new Map(this.musteredAt(member, tick));
+      // ★ `handsHeldAt`, not `musteredAt` alone: from the grand window's opening, the hand an eligible member
+      // walked to the grand stage is the crew's, not an ordinary role's — a role holds it until the FINALE
+      // settles, which is the crew's own delivery tick. Measured on `cf-b`: the four hands that formed the
+      // season's crew there were each spent on an ordinary fill within a few ticks of arriving.
+      const spare = new Map(this.handsHeldAt(member, tick));
       const hand = idle.find((h) => {
         const left = spare.get(h.location) ?? 0;
         if (left <= 0) return true;
@@ -2354,13 +2497,30 @@ export class HeuristicCast {
     // every later branch were calibrated against — a world with no four-role venture in it decides
     // exactly as it did before 41. {@link topYieldCreateFor} carries the gates.
     const fourRole = this.topYieldCreateFor(member, tick, rng, spendable, idle);
-    if (fourRole !== null) return { ...base, ...fourRole };
+    if (fourRole !== null) {
+      // Four roles of this tier's free hands: three cast-mates' and the creator's own (role 0).
+      const stage = fourRole.params['stage'] as SystemId;
+      this.commission(tierOf(runtime.world.map, stage), kindSpec(CAST_TOP_YIELD_KIND).roles.length);
+      return { ...base, ...fourRole };
+    }
 
+    // ── ★ COMMISSION ONLY WHAT SOMEBODY CAN FILL — {@link createCanFill} carries the measurement ──
+    //
+    // The roll and the A7 gate below decided whether this member WANTS to open a venture and can afford
+    // its promises. Neither asked whether anybody could take the roles, and in a 12-member season 1,252 of
+    // 1,465 ventures (85%) retired unfilled: a board of slots nobody had a hand for, re-opened every tick
+    // it lasted. The roll is still drawn first, so a member the gate turns away consumes exactly the draws
+    // it always did; it falls through to the Levy, the Charge and the walk, which is work that exists.
     const appetite = this.options.createChanceBps ?? DEFAULT_CREATE_CHANCE_BPS;
     if (spendable > 0 && idle.length > 0 && rng.chance(appetite, 10_000)) {
       const hand = idle[0];
-      if (hand !== undefined && this.canPromiseOneMore(member, CREATES[member.role])) {
+      if (
+        hand !== undefined &&
+        this.canPromiseOneMore(member, CREATES[member.role]) &&
+        this.createCanFill(member, CREATES[member.role], hand.location, tick)
+      ) {
         const kind = CREATES[member.role];
+        this.commission(tierOf(runtime.world.map, hand.location), kindSpec(kind).roles.length);
         return {
           ...base,
           verb: 'create',
@@ -4298,6 +4458,40 @@ export class HeuristicCast {
     );
   }
 
+  /**
+   * ★ **The grand stage, while a hand this member walked there is the season's crew in waiting** — or null.
+   *
+   * ══════════════════════════════════════════════════════════════════════════
+   * {@link grandMusterFor} walks one hand per eligible member to the Frontier stage from two Reckonings
+   * out, and {@link grandCreateFor} forms a crew only when four unattached principals stand there with an
+   * idle hand. Nothing kept a hand there once it arrived: the aimless walk could step it off, and
+   * `fill_role` spent the first idle hand it found on any ordinary role in the tier. Measured on `cf-b`
+   * (`the-cast-takes-the-finale.spec.ts`'s world): three hands stood at the stage as the window opened,
+   * corvid's went into an ordinary role and kestrel's was walked one lane away within six ticks, and the
+   * four never stood together again — the prize went UNCLAIMED. The fragility predates the launch fixes;
+   * fewer doomed ventures on the board moved which hand was spent first, and it surfaced.
+   *
+   * So the stage is a post: on {@link stationedAt} for the whole muster (the walk leaves it alone), and
+   * from the window's opening one hand there is held from ordinary fills ({@link handsHeldAt}). Only while
+   * it can matter — inside the last {@link CAST_GRAND_MUSTER_RECKONINGS} Reckonings and the window, for a
+   * member party to no candidate yet that can still stake a role — so no earlier tick of any world moves.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  private grandPostOf(
+    member: CastMember,
+    tick: number,
+  ): { readonly stage: SystemId; readonly windowOpen: boolean } | null {
+    const season = this.runtime.seasonBlock(tick, null);
+    if (season.reckonings_left > CAST_GRAND_MUSTER_RECKONINGS) return null;
+    const stage = season.grand.stage;
+    if (stage === null) return null;
+    const window = grandWindowOf(season.season, 0);
+    if (tick > window.closes_tick) return null;
+    if (freeCash(this.runtime.ledger, member.principal) < GRAND_ROLE_STAKE_MINOR) return null;
+    if (this.runtime.grandPartyOf(member.principal, season.season, null) !== null) return null;
+    return { stage, windowOpen: tick >= window.opens_tick };
+  }
+
   private stanceOf(member: CastMember): CastStance {
     return stanceFor(member.handle, this.stanceSeed) ?? 'ZEALOT';
   }
@@ -4414,6 +4608,11 @@ export class HeuristicCast {
       );
     for (const v of forming) {
       if (this.runtime.grandFillRefusal(member.principal, v, hand, stake) !== null) continue;
+      // ★ And the AUTHORITY rule every fill obeys (INV-23, §8.1 #3): a delegate of this candidate's
+      // creator may not crew it. `grandFillRefusal` judges the grand-only facts; `vFillRole` asks this
+      // first, so a member that skipped it asked for a refusal every tick of the window — measured on
+      // `fs-a`, two of brannock's delegates were refused on every tick of three candidates' windows.
+      if (this.runtime.fillRoleAuthorityRefusal(member.principal, v) !== null) continue;
       for (const role of openIndices(v)) {
         const key = `${v.id}::${String(role)}`;
         if (this.grandClaims.has(key)) continue;
@@ -4453,12 +4652,24 @@ export class HeuristicCast {
     // fourteen ticks for the rest of the FINALE — fourteen abandoned candidates, never more than
     // three hands to fill any of them. So the cast forms a crew only when at least as many unattached
     // principals stand at the stage as the kind has roles, itself included.
+    //
+    // ★ **And a delegate of this creator is no crew** (INV-23 asks at the creation tick, which is this
+    // one): `topYieldCreateFor`'s rule for the four-role BUILD, which this gate lacked. Counted anyway,
+    // they made a crew of four out of two that could fill — on `fs-a` the FINALE formed three candidates
+    // around brannock's two delegates and none of them filled, so the season's prize went UNCLAIMED.
     let unattached = 0;
     const seen = new Set<PrincipalId>();
     for (const h of this.runtime.world.hands.values()) {
       if (h.location !== stage || h.state !== 'IDLE' || !isPresent(h, tick) || seen.has(h.principal)) continue;
       seen.add(h.principal);
-      if (this.runtime.grandPartyOf(h.principal, season.season, null) === null) unattached += 1;
+      if (this.runtime.grandPartyOf(h.principal, season.season, null) !== null) continue;
+      if (
+        h.principal !== member.principal &&
+        this.runtime.grants.liveGrantBetween(member.principal, h.principal, tick) !== null
+      ) {
+        continue;
+      }
+      unattached += 1;
     }
     if (unattached < kindSpec('BUILD').roles.length) return null;
     this.grandFormedThisTick = true;

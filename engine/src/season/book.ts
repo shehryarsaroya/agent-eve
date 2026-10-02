@@ -142,8 +142,8 @@ export interface SeasonTitle {
   readonly clause: string;
 }
 
-/** A Frontier claim the boundary closed. */
-export interface ClosedClaim {
+/** A Frontier claim the boundary ended — `SEASON_ENDED` on the claim book. */
+export interface SeasonEndedClaim {
   readonly system: SystemId;
   readonly claimant: PrincipalId;
 }
@@ -157,7 +157,7 @@ export interface SeasonRecord {
   readonly baseYieldMinor: Minor;
   readonly grand: GrandResult;
   readonly titles: readonly SeasonTitle[];
-  readonly closedClaims: readonly ClosedClaim[];
+  readonly seasonEndedClaims: readonly SeasonEndedClaim[];
   readonly mootedCampaigns: readonly string[];
 }
 
@@ -384,7 +384,7 @@ function captureRecord(r: SeasonRecord): CanonicalValue {
       })),
     },
     titles: r.titles.map((t) => ({ title: t.title, principal: t.principal, value: t.value, clause: t.clause })),
-    closedClaims: r.closedClaims.map((c) => ({ system: c.system, claimant: c.claimant })),
+    seasonEndedClaims: r.seasonEndedClaims.map((c) => ({ system: c.system, claimant: c.claimant })),
     mootedCampaigns: [...r.mootedCampaigns],
   };
 }
@@ -439,8 +439,8 @@ function restoreRecord(raw: CanonicalValue, where: string): SeasonRecord {
         clause: readString(t, 'clause', tw),
       };
     }),
-    closedClaims: readArray(o['closedClaims'] ?? [], `${where}.closedClaims`).map((rawClaim, j) => {
-      const cw = `${where}.closedClaims[${String(j)}]`;
+    seasonEndedClaims: readArray(o['seasonEndedClaims'] ?? [], `${where}.seasonEndedClaims`).map((rawClaim, j) => {
+      const cw = `${where}.seasonEndedClaims[${String(j)}]`;
       const c = readObject(rawClaim, cw);
       return {
         system: readString(c, 'system', cw) as SystemId,

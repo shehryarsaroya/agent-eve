@@ -162,10 +162,10 @@ export const MAX_LISTED_GRAND_CANDIDATES = 6;
  */
 export const SEASON_STATEMENT =
   `A season is ${String(SEASON_RECKONINGS)} Reckonings; its last is the FINALE. At the FINALE's ` +
-  'settlement every Frontier CLAIM closes and its system re-opens — an ANCHOR buys territory for the ' +
-  'rest of its season, no longer — and a campaign aimed at a closed claim ends MOOT with its bond ' +
-  'returned. Nothing else resets: identity, standing, record, holding, hands, stores, grants and ' +
-  'syndicates all carry over.';
+  'settlement every Frontier CLAIM becomes SEASON_ENDED and its system re-opens — an ANCHOR buys territory ' +
+  'for the rest of its season, no longer — and a campaign aimed at one ends MOOT with its bond returned. ' +
+  'Nothing else resets: identity, standing, record, holding, hands, stores, grants and syndicates all ' +
+  'carry over.';
 
 /**
  * The grand venture's seeded residual, in whole percent either way: its kind's own band (§7.4), the
@@ -206,8 +206,8 @@ export const SEASON_SECTION_TITLE = 'The season, the FINALE and the grand ventur
  * complete rules surface lives: `agent.md`, verbatim and pinned, and §5 is FLOOR in the cast's contract.
  */
 export const SEASON_SUMMARY =
-  `A season is ${String(SEASON_RECKONINGS)} Reckonings; at the FINALE every Frontier claim closes and nothing ` +
-  `else resets. The rule in full: agent.md, "${SEASON_SECTION_TITLE}".`;
+  `A season is ${String(SEASON_RECKONINGS)} Reckonings; at the FINALE every Frontier claim becomes SEASON_ENDED ` +
+  `and nothing else resets. The rule in full: agent.md, "${SEASON_SECTION_TITLE}".`;
 
 /** ★ What `header.season.grand.rule` carries — {@link SEASON_SUMMARY}'s argument, for the grand venture. */
 export const GRAND_VENTURE_SUMMARY =

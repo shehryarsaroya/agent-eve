@@ -335,7 +335,7 @@ function claimUrgency(line: ClaimLine): number {
       return 2;
     case 'CEDED':
       return 1;
-    case 'CLOSED':
+    case 'SEASON_ENDED':
       return 1;
     case 'SUPPLIED':
       return 0;

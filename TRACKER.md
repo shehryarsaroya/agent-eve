@@ -6,7 +6,90 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-01 (latest) — SEASON 1 INTEGRATED: FOUR LANES, ONE `RULES_VERSION` 41, ON BRANCH `season1` (not merged to master, not deployed)
+> ### 2026-10-02 (latest) — SEASON 1 LAUNCH FIXES: THREE BLOCKERS ON THE INTEGRATED TREE (branch `season1-launch-fixes` off `season1` `d3e4f52`; not merged, not deployed)
+>
+> Still `RULES_VERSION` 41 (Season 1 is a fresh world, so a note in the 41 block rather than a bump),
+> verbs 40/40, observe keys 11/11, kinds 8/8, no new canon term. `npm run gate0`: tsc 0 · lint 0 ·
+> DET-8 and PROP-O3 pass · **371 files, 4,360 passed, 1 skipped, 0 failed**.
+>
+> - **The parley book rolls** (`say/parley.ts` §5). `MAX_PARLEY_ENTRIES` was a 512-row ring the gate
+>   refused past — the 513th parley of the WORLD'S LIFE was the last anybody could send, a morning of
+>   a launch. Eviction was never the fix (the opening count, the answer-once rule and the ceiling read
+>   these rows), so a letter now leaves only once every window that reads it has passed:
+>   `parleyLastReadTick` = the latest of its Reckoning, the 288-tick answer window and the map's
+>   thread (`PARLEY_THREAD_TICKS` from its reveal), retired in `EXPIRE`, inside the hash and the abort
+>   path. The cap is a POPULATION book (36 rows a principal — the 12-send ceiling × the 3 Reckonings a
+>   293-tick stretch can touch — × `MAX_PRINCIPALS` = 360,000), a tripwire that cannot fire below the
+>   ceiling. Every count reads one principal's mail (`ParleyBook.mailOf`), never the world's.
+>   `the-book-rolls.spec.ts`: 8 principals × 8 Reckonings at the ceiling, **768 letters**, every
+>   Reckoning the 4th opening (A15), the second letter before an answer (A15) and the 13th send
+>   (INV-26) refused, the published counts equal to the record; retiring 100 ticks early turns it red.
+>   This change alone moves no fact in a world without letters: the `fs-a` season ends on `season1`'s
+>   state hash (`3160799b41ea…` at tick 4,079).
+> - **A claim the season ends is `SEASON_ENDED`, not `CLOSED`.** HARD RULE 4: `syndicate/charter.ts`
+>   spells a charter's admission rule `CLOSED`. `SEASON_ENDED` names the only thing that ends such a
+>   claim and appears nowhere else in SPEC §3 or `src/`; `EXPIRED` was the alternative and already names
+>   a term its party set (an order's, a grant's), which a claimant never does. Renamed through the claim
+>   book, ticker, legend (`SEASON ENDED · BOND UNTOUCHED`), event (`claim.season_ended`), season record
+>   and frame (`seasonEndedClaims`), recap, client zoom, `SEASON_STATEMENT`/`SEASON_SUMMARY`, `agent.md`
+>   §5/§11B and SPEC §3/§5/§7.6. The season's own record stays `season.closed`. The repo vocabulary
+>   guard now reads array-declared enums (the blind spot the collision lived in) with a census of the
+>   nine words arrays and unions still share — see owner calls.
+> - **The heuristic cast commissions only what somebody can fill** (`cast/heuristic.ts:createCanFill`).
+>   Cause, measured at each create's tick: the create branch never asked who would fill it, a role holds
+>   its hand until the Reckoning settles, so after a cycle's opening almost nobody has a hand and every
+>   tick a member found no slot it rolled to open one more (abandoned: 98% with no idle cast-mate in the
+>   tier, 1% with 7–8; 88–99% of the creates after phase 48). The gate: cast-mates' free hands in the
+>   stage's tier (`fill_role`'s own `spendable`, never the creator's, never its delegates) must cover
+>   the roles already open there, the roles commissioned earlier this tick, and this venture's own.
+>   Two latent FINALE faults the new trajectory exposed, fixed in the same branch: the grand branches
+>   ignored INV-23 (a delegate of the grand creator counted as crew and was refused every tick —
+>   `fs-a`'s prize went UNCLAIMED), and nothing kept a mustered hand at the grand stage (ordinary fills
+>   and the aimless walk took it — `cf-b` never stood four there again). Regressions:
+>   `the-cast-commissions-what-it-can-fill.spec.ts`, `a-delegate-is-no-crew.spec.ts`.
+>
+> **Item 3, measured** (`scripts/season-probe.ts`, 12 members from genesis through the boundary,
+> `instant`; before = `season1` `d3e4f52`, after = this branch; same script on both trees):
+>
+> | | opened | settled | defaulted | abandoned unfilled | kept | elective defaults | BUILDs opened/settled | grand venture | `levyShort`, season |
+> |---|---|---|---|---|---|---|---|---|---|
+> | `fs-a` before | 1,465 | 174 | 22 | 1,238 | 370 | 31 | 11/10 | BROKEN corvid 322,016 (3 unpaid) | 14,767 (R13) |
+> | `fs-a` after | 226 | 176 | 22 | 13 | 377 | 30 | 17/12 | BROKEN corvid 299,136 (3 unpaid) | 19,558 (R13) |
+> | `fs-b` before | 1,572 | 188 | 20 | 1,326 | 400 | 28 | 17/11 | BROKEN corvid 298,784 (3 unpaid) | 120,136 (R10 28,184 · R12 37,659 · R13 54,293) |
+> | `fs-b` after | 228 | 180 | 24 | 8 | 380 | 35 | 15/10 | KEPT brannock 290,080 | 136,300 (R6 11,130 · R7 35,964 · R12 31,237 · R13 57,969) |
+> | `g01` before | 1,551 | 175 | 20 | 1,323 | 368 | 29 | 13/8 | KEPT brannock 305,024 | 450 (R11–R13, 150 each) |
+> | `g01` after | 229 | 182 | 21 | 10 | 387 | 27 | 15/9 | KEPT brannock 312,544 | 46,456 (R12 22,684 · R13 23,772) |
+> | ten seeds before | 14,263 | 1,821 | 195 | 11,946 | 3,846 | 266 | 137/101 | 7 KEPT · 2 BROKEN · 1 UNCLAIMED | 1,128,783 |
+> | ten seeds after | 2,275 | 1,839 | 174 | 117 | 3,861 | 230 | 154/101 | 8 KEPT · 2 BROKEN · 0 UNCLAIMED | 1,134,354 |
+>
+> Ten seeds = `fs-a`, `fs-b`, `g01`–`g07`, `season-e2e-28`; 0 violations on every run either side.
+> Abandoned unfilled 84% → 5% of opened; settled +1.0%, kept +0.4%, defaults −11%. The Levy total moves
+> +0.5% but per seed both ways (`fs-a`, `fs-b`, `g01`, `season-e2e-28` up; `g02`–`g07` down). The new
+> spikes on `g01`, `fs-b` and `season-e2e-28` trace to one mechanism: `INVERSE_EXPOSURE` billing the
+> member at an EXPOSURE peak of 0 five to nine times the 20,000 duty, whose 30% presence share nobody may
+> carry — owner call (3) of the entry below; the doomed fills had been spreading EXPOSURE peaks across
+> members and masking it. `fs-a`'s FINALE shortfall is goods, before and after. At
+> the balance-gate horizon (8 seeds × 9 Reckonings × 8 members) `kept` 1,136 → 1,213, `broken` 110 → 67,
+> and one such shortfall appears, `g07` R6 `p:varrow` 8,194 of 101,844 — pinned by bucket in
+> `the-constellation-closes-ranks.spec.ts` (escrowable remainder 0; presence-only residue a census).
+>
+> Fixtures widened as their own guards instruct, because the cast now opens ventures at a Reckoning's
+> opening: `a-forked-record-cannot-be-adopted` to 400 ticks, `books-in-the-hash`'s mint walk to a
+> Reckoning; `the-cast-takes-ground` counts ventures that FORMED (297 → 284 on its four seeds), not
+> ventures opened (2,639 → 301, 89% of them never formed).
+>
+> **For the owner:** (1) owner call (3) below is now the main source of the Levy's season-end spikes on
+> these seeds: cap one member's share of a docket, or let a carrier fill presence. (2) The guard's census
+> names the other array-vs-union words still shared — a charter's `OPEN` beside `OrderState`/`IndemnityState`
+> `OPEN` is the same shape as the `CLOSED` this fixed; `CONTACT` (range cell vs engagement state), `HOLD`,
+> `FITTING`, `LEVY`/`SYNDICATE` (ballots), `SMALL_GUN`. (3) **The prose OFFER book is the next
+> parley-shaped cap:** `MAX_OFFER_ENTRIES` 256 is a ring the OFFER reach rung and the directory COMPUTE
+> from, so at launch volume a fresh offer is evicted inside its 288-tick freshness window — and one
+> principal publishing every tick evicts everybody's. (4) `GrantBook.isLive` has no issuance clause, so
+> INV-23 asked at a venture's creation tick also bars a grant issued after it — an engine nuance a test
+> tripped over, not changed here.
+
+> ### 2026-10-01 — SEASON 1 INTEGRATED: FOUR LANES, ONE `RULES_VERSION` 41, ON BRANCH `season1` (not merged to master, not deployed)
 >
 > **The four Season 1 lanes are one branch.** Merged in this order — scale first, because it reshapes
 > how an observation is built and dimensions every book the others add to — `season1-scale` →

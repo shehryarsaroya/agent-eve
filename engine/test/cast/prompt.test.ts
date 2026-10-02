@@ -1008,7 +1008,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
     // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_219);
+    // ★ Then the launch fixes — see the cell below.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_277);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1085,7 +1086,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // Analytic margin 120,000 − 111,254 = **8,746**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 104,743 — leaving **15,257**, against a required 4,000.
     // ── ★ AND THE SEASON LANE, +3,037 ON TOP: §5's `### The season, the FINALE and the grand venture`
-    // (+2,624, FLOOR), §5's season row and §6's `· season` header line (+160, FLOOR), and §11B's CLOSED
+    // (+2,624, FLOOR), §5's season row and §6's `· season` header line (+160, FLOOR), and §11B's SEASON_ENDED
     // paragraph (+253, the claimant's). The two lanes composed exactly — 111,254 + 3,037 — so neither
     // displaced the other; MEASURED on the merged tree. 
     // ── ★ AND THE CONTACT LANE, +3,841: CONTACT — the PARLEY's reach and price, the DIRECTORY, BUILD and SIEGE ──
@@ -1112,7 +1113,19 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // then +87 on every position for the merge's own line, §6's `· growth (§11H …)`, because scale's
     // `header.growth` was in every observation and named nowhere in the observe block. Analytic margin
     // 120,000 − 118,219 = **1,781**: the analytic maximum still fits whole, and nothing is dropped.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_219);
+    //
+    // ── ★ THE LAUNCH FIXES (41): +51 ON THE FIVE ROWS THAT READ THE PARLEY BLOCK ──
+    //
+    // The ceiling bullet stopped promising a book that "holds 512 letters" — it no longer does; it rolls
+    // (`say/parley.ts` §5) — and says instead that the ceiling is per sender and how long a letter stays
+    // in `counterparties[]`. Act-gated with the block on `message{TO}`, so the three positions that
+    // cannot address anybody pay nothing. Analytic margin 120,000 − 118,270 = **1,730**.
+    //
+    // Then +7 for the claim ending's rename, `CLOSED` → `SEASON_ENDED` (HARD RULE 4: a syndicate charter's
+    // admission rule is spelled `CLOSED`). +1 on every position — §5's FLOOR season statement now says a
+    // claim "becomes SEASON_ENDED" where it said "closes", and the horizons row says claims "end" — and +6
+    // more on the claimant, whose §11B paragraph names the state. Analytic margin **1,723**.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_277);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1195,7 +1208,9 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // position pays (§4's four-role kinds, `ventures.directory`, §6's key lines), then +87 for §6's
     // `· growth` line. All four lanes merged and measured: 111,455, margin 120,000 − 111,455 = **8,545**
     // against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_455);
+    // ★ Then +51 for the launch fixes' PARLEY ceiling sentence (the book rolls) and +1 for the claim
+    // ending's rename (the FLOOR season statement): 111,507, margin **8,493** against a required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_507);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2916,13 +2931,20 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // The three lanes composed exactly: every merged reading below is the sum of the lanes' own
       // deltas on that row, so none displaced another — then +87 on every row for §6's `· growth (§11H …)`
       // line, the merge naming scale's `header.growth` in the observe block. MEASURED, not added.
-      54_752, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41)
-      65_263, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41)
-      74_958, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41)
-      79_993, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87 at 41)
-      110_207, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87 at 41)
-      91_840, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87 at 41)
-      111_455, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87 at 41)
+      //
+      // ── ★ THE LAUNCH FIXES: +51 ON THE FIVE ROWS OFFERED `message {to}`, 0 ON THE OTHER THREE ──
+      //
+      // The PARLEY block's ceiling bullet: "the book holds 512 letters" was true of a book that refused the
+      // 513th letter of the world's life, and the book now rolls (`say/parley.ts` §5). MEASURED.
+      // Then +1 on every row and +6 more on the claimant: the claim ending renamed `CLOSED` → `SEASON_ENDED`
+      // (HARD RULE 4) in §5's FLOOR season statement and horizons row, and in §11B's claimant paragraph.
+      54_753, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact, +87 at 41, +1)
+      65_264, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1)
+      74_959, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact, +87 at 41, +1)
+      80_045, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1)
+      110_265, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7)
+      91_892, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact, +87, +51 launch, +1)
+      111_507, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841, +87, +51, +1)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3097,7 +3119,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      118_219, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87 at 41)
+      118_277, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact, +87, +51 launch, +7)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**

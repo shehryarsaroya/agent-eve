@@ -155,7 +155,7 @@ export function settleCharge(args: {
     // Nobody holds it. The assessment is not anybody's obligation, so no shortfall is
     // recorded and no bond is slashed — but the system's misses persist in `delinquency`,
     // so abandoning does not launder the arc. The next taker inherits what it is shown.
-    if (claim === null || claim.state === 'LAPSED' || claim.state === 'CEDED' || claim.state === 'CLOSED') continue;
+    if (claim === null || claim.state === 'LAPSED' || claim.state === 'CEDED' || claim.state === 'SEASON_ENDED') continue;
 
     const owing = book.owingOf(reckoning, line.system);
     const paidInFull = owing.owed <= 0;

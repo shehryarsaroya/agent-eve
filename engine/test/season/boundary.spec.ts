@@ -16,6 +16,7 @@ import { qty } from '../../src/core/units.js';
 import { GOODS_FAUCET, storesAccount } from '../../src/ledger/index.js';
 import { finaleTickOf, seasonOf } from '../../src/season/index.js';
 import { ANCHOR_QTY, CHARGE_GOOD, CLAIM_BOND_MINOR } from '../../src/sovereignty/params.js';
+import { claimLegend } from '../../src/sovereignty/view.js';
 import { ALLOY_ANCHOR_QTY, ALLOY_GOOD } from '../../src/works/params.js';
 import { CAMPAIGN_BOND_MINOR, MATERIEL_GOOD, PULSE_MATERIEL_QTY } from '../../src/campaign/index.js';
 import { neighboursOf, tierOf } from '../../src/world/index.js';
@@ -135,7 +136,16 @@ describe('the season boundary (A10)', () => {
 
     // ── WHAT RESETS ──────────────────────────────────────────────────────────
     const closed = runtime.sovereignty.at(frontier);
-    expect(closed?.state).toBe('CLOSED');
+    expect(closed?.state).toBe('SEASON_ENDED');
+    // ★ The legend says what happened and that nothing was taken — `LAPSED · BOND SLASHED`'s counterpart.
+    expect(claimLegend('SEASON_ENDED', 0)).toBe('SEASON ENDED · BOND UNTOUCHED');
+    expect(
+      runtime.events
+        .eventsAtTick(runtime.engine.tick)
+        .filter((e) => e.event.kind === 'claim.season_ended')
+        .map((e) => e.event.payload['system']),
+      'the record names the ending in the same word as the claim book',
+    ).toEqual([frontier]);
     expect(runtime.sovereignty.liveAt(frontier)).toBeNull();
     const ended = runtime.campaigns.get(war.id);
     expect(ended?.state).toBe('MOOT');
@@ -143,7 +153,7 @@ describe('the season boundary (A10)', () => {
     expect(ended?.forfeited).toBe(0);
     const record = runtime.seasons.last();
     expect(record?.season).toBe(1);
-    expect(record?.closedClaims).toEqual([{ system: frontier, claimant: frontierDefender }]);
+    expect(record?.seasonEndedClaims).toEqual([{ system: frontier, claimant: frontierDefender }]);
     expect(record?.mootedCampaigns).toEqual([war.id]);
     expect(record?.grand.outcome).toBe('UNCLAIMED');
 

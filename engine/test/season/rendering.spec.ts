@@ -122,7 +122,7 @@ describe('THE SEASON RECORD', () => {
         { label: 'WRIGHT', principal: P('x'), handle: 'x', due: minor(10), paid: minor(0), electedBy: null, electedByHandle: null },
       ],
       titles: [],
-      closedClaims: 0,
+      seasonEndedClaims: 0,
       legend: 'SEASON 1: x carried 10 and paid every share.',
     };
     expect(seasonProblems(null, [base]).join(' ')).toContain('reads KEPT with 1 unpaid');
