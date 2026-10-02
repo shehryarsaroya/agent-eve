@@ -130,7 +130,10 @@ export interface MandateRead {
 export interface LevyBlock {
   readonly my_assessment: Minor;
   readonly paid: Minor;
-  /** Payable only in goods physically delivered to a named place (§5.2). */
+  /**
+   * Where a hand of the deliverer must STAND to pay (§5.2). The goods are drawn from wherever they
+   * stand — the Levy is location-blind about the lots, unlike the CHARGE, whose goods must be at the claim.
+   */
   readonly deliverable_to: SystemId;
   readonly shortfall_if_unpaid: Minor;
   /** The allocation ballot, while it is open. */

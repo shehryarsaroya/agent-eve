@@ -13046,12 +13046,12 @@ export class Runtime {
    * and a consumption posted at the payer's holding while its hand stood at the delivery
    * berth would be a located fact that was false.
    *
-   * The carriage itself is compressed into the presence requirement: `haul` is §16 step
-   * 11 and does not exist, so what the engine can actually check is that one of the
-   * payer's own hands is standing at the named place. That is also the property §5.2 and
-   * PROP-LV3 turn on — presence, not payment — so the compression costs the mechanic
-   * nothing it depends on. It is stated rather than hidden, and it is the one place this
-   * module is thinner than the fiction.
+   * ★ The carriage itself is compressed into the presence requirement, and the Levy is
+   * LOCATION-BLIND about the goods ON PURPOSE (`levyGoodAvailable`): the lots are drawn wherever
+   * they stand, and what is checked is that one of the DELIVERER's own hands is standing at the
+   * named place. That is the property §5.2 and PROP-LV3 turn on — presence, not carriage. (This
+   * read "`haul` is §16 step 11 and does not exist"; `haul` is live and moves goods, and the
+   * Levy still does not ask it to — unlike the CHARGE, whose goods must stand at the claim.)
    *
    * Never throws. A delivery is an agent-reachable path and a sweep runs at settlement;
    * a throw in either would be an agent-triggerable halt or a tick aborted after every
@@ -13073,8 +13073,9 @@ export class Runtime {
       if (portion <= 0) continue;
       // ── RELOCATE, DESTROY THE PORTION, SEND THE REMAINDER HOME ──────────────
       //
-      // §10.2 makes the Levy payable "only in located goods physically delivered to a named place", so
-      // the lot genuinely moves to the delivery place before it is consumed — that part is the rule.
+      // §5.2 makes the Levy payable in goods at a named place, so the lot genuinely moves to the
+      // delivery place before it is consumed — wherever it stood: which lots is location-blind, the
+      // place it is destroyed at is not.
       //
       // What was missing is the last step. `relocate` moves the WHOLE lot and the ledger has no split,
       // so paying a 500 assessment out of a 45,000 lot moved all 45,000 to the Levy's place, destroyed
@@ -17699,8 +17700,9 @@ export class Runtime {
    * `vDeliver` resolves the place from the **payer's** plan (`plan.deliverableTo`) and then
    * demands a hand of the *deliverer* standing on it. A constellation has one delivery place, so
    * in practice a carrier serves its own constellation — and that is the right shape rather than
-   * a limitation: goods cannot cross a constellation (`haul` is not live), so a carry that
-   * reached next door would be inventing transport the world does not have.
+   * a limitation: the hand has to stand at the payer's own place, so a carry that reached next
+   * door would be a presence the carrier does not have. (This said "`haul` is not live"; it is,
+   * and the Levy's goods are drawn wherever they stand all the same.)
    *
    * Ordered by canonical payer id and capped, like {@link grantCandidates}: a deterministic
    * prefix of one list, so the menu an agent reads and the bot that plays pick from the same rows

@@ -4044,9 +4044,13 @@ function affordancesFor(
       // the separate declarations. The first divergence would have this offer naming the wrong
       // good in the one place an agent is told to copy verbatim, and naming the wrong good in an
       // affordance has already cost this repo two bugs.
+      // ★ Location-blind about the goods and bound about the hand — what `vDeliver` does, said here
+      // because the documents said the goods had to stand at the place, which is the CHARGE's rule.
       what_it_forecloses:
         `hands ${String(levyQuote.payable)} of ${LEVY_GOOD} to the Levy at ${String(levyQuote.place)}, ` +
-        `against ${String(levyQuote.owed)} owed this Reckoning. Goods delivered are GONE — this is upkeep, ` +
+        `against ${String(levyQuote.owed)} owed this Reckoning, drawn from wherever your ${LEVY_GOOD} stands: ` +
+        'it is your HAND that must be at the place, not the goods (a Charge needs both at the claim). ' +
+        'Goods delivered are GONE — this is upkeep, ' +
         `not an investment, and it buys you no standing. What it avoids is the other branch: an unpaid ` +
         `assessment is recorded as a public shortfall against you at settlement, and a shortfall is ` +
         `permanent. Paying part is legal and is counted; the remainder still falls short.`,
