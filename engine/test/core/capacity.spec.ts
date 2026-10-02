@@ -70,6 +70,7 @@ import * as predation from '../../src/predation/params.js';
 import { MAX_INDEMNITY_DEFERRALS } from '../../src/risk/indemnity.js';
 import * as riskLines from '../../src/risk/lines.js';
 import * as risk from '../../src/risk/params.js';
+import * as directory from '../../src/say/directory.js';
 import * as parley from '../../src/say/parley.js';
 import { MAX_REACH_ROWS } from '../../src/say/reach.js';
 import { MAX_SEALS_PER_PRINCIPAL_PER_RECKONING } from '../../src/seal/book.js';
@@ -190,6 +191,11 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_REASON_LENGTH: { value: runtime.MAX_REASON_LENGTH, class: 'PER_ROW', why: 'per reason' },
   MAX_MESSAGE_LENGTH: { value: runtime.MAX_MESSAGE_LENGTH, class: 'PER_ROW', why: 'per message' },
   MAX_PARLEY_LENGTH: { value: parley.MAX_PARLEY_LENGTH, class: 'PER_ROW', why: 'per parley' },
+  // ── Season 1's contact lane ──
+  MAX_PARLEYS_SENT_PER_RECKONING: { value: parley.MAX_PARLEYS_SENT_PER_RECKONING, class: 'PER_ROW', why: 'parleys one principal may send a Reckoning, answers and openings together' },
+  MAX_DIRECTORY_SEEKING: { value: directory.MAX_DIRECTORY_SEEKING, class: 'PER_ROW', why: 'forming ventures listed on one directory row; the rest are counted' },
+  MAX_FRAME_PARLEY_EXCERPT: { value: frames.MAX_FRAME_PARLEY_EXCERPT, class: 'PER_ROW', why: 'characters of one parley thread — the ticker\'s own bound' },
+  MAX_MAIL_EXCERPT: { value: prompt.MAX_MAIL_EXCERPT, class: 'PER_ROW', why: 'characters of one waiting letter the cast prompt quotes; the whole letter is in the header' },
   MAX_PROSE_LENGTH: { value: intent.MAX_PROSE_LENGTH, class: 'PER_ROW', why: 'per seal' },
   MAX_TARGET_LENGTH: { value: intent.MAX_TARGET_LENGTH, class: 'PER_ROW', why: 'per seal' },
   MAX_DIGEST_CHARS: { value: MAX_DIGEST_CHARS, class: 'PER_ROW', why: 'per dossier' },
@@ -246,6 +252,11 @@ const CAPS: Readonly<Record<string, Cap>> = {
   MAX_RELATIONS: { value: runtime.MAX_RELATIONS, class: 'LEGIBILITY', why: 'observation' },
   MAX_MARKET_ROWS: { value: runtime.MAX_MARKET_ROWS, class: 'LEGIBILITY', why: 'observation' },
   MAX_REACH_ROWS: { value: MAX_REACH_ROWS, class: 'LEGIBILITY', why: 'observation' },
+  MAX_AWAITING_SHOWN: { value: parley.MAX_AWAITING_SHOWN, class: 'LEGIBILITY', why: 'observation: letters header.parley.awaiting_reply quotes in full; the rest are counted' },
+  MAX_DIRECTORY_ROWS: { value: directory.MAX_DIRECTORY_ROWS, class: 'LEGIBILITY', why: 'observation: ventures.directory rows for the reader\'s constellation; the rest are counted' },
+  MAX_FRAME_DIRECTORY_LINES: { value: frames.MAX_FRAME_DIRECTORY_LINES, class: 'LEGIBILITY', why: 'frame: THE DEALING MARK across every constellation — a grown map shares the same 16, which is a viewer\'s limit' },
+  MAX_FRAME_DIRECTORY_PER_CONSTELLATION: { value: frames.MAX_FRAME_DIRECTORY_PER_CONSTELLATION, class: 'LEGIBILITY', why: 'frame: so one busy stage cannot fill the panel' },
+  MAX_FRAME_PARLEY_LINES: { value: frames.MAX_FRAME_PARLEY_LINES, class: 'LEGIBILITY', why: 'frame: declassified parleys, newest first' },
   MAX_PLANS: { value: MAX_PLANS, class: 'LEGIBILITY', why: 'observation (the unwired rival)' },
   // ── Season 1's season lane: what a frame and a header list of the season, never the record ──
   MAX_FRAME_GRAND_CANDIDATES: { value: frames.MAX_FRAME_GRAND_CANDIDATES, class: 'LEGIBILITY', why: 'frame: grand candidates, largest public stake first' },
@@ -288,7 +299,10 @@ const CAPS: Readonly<Record<string, Cap>> = {
     class: 'FLAGGED',
     why:
       'a Ring whose size saturates at its capacity, and `parleyRefusal` refuses once it is full — so the 513th parley ' +
-      'of the WORLD\'S LIFE is refused, and every one after it, at any population. Owned by the parley lane; reported, not changed here',
+      'of the WORLD\'S LIFE is refused, and every one after it, at any population. Season 1\'s contact lane bounds the ' +
+      'RATE (MAX_PARLEYS_SENT_PER_RECKONING) and made the book captured world state, not the lifetime; the refusal is ' +
+      'load-bearing for A15, because the opening allowance and the sends ceiling are counted off this book, so letting ' +
+      'the ring evict would hand a busy world free openings. An owner call: a per-principal count or a population-sized book',
   },
   MAX_FILLS: {
     value: marketBook.MAX_FILLS,

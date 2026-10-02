@@ -226,6 +226,8 @@ export {
   projectObservation,
   readSituation,
   situationalFocus,
+  mailBlock,
+  MAX_MAIL_EXCERPT,
   unitGrade,
   unitName,
   type BuiltPrompt,

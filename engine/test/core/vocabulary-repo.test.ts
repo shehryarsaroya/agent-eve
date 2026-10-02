@@ -78,6 +78,15 @@ const SANCTIONED = new Map<string, string>([
   // channel rather than a megaphone.
   ['ReachWhy.CAMPAIGN', 'the campaign you both stand in IS the reason you may address each other — the canon concept as a reason, not a second sense of the word'],
   ['ReachWhy.GRANT', 'a live grant between two principals is what makes them addressable; the reach rung names the same grant §3 defines and nothing else'],
+  // ★ 41's three new canon-word rungs, on the CAMPAIGN/GRANT entries' argument exactly: each names the
+  // situation two principals stood in together AS the reason one may address the other. A raid you
+  // stood in (either side), a syndicate you sit in, a venture you finished together. `VIA_RAID` and the
+  // like were the alternative and are refused for the reason above — two words for one concept is HARD
+  // RULE 4's violation with the sign flipped. The two non-canon rungs (`OFFER`, `CONSTELLATION`) need no
+  // entry: neither is a §3 term.
+  ['ReachWhy.RAID', 'the standoff you both stood in IS the reason you may address each other — §3\'s RAID, the predation, as the reason; the battle fought inside it is the same standoff, so it needs no second rung'],
+  ['ReachWhy.SYNDICATE', 'a syndicate you both sit in is what makes you addressable to each other; the rung names the org container §3 defines and nothing else'],
+  ['ReachWhy.VENTURE', 'a venture you both were parties to, finished, is the reason you may address each other — §3\'s VENTURE as the reason, and only once it has finished, because a live one has its own MESSAGE channel'],
   // ★ Added when `haul` went live and the word entered §3, and it is RAID's entry with a different
   // noun: carrying goods yourself and hiring a CARRIER to carry them are ONE concept bought two ways,
   // which is what `venture/kinds.ts` means by calling `CARRIER` + `ESCORT` "the vertical slice's exact
@@ -135,6 +144,8 @@ const SHARED_MEMBERS = new Map<string, string>([
     'value entering the economy against a named faucet; INV-1 treats the batch kind and the direction as one fact'],
   ['BatchKind+SupplyDirection.RETIRE',
     'value leaving the economy against a named sink; the mirror of ISSUE and the same argument'],
+  ['ReachWhy+VentureKind.RAID',
+    "§3's own RAID row reads 'predation; a venture kind', and a reach rung naming the standoff two principals stood in is that same predation as a reason — `VentureKind.RAID` is the kind, `ReachWhy.RAID` is 'you stood in one together'; one concept, read from two sides, and the SANCTIONED entry above argues it"],
   ['RaidSide+RoleLabel.RAIDER',
     'one who raids, whether it is a slot inside a RAID venture or the side a joiner takes in a standoff — the identical shape the ESCORT entry above sanctions, and §3 names RAID once for both'],
   ['AccountKind+Compartment.STORES',

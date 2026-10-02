@@ -269,9 +269,13 @@ var ZoomView = (function () {
     ((D.L && D.L.convoyLines) || R.convoyLines || []).forEach(function (c) {
       (convoys[c.to] || (convoys[c.to] = [])).push(c);
     });
+    // ★ 41 — who is dealing at each holding, and the letters between holdings in this constellation.
+    var dealing = {};
+    (D.directory || []).forEach(function (d) { (dealing[d.at] || (dealing[d.at] = [])).push(d); });
+    var threads = (D.parleys || []).filter(function (t) { return t.fromAt && t.toAt && inCon[t.fromAt] && inCon[t.toAt]; });
 
     var gVerge = S('g'), gLanes = S('g'),
-      gDisc = S('g'), gLab = S('g'), gSel = S('g');
+      gDisc = S('g'), gLab = S('g'), gSel = S('g'), gThread = S('g');
 
     /* ══════════════════════════════════════════════ ★ WHO HOLDS THIS ════
      *
@@ -714,6 +718,23 @@ var ZoomView = (function () {
         else st.push({ t: cl.legend || cl.state, c: 'cy' });
         if (!cl.anchorHot) st.push({ t: 'ANCHOR COLD · COLLECTING NOTHING', c: 'dm' });
       }
+      // ★ THE DEALING MARK's words: who here is offering or recruiting. A lantern on the disc's rim
+      // says it at a glance; the line says who.
+      var dl = dealing[s.id] || [];
+      if (dl.length) {
+        st.push({
+          t: 'DEALING · ' + dl.slice(0, 2).map(function (d) { return U.handleOf(d.principal); }).join(', ') +
+            (dl.length > 2 ? ' +' + (dl.length - 2) : ''),
+          c: 'cy',
+        });
+        g.appendChild(S('circle', {
+          class: 'zdeal', cx: (p.x + r * 0.71).toFixed(1), cy: (p.y - r * 0.71).toFixed(1), r: '3.2',
+        }, [S('title', { text: dl.map(function (d) {
+          return U.handleOf(d.principal) + ' — ' + (d.offering || ((d.seeking || [])[0]
+            ? 'recruiting ' + d.seeking[0].kind + ', ' + d.seeking[0].open + ' of ' + d.seeking[0].roles + ' open'
+            : 'at work')) + ' · ' + d.kept + ' kept, ' + d.broke + ' broken';
+        }).join('\n') })]));
+      }
       rn.slice(0, 1).forEach(function (rr4) { st.push({ t: rr4.legend.toUpperCase(), c: 'dm' }); });
       if (sw && sw.reachers) {
         st.push({
@@ -900,9 +921,29 @@ var ZoomView = (function () {
       }
     });
 
+    // ★ THE PARLEY THREAD — a thin dotted arc from the sender's holding to the recipient's, drawn only
+    // from the tick the letter declassified (the frame carries nothing earlier). An answer is the
+    // return stroke, bowed the other way, so a conversation reads as a pair of arcs.
+    threads.forEach(function (t) {
+      var a = P[t.fromAt], b = P[t.toAt];
+      if (!a || !b) return;
+      var path;
+      if (t.fromAt === t.toAt) {
+        path = 'M' + (a.x - 10).toFixed(1) + ',' + (a.y - 18).toFixed(1) + ' q10,-22 20,0';
+      } else {
+        var mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, dx = b.x - a.x, dy = b.y - a.y;
+        var bow = (t.answering ? -0.18 : 0.18);
+        path = 'M' + a.x.toFixed(1) + ',' + a.y.toFixed(1) + ' Q' + (mx - dy * bow).toFixed(1) + ',' +
+          (my + dx * bow).toFixed(1) + ' ' + b.x.toFixed(1) + ',' + b.y.toFixed(1);
+      }
+      gThread.appendChild(S('path', { class: 'zthread' + (t.answering ? ' ans' : ''), d: path }, [
+        S('title', { text: U.handleOf(t.from) + ' → ' + U.handleOf(t.to) + ' · ' + t.act + ' · t' + t.sentTick + '\n' + t.excerpt }),
+      ]));
+    });
+
     var root = S('svg', {
       id: 'zoomsvg', viewBox: '0 0 ' + W + ' ' + H, preserveAspectRatio: 'xMidYMid meet',
-    }, [gVerge, gLanes, gDisc, gLab, gSel]);
+    }, [gVerge, gLanes, gThread, gDisc, gLab, gSel]);
     // the same seeded field off the same ids, on a canvas for the same reason
     U.clear(host);
     var cv = document.createElement('canvas');

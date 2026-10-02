@@ -202,12 +202,11 @@ import { publishOffer } from '../say/offer.js';
 import { say } from '../say/say.js';
 import {
   MAX_PARLEY_ENTRIES,
+  PARLEY_ANSWER_WINDOW_TICKS,
+  lettersAwaitingAnswer,
   parley,
-  parleyAllowanceFor,
-  parleyNote,
+  parleyCapacityFor,
   parleyRefusal,
-  parleysRemaining,
-  parleysSent,
   parleysVisibleTo,
   ParleyEntitlementBook,
   type ParleyCapacity,
@@ -216,7 +215,16 @@ import {
   type ParleyPort,
   type ParleyWritePort,
 } from '../say/parley.js';
-import { reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
+import { PARLEY_TIE_TICKS, reachableFor, type ReachPort, type ReachRow } from '../say/reach.js';
+import {
+  directoryFor as buildDirectory,
+  freshOfferOf,
+  MAX_DIRECTORY_ROWS,
+  type Directory,
+  type DirectoryPort,
+  type DirectoryVenture,
+} from '../say/directory.js';
+import { SAY_TABLE, readSayCapture, sayCapture } from '../say/capture.js';
 import { sign } from '../venture/sign.js';
 import { abandon } from '../venture/abandon.js';
 import { withdraw } from '../venture/withdraw.js';
@@ -499,11 +507,17 @@ import {
 import {
   MAX_FRAME_BATTLE_LINES,
   MAX_FRAME_CLAIM_LINES,
+  MAX_FRAME_DIRECTORY_LINES,
+  MAX_FRAME_DIRECTORY_PER_CONSTELLATION,
+  MAX_FRAME_PARLEY_EXCERPT,
+  MAX_FRAME_PARLEY_LINES,
   MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_RAID_LINES,
   type ClaimLine,
+  type DirectoryLine,
   type MarketLine,
+  type ParleyLine,
   type SwayLine,
   type WorksLine,
   type SyndicateLine,
@@ -2434,6 +2448,46 @@ function grownView(g: GrownConstellation, at: number): GrownView {
  * launch. A deploy over an existing journal would need `COMPACT_ACCEPT_DIVERGENCE_AT_TICK=<tick>:<fingerprint>`
  * like every other version; the machinery is unchanged and the preflight prints the exact string.
  *
+ * ── 41 · CONTACT ─────────────────────────────────────────────────────────────
+ *
+ * ★ **MORE CONTACT, PRICED THE SAME. Reach reads every situation two principals stood
+ * in together; answers are free; who is dealing is published; the cast builds with four.**
+ *
+ * Found by playing (2026-10-01): a blind playtester got no answer to two parleys to house
+ * characters and could not message an ally it had just fought beside (*"a shared raid gives no right
+ * to address someone"*); a design review measured `reachable_principals: 0` on most observations, no
+ * public place that says who is dealing, probes managing five to seven counterparties, and **no
+ * venture with four or more roles ever occurring in the live world**. Five changes, no verb spent
+ * (40/40 stands), no observe key spent (11/11 stands):
+ *
+ *   1. **Reach** (`say/reach.ts`) gains five rungs — RAID (a standoff you stood in, live or for
+ *      `PARLEY_TIE_TICKS` after), SYNDICATE (a house you sit in), VENTURE (a deal you finished
+ *      together, inside the same window), OFFER (an advertiser in your constellation) and the EARNED
+ *      CONSTELLATION rung (everyone seated in your constellation once you have honoured elective
+ *      promises to `PARLEY_CONSTELLATION_MIN_COUNTERPARTIES` distinct counterparties — priced in
+ *      standing, never in identities). The predicate is uncapped; the cap bounds what is printed.
+ *   2. **The price is split** (`say/parley.ts` §4): an ANSWER to a letter inside the rolling
+ *      `PARLEY_ANSWER_WINDOW_TICKS` is free of the opening allowance and of the entitlement; an
+ *      OPENING spends one of `PARLEYS_PER_RECKONING`; a ceiling of `MAX_PARLEYS_SENT_PER_RECKONING`
+ *      bounds both. **The A15 price of speaking first is unchanged.**
+ *   3. **The `say` state table** carries the parley and prose offer books (`say/capture.ts`),
+ *      because three readers now cross a Reckoning boundary: uncaptured, an adopted boot refuses the
+ *      replayed answer to a pre-checkpoint letter and — the tail having no tripwire — serves a world
+ *      silently forked from its journal (measured, `a-letter-survives-adoption.spec.ts`).
+ *      `CHECKPOINT_REQUIRED_TABLES` names it.
+ *   4. **The directory** (`say/directory.ts`) — `ventures.directory` in `observe` and
+ *      `directoryLines` on both frames, one builder; plus `parleyLines`, the PARLEY THREAD, from
+ *      each letter's reveal tick. `header.parley.awaiting_reply` quotes unanswered letters on the
+ *      one key the cast's prompt never drops.
+ *   5. **The cast builds with four** (`cast/heuristic.ts`): an occasional BUILD, staffed by its
+ *      creator and three cast-mates in its tier, honoured IN_FULL out of its own proceeds.
+ *
+ * ── EXPECTED DIVERGENCE SIGNATURE ────────────────────────────────────────────
+ *
+ * **From tick 0, by design: Season 1 is a fresh world** (owner decision, 2026-10-01), so no record
+ * written under 40 is replayed against this build. For completeness: the `say` table changes every
+ * snapshot's shape from tick 0, and the cast diverges at the first tick a member opens a BUILD.
+ *
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const RULES_VERSION = 41;
@@ -3106,6 +3160,21 @@ class Ring<T> {
 
   get droppedCount(): number {
     return this.dropped;
+  }
+
+  /**
+   * Replace the contents with a captured state — the inverse of reading {@link all} and
+   * {@link droppedCount}. Used only by a state table's restore (the `say` table, 41): a ring the gate
+   * reads across a Reckoning has to come back from a checkpoint exactly, eviction count included.
+   * Refuses a capture longer than the cap, because a restore must never produce a state `push` could not.
+   */
+  restore(items: readonly T[], dropped: number): void {
+    if (items.length > this.cap) {
+      throw new Error(`a ring of cap ${String(this.cap)} cannot hold the ${String(items.length)} captured rows`);
+    }
+    this.items.length = 0;
+    this.items.push(...items);
+    this.dropped = dropped;
   }
 }
 
@@ -3855,9 +3924,9 @@ export class Runtime {
   private readonly talk = new Ring<TalkEntry>(MAX_TALK_ENTRIES);
   /**
    * The PARLEY book (§3, `say/parley.ts`) — direct addresses between principals with no shared
-   * venture. A ring beside `talk` rather than a state table, for the reason `parley.ts` §3 argues:
-   * the reveal clock is derived from the row's own tick, so there is no stored second number to
-   * drift, and this is the same class of object `talk` has always been.
+   * venture. A bounded ring, **captured since 41** in the `say` state table beside {@link offers}:
+   * the gate reads it across a Reckoning boundary (the rolling answer window), so a checkpoint must
+   * carry it and an aborted tick must roll it back. `say/capture.ts` carries the argument.
    */
   private readonly parleys = new Ring<ParleyEntry>(MAX_PARLEY_ENTRIES);
   /**
@@ -3866,6 +3935,10 @@ export class Runtime {
    * Filled by {@link sampleParleyEntitlements}, read by {@link parleyEntitlementOf}.
    */
   private readonly parleyEntitlement = new ParleyEntitlementBook();
+  /**
+   * The prose OFFER book. Captured since 41 in the `say` table: the directory lists by an offer's
+   * freshness and the OFFER reach rung addresses by it, both across a Reckoning boundary.
+   */
   private readonly offers = new Ring<OfferEntry>(MAX_OFFER_ENTRIES);
   private readonly claims = new Ring<ClaimEntry>(MAX_CLAIM_ENTRIES);
 
@@ -4405,6 +4478,27 @@ export class Runtime {
             const rows = readDeliveryCapture(captured);
             this.deliveries.clear();
             for (const row of rows) this.deliveries.set(row.venture, row);
+          },
+        },
+        {
+          // ★ 41: the PARLEY book and the prose OFFER book. Both were rings beside `talk`, outside the
+          // hash, which was safe only while every reader was scoped to the current Reckoning. The
+          // rolling answer window, the OFFER rung and the directory all read across the boundary, so
+          // an adopted checkpoint has to carry them and an aborted tick has to roll them back — or a
+          // replayed answer to a letter from before the checkpoint is refused, and the boot (whose tail
+          // carries no tripwire) serves a world silently forked from its journal. `say/capture.ts`.
+          name: SAY_TABLE,
+          capture: () =>
+            sayCapture({
+              parleys: this.parleys.all,
+              parleysDropped: this.parleys.droppedCount,
+              offers: this.offers.all,
+              offersDropped: this.offers.droppedCount,
+            }),
+          restore: (captured) => {
+            const restored = readSayCapture(captured);
+            this.parleys.restore(restored.parleys, restored.parleysDropped);
+            this.offers.restore(restored.offers, restored.offersDropped);
           },
         },
       ],
@@ -10689,7 +10783,8 @@ export class Runtime {
    *
    * `tick` is closed over rather than passed per call because a grant's liveness is a function of
    * it, and a port whose two members disagreed about "now" could offer a parley to the counterparty
-   * of a grant that had already expired.
+   * of a grant that had already expired. The same holds for every ★ rung below: each tie has a clock
+   * (`PARLEY_TIE_TICKS`, the answer window, an offer's freshness) and all of them read this one tick.
    */
   private reachPort(tick: number): ReachPort {
     return {
@@ -10729,6 +10824,94 @@ export class Runtime {
         }
         return rows;
       },
+      // ★ A standoff this principal stood in — as target, initiator or a party on either side — that
+      // is live, or resolved inside the tie window. `sideInRaid` is the one predicate for "which side",
+      // so the reach rule and the combat layer cannot disagree about who stood where. The raid book is
+      // `PUBLIC` in full (`predation/view.ts`), and so is every row this reads.
+      raidTies: (principal) => {
+        const out: {
+          readonly id: string;
+          readonly stage: SystemId;
+          readonly state: string;
+          readonly target: PrincipalId;
+          readonly initiator: PrincipalId | null;
+          readonly parties: readonly { readonly principal: PrincipalId; readonly side: 'RAIDER' | 'DEFENDER' }[];
+          readonly fought: boolean;
+        }[] = [];
+        for (const raid of this.raids.all()) {
+          if (sideInRaid(raid, principal) === null) continue;
+          if (raid.state !== 'DEMANDED') {
+            const ended = raid.resolvedAtTick ?? raid.resolvesAtTick;
+            if (tick - ended > PARLEY_TIE_TICKS) continue;
+          }
+          out.push({
+            id: String(raid.id),
+            stage: raid.stage,
+            state: raid.state,
+            target: raid.target,
+            initiator: raid.initiator,
+            parties: raid.parties.map((p) => ({ principal: p.principal, side: p.side })),
+            fought: this.battles.forRaid(raid.id) !== undefined,
+          });
+        }
+        return out;
+      },
+      // ★ Syndicates this principal sits in, with every other sitting member. Membership is a
+      // `PUBLIC` fact (`syndicateLines`), and a seat needs a member's `admit` or an OPEN charter the
+      // members chose — consent on the house's side either way.
+      syndicatesOf: (principal) =>
+        this.syndicateBook.of(principal, tick).map((row) => ({
+          id: String(row.id),
+          name: row.name,
+          members: this.syndicateBook.sittingMembers(row.id, tick),
+        })),
+      // ★ Ventures this principal was a party to that BOUND and FINISHED inside the tie window. A live
+      // venture is excluded on purpose: it is still shared, and its channel is `message {venture}`.
+      ventureTies: (principal) => {
+        const out: {
+          readonly id: string;
+          readonly kind: string;
+          readonly stage: SystemId;
+          readonly state: string;
+          readonly parties: readonly PrincipalId[];
+          readonly resolvedAtTick: number;
+        }[] = [];
+        for (const venture of this.ventures.forPrincipal(principal)) {
+          if (venture.state !== 'SETTLED' && venture.state !== 'DEFAULTED') continue;
+          const ended = venture.resolvedAtTick;
+          if (ended === null || tick - ended > PARLEY_TIE_TICKS) continue;
+          const parties = new Set<PrincipalId>([venture.creator]);
+          for (const role of venture.roles) if (role.filledByPrincipal !== null) parties.add(role.filledByPrincipal);
+          out.push({
+            id: String(venture.id),
+            kind: venture.kind,
+            stage: venture.stage,
+            state: venture.state,
+            parties: [...parties].sort(compareIds),
+            resolvedAtTick: ended,
+          });
+        }
+        return out;
+      },
+      homeOf: (principal) =>
+        this.world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(this.world, principal).system,
+      // ★ Seated principals in `system`'s constellation with an offer still fresh at this tick. The
+      // freshness rule is `say/directory.ts:freshOfferOf`, the same one the directory lists by.
+      advertisersNear: (system) => {
+        const target = systemOf(this.world.map, system).constellation;
+        const offers = this.offers.all;
+        const out: { readonly principal: PrincipalId; readonly tick: number }[] = [];
+        for (const principal of this.world.principalOrder) {
+          const id = this.world.holdingByPrincipal.get(principal);
+          const holding = id === undefined ? undefined : this.world.holdings.get(id);
+          if (holding === undefined) continue;
+          if (systemOf(this.world.map, holding.system).constellation !== target) continue;
+          const fresh = freshOfferOf(offers, principal, tick);
+          if (fresh !== null) out.push({ principal, tick: fresh.tick });
+        }
+        return out;
+      },
+      distinctCounterparties: (principal) => this.standing.row(principal).distinctCounterparties,
     };
   }
 
@@ -10787,22 +10970,20 @@ export class Runtime {
   }
 
   /**
-   * Who addressed this principal **inside the Reckoning containing `tick`**, and how many times.
+   * Who has written to this principal, and how much — **one home, three readers** (the REPLY rung,
+   * the header's counts, and the gate through `say/parley.ts`).
    *
-   * ONE HOME, THREE READERS — the reach rule (which offers the reply), the allowance (which funds it)
-   * and the header block (which publishes both counts). Three copies of "who wrote to me" is three
-   * chances for a menu to offer a reply the allowance will not pay for, which is AGT-S2 arriving
-   * through a predicate rather than through a gate.
+   * Two windows, deliberately, and each says which one it reads:
    *
-   * **Two numbers because they answer two questions, and conflating them was a bug.** `received` is a
-   * count of *messages* and funds the allowance; `awaiting` is a count of *principals* with an open
-   * conversation and is what an agent acts on. The first version returned only `awaiting` and used it
-   * for both — so a principal addressed by two others answered one, watched its allowance fall by the
-   * same reply twice (`remaining` is `allowance − sent`), and went mute to the second for the rest of
-   * the cycle.
-   *
-   * Scoped to the Reckoning for the allowance's reason: a licence to address somebody who spoke once
-   * six cycles ago accumulates exactly the way §9 refuses to fund a war chest.
+   *   - `senders` — everybody whose letter to this principal is inside the rolling
+   *     `PARLEY_ANSWER_WINDOW_TICKS` (§4 of `say/parley.ts`). The REPLY rung. Not filtered to
+   *     *unanswered*: a sender stays addressable for the whole window, and whether the next letter
+   *     back is a free answer or an opening is the gate's question, not reach's.
+   *   - `received` — letters received **this Reckoning**, a count of *messages*. Informational since
+   *     41; it no longer funds anything, which is what retired the double-subtraction bug the first
+   *     version of this note recorded.
+   *   - `awaiting` — principals whose latest letter is unanswered and inside the window, read off
+   *     `lettersAwaitingAnswer` so the inbox, this count and the gate cannot disagree.
    */
   private approachesTo(
     principal: PrincipalId,
@@ -10810,19 +10991,17 @@ export class Runtime {
   ): { readonly senders: readonly PrincipalId[]; readonly received: number; readonly awaiting: number } {
     const here = reckoningIndex(tick);
     const asked = new Set<PrincipalId>();
-    const answered = new Set<PrincipalId>();
     let received = 0;
     for (const entry of this.parleys.all) {
-      if (reckoningIndex(entry.tick) !== here) continue;
-      if (entry.to === principal) {
-        asked.add(entry.from);
-        received += 1;
-      } else if (entry.from === principal) {
-        answered.add(entry.to);
-      }
+      if (entry.to !== principal || entry.tick > tick) continue;
+      if (tick - entry.tick <= PARLEY_ANSWER_WINDOW_TICKS) asked.add(entry.from);
+      if (reckoningIndex(entry.tick) === here) received += 1;
     }
-    const senders = [...asked].sort(compareIds);
-    return { senders, received, awaiting: senders.filter((p) => !answered.has(p)).length };
+    return {
+      senders: [...asked].sort(compareIds),
+      received,
+      awaiting: lettersAwaitingAnswer(this.parleys.all, principal, tick).length,
+    };
   }
 
   /** One home, two callers: {@link parleysFor} for the menu and {@link parleyRefusalFor} for both. */
@@ -10833,42 +11012,17 @@ export class Runtime {
    * `Engine.tick` is `completedTick`, advanced at **COMMIT** — after every phase — so inside a handler
    * `ctx.tick` is `engine.tick + 1`. The first version of this port read reach and the entitlement at
    * `engine.tick` while spends were counted at the tick passed in: one tick of skew, landing on the
-   * Reckoning boundary the expiry rule is about.
-   *
-   * **What the skew did NOT do, stated because the first version of this note claimed it did.** It did
-   * not let last cycle's allowance fund this cycle's spend. `remaining` re-derives the allowance from
-   * the tick it is *given*, and it is the binding gate — so mutating either line above and re-running
-   * the boundary sweep leaves it green, which is how the overclaim was caught. Writing "this was a
-   * capacity leak" would have been a false statement in a docblock about a rules surface, which is the
-   * class of thing this repo has shipped three times.
-   *
-   * **What it actually did**, both worth fixing and neither a leak:
-   *
-   *   - a **false refusal** exactly at a boundary tick — an agent whose allowance opens at `ctx.tick`
-   *     but was closed at `engine.tick` hits the `allowance === 0` early return and is told it needs a
-   *     kept elective promise, one tick before that stops being true;
-   *   - a **one-tick-late grant expiry** in reach: a grant that dies at `ctx.tick` still named its
-   *     counterparty as addressable, so the menu and the verb both admitted an address that had just
-   *     become illegal.
-   *
-   * One tick, one meaning, and the fix costs a parameter. Found by reading the tick loop rather than by
-   * a test — and the test that exists now (`test/say/parley.spec.ts`'s boundary sweep) pins the
-   * *equivalence* between the published count and the shared gate, which is the property that matters
-   * whatever the next skew turns out to be.
+   * Reckoning boundary the expiry rule is about. One tick, one meaning, and the fix costs a parameter.
+   * `test/say/parley.spec.ts`'s boundary sweep and `answers-are-free.spec.ts`'s window sweep pin the
+   * *equivalence* between the published count and the shared gate at every tick of both edges.
    * ══════════════════════════════════════════════════════════════════════════
    */
   private parleyPort(tick: number): ParleyPort {
     return {
       reach: (principal) => this.reachFor(principal, tick),
-      remaining: (principal, at) =>
-        parleysRemaining(
-          this.parleys.all,
-          principal,
-          at,
-          reckoningIndex,
-          parleyAllowanceFor(this.parleyEntitlementOf(principal, at)),
-        ),
       entitlement: (principal) => this.parleyEntitlementOf(principal, tick),
+      entries: () => this.parleys.all,
+      reckoningOf: reckoningIndex,
       isSeated: (principal) => this.world.holdingByPrincipal.get(principal) !== undefined,
       bookSize: () => this.parleys.size,
     };
@@ -10886,36 +11040,32 @@ export class Runtime {
   }
 
   /**
-   * §2's price as a standing block on `header`, present at zero, at full and at not-entitled alike.
-   *
-   * The third state is the one §9's capacity did not have for the project's whole life: its only
-   * appearance in an observation was a `withheld` line that fires exactly when the count reaches
-   * zero, so an agent learned the resource existed by exhausting it. A price an agent cannot read
-   * before it is charged is a surprise, not a price (A2).
+   * ★ Does `from` owe `to` an answer — would a letter to it be free? Read by the affordance so an
+   * answer row can say so, and decided by the same predicate the gate uses (`say/parley.ts`).
+   */
+  owesParleyAnswer(from: PrincipalId, to: PrincipalId, tick: number): boolean {
+    return lettersAwaitingAnswer(this.parleys.all, from, tick).some((letter) => letter.from === to);
+  }
+
+  /**
+   * Every letter this principal owes an answer on, newest first and uncapped — the inbox
+   * `header.parley.awaiting_reply` quotes the first few of. The reader's own mail (`PARTIES`).
+   */
+  parleyLettersAwaiting(principal: PrincipalId, tick: number): readonly ParleyEntry[] {
+    return lettersAwaitingAnswer(this.parleys.all, principal, tick);
+  }
+
+  /**
+   * §2's price as a standing block on `header`, present at zero, at full, at not-entitled and with
+   * mail waiting alike. Built in `say/parley.ts` so the block, the gate and the note share one count.
    */
   parleysFor(principal: PrincipalId, tick: number): ParleyCapacity {
-    const entitlement = this.parleyEntitlementOf(principal, tick);
-    const allowance = parleyAllowanceFor(entitlement);
-    const remaining = parleysRemaining(this.parleys.all, principal, tick, reckoningIndex, allowance);
-    const sent = parleysSent(this.parleys.all, principal, tick, reckoningIndex);
-    const reachable = this.reachFor(principal, tick).length;
-    return {
-      parleys_remaining: remaining,
-      parleys_per_reckoning: allowance,
-      reachable_principals: reachable,
-      distinct_counterparties: entitlement.distinctCounterparties,
-      earned_minor: entitlement.earnedMinor,
-      principals_awaiting_your_reply: this.approachesTo(principal, tick).awaiting,
-      parleys_received_this_reckoning: entitlement.inboundParleys,
-      parleys_sent_this_reckoning: sent.length,
-      // Deduplicated and canonically ordered: two parleys to one principal is one conversation,
-      // and `compareIds` is the repo's one ordering for principal ids (never a bare `.sort()`).
-      parleyed_this_reckoning: [...new Set(sent)].sort(compareIds),
-      refreshes_at_tick: tick - (tick % TICKS_PER_RECKONING) + TICKS_PER_RECKONING,
-      declassifies_after_ticks: AUDIT_LAG_TICKS,
-      reading_costs_parleys: 0,
-      rule: parleyNote(remaining, allowance, entitlement, reachable),
-    };
+    const home = this.world.holdingByPrincipal.get(principal) === undefined ? null : holdingOf(this.world, principal).system;
+    return parleyCapacityFor(this.parleyPort(tick), principal, tick, {
+      ticksPerReckoning: TICKS_PER_RECKONING,
+      auditLagTicks: AUDIT_LAG_TICKS,
+      constellation: home === null ? null : String(systemOf(this.world.map, home).constellation),
+    });
   }
 
   /**
@@ -10927,6 +11077,142 @@ export class Runtime {
    */
   parleysVisible(reader: PrincipalId | null, tick: number): readonly ParleyEntry[] {
     return parleysVisibleTo(this.parleys.all, reader, tick);
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ★ THE DIRECTORY (`say/directory.ts`, `RULES_VERSION` 41) — who is dealing, by constellation.
+  //
+  // One builder, two readers: `api/observe.ts` publishes the reader's constellation as
+  // `ventures.directory` and the frames publish every constellation as `directoryLines`. Everything
+  // the port reads is `PUBLIC` — holdings, the prose offer book, forming ventures and their open
+  // roles, live role-holders, the standing vectors and the posted bond — so A9 holds by construction.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  private directoryPort(): DirectoryPort {
+    return {
+      seated: () => {
+        const out: { readonly principal: PrincipalId; readonly system: SystemId }[] = [];
+        for (const principal of this.world.principalOrder) {
+          const id = this.world.holdingByPrincipal.get(principal);
+          const holding = id === undefined ? undefined : this.world.holdings.get(id);
+          if (holding !== undefined) out.push({ principal, system: holding.system });
+        }
+        return out;
+      },
+      constellationOf: (system) => String(systemOf(this.world.map, system).constellation),
+      offers: () => this.offers.all,
+      forming: () => {
+        const out: DirectoryVenture[] = [];
+        for (const venture of this.ventures.live()) {
+          if (venture.state !== 'FORMING') continue;
+          const open = openIndices(venture);
+          if (open.length === 0) continue;
+          out.push({
+            venture: String(venture.id),
+            kind: venture.kind,
+            stage: venture.stage,
+            creator: venture.creator,
+            open: open.map((i) => venture.roles[i]?.label ?? String(i)),
+            roles: venture.roles.length,
+            closesTick: venture.windowClosesTick,
+          });
+        }
+        return out;
+      },
+      liveRoles: () => {
+        const out = new Map<PrincipalId, number>();
+        for (const venture of this.ventures.live()) {
+          if (venture.state !== 'LIVE') continue;
+          const touched = new Set<PrincipalId>([venture.creator]);
+          for (const role of venture.roles) if (role.filledByPrincipal !== null) touched.add(role.filledByPrincipal);
+          for (const p of touched) out.set(p, (out.get(p) ?? 0) + 1);
+        }
+        return out;
+      },
+      record: (principal) => {
+        const row = this.standing.row(principal);
+        return {
+          kept: row.electiveHonoured,
+          broke: row.defaults,
+          counterparties: row.distinctCounterparties,
+          lastDefaultTick: row.lastDefaultTick,
+          bondMinor: Number(this.bondView(principal).posted),
+        };
+      },
+    };
+  }
+
+  /**
+   * The directory of the constellation this principal's holding stands in, the reader excluded.
+   * `null` for a principal with no seat — it stands in no constellation.
+   */
+  directoryFor(principal: PrincipalId, tick: number, limit: number = MAX_DIRECTORY_ROWS): Directory | null {
+    if (this.world.holdingByPrincipal.get(principal) === undefined) return null;
+    const home = holdingOf(this.world, principal).system;
+    const constellation = String(systemOf(this.world.map, home).constellation);
+    return buildDirectory(this.directoryPort(), constellation, tick, limit, principal);
+  }
+
+  /**
+   * ★ Every constellation's directory, as the frames draw it: the top
+   * `MAX_FRAME_DIRECTORY_PER_CONSTELLATION` of each, in canonical constellation order, capped at
+   * `MAX_FRAME_DIRECTORY_LINES` — the same rows and the same order `observe` gives a reader there.
+   */
+  directoryLines(tick: number): readonly DirectoryLine[] {
+    const port = this.directoryPort();
+    const out: DirectoryLine[] = [];
+    for (const constellation of this.world.map.constellationOrder) {
+      const directory = buildDirectory(port, String(constellation), tick, MAX_FRAME_DIRECTORY_PER_CONSTELLATION);
+      for (const row of directory.rows) {
+        out.push({
+          principal: row.principal,
+          constellation: row.constellation,
+          at: row.at,
+          offering: row.offering?.text ?? null,
+          offeredTick: row.offering?.tick ?? null,
+          seeking: row.seeking.map((v) => ({
+            venture: v.venture as VentureId,
+            kind: v.kind,
+            open: v.open.length,
+            roles: v.roles,
+          })),
+          liveRoles: row.liveRoles,
+          kept: row.record.kept,
+          broke: row.record.broke,
+          counterparties: row.record.counterparties,
+        });
+      }
+    }
+    return out.slice(0, MAX_FRAME_DIRECTORY_LINES);
+  }
+
+  /**
+   * ★ THE PARLEY THREAD: letters that have DECLASSIFIED, newest first — the most recent
+   * `MAX_FRAME_PARLEY_LINES` published within the last Reckoning-length of `tick`.
+   *
+   * Only from `revealsAtTick`, through `parleysVisibleTo(…, null, tick)` — the viewer's own clause of
+   * the one predicate — so a thread is never on a screen before every agent could read the letter
+   * (A9). The excerpt is the sender's own words, which §11.2 publishes at that tick.
+   */
+  parleyLines(tick: number): readonly ParleyLine[] {
+    const home = (p: PrincipalId): SystemId | null =>
+      this.world.holdingByPrincipal.get(p) === undefined ? null : holdingOf(this.world, p).system;
+    return parleysVisibleTo(this.parleys.all, null, tick)
+      .filter((e) => tick - e.revealsAtTick <= TICKS_PER_RECKONING)
+      .slice(-MAX_FRAME_PARLEY_LINES)
+      .reverse()
+      .map((e) => ({
+        from: e.from,
+        to: e.to,
+        fromAt: home(e.from),
+        toAt: home(e.to),
+        act: e.act,
+        why: e.why,
+        sentTick: e.tick,
+        publishedTick: e.revealsAtTick,
+        answering: e.answering,
+        excerpt: e.text.length <= MAX_FRAME_PARLEY_EXCERPT ? e.text : `${e.text.slice(0, MAX_FRAME_PARLEY_EXCERPT - 1)}…`,
+      }));
   }
 
   /** `message {to, act, text}` — an ADAPTER. The operation lives in `say/parley.ts`. */
@@ -10986,6 +11272,10 @@ export class Runtime {
         revealsAtTick: entry.revealsAtTick,
         why: entry.why,
         about: entry.about,
+        // ★ 41: whether this letter ANSWERED one (free) or opened a conversation (priced). On the record
+        // so a reader of the declassified thread can tell a reply from a cold approach without
+        // re-deriving the book's history.
+        answering: entry.answering,
       },
       visibility: 'PARTIES',
       audience: [
@@ -17727,6 +18017,10 @@ export class Runtime {
       claimLines: this.claimLines(tick).slice(0, MAX_FRAME_CLAIM_LINES),
       saps: this.sapLines(tick),
       frontBands: this.frontBandLines(tick),
+      // ★ 41 — the DEALING MARK and the PARLEY THREAD. Both bounded: the directory by the map's
+      // constellations and a per-constellation cap, the threads by the shared 512-row book.
+      directoryLines: this.directoryLines(Math.max(0, tick)),
+      parleyLines: this.parleyLines(Math.max(0, tick)),
       ticker: this.raidTicker.all,
       // ★ THE SEASON LINE, from the block every agent's `header.season` is built by, with no viewer.
       season: this.seasonLine(Math.max(0, tick)),
@@ -18163,6 +18457,10 @@ export class Runtime {
       // record already carries the season that just closed, because the boundary ran in this tick.
       season: this.seasonLine(outcome.tick),
       seasonRecords: seasonRecordLinesFor(this.seasonRecordsForFrame(), this.frameHandles()),
+      // ★ 41 — who was dealing at the settlement tick, and the letters that declassified over the
+      // Reckoning just closed. Both builders are the live frame's, at the settlement tick.
+      directoryLines: this.directoryLines(outcome.tick),
+      parleyLines: this.parleyLines(outcome.tick),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

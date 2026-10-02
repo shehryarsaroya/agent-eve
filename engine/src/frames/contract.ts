@@ -37,6 +37,7 @@ import type {
   ConstellationId,
   SystemId,
   VentureId,
+  VentureKind,
   VentureState,
   ZoneTier,
 } from '../core/types.js';
@@ -1749,6 +1750,10 @@ export interface ReckoningFrame {
   /** ★ A13's second and third: **THE COMPACT LINK**, and the snap that scars both ends of it. */
   readonly compactLinks: readonly CompactLink[];
   readonly glyphs: readonly VentureGlyph[];
+  /** ★ **THE DEALING MARK** (41): who is dealing in each constellation, at its holding. */
+  readonly directoryLines: readonly DirectoryLine[];
+  /** ★ **THE PARLEY THREAD** (41): letters that declassified this Reckoning, sender to recipient. */
+  readonly parleyLines: readonly ParleyLine[];
   /** One line, 140 chars, tick-stamped. The export surface. */
   readonly ticker: readonly string[];
   /** Tomorrow's docket, as the closing card. */
@@ -1757,6 +1762,152 @@ export interface ReckoningFrame {
   readonly season: SeasonLine | null;
   /** ★ Closed seasons, newest first — each FINALE and its champions (A10, §16 *Remembered*). */
   readonly seasonRecords: readonly SeasonRecordLine[];
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// ★ THE DEALING MARK and THE PARLEY THREAD (`RULES_VERSION` 41)
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Directory rows a frame carries, across every constellation. Budgeted like every other line set. */
+export const MAX_FRAME_DIRECTORY_LINES = 16;
+/** Of which at most this many from any one constellation, so one busy stage cannot fill the panel. */
+export const MAX_FRAME_DIRECTORY_PER_CONSTELLATION = 4;
+/** Declassified parleys a frame carries. */
+export const MAX_FRAME_PARLEY_LINES = 12;
+/** Characters of a parley's text a thread carries. The ticker's own bound. */
+export const MAX_FRAME_PARLEY_EXCERPT = 140;
+
+/**
+ * ★ **THE DEALING MARK** — one principal that is dealing, drawn at its holding (A13).
+ *
+ * `say/directory.ts` builds it, the same builder `observe` publishes `ventures.directory` from, so a
+ * viewer and an agent can never be shown two different lists of who is dealing (A9 by construction).
+ * The pixel: a lit mark on the holding, with the offer's first words or the roles it is still
+ * recruiting for, and the record beside it — so a stranger reads *"vex wants three hands for a
+ * BUILD, and has kept its word to five counterparties"* off the map without opening a table.
+ *
+ * Every field is `PUBLIC` (`projection.ts` argues each one). What it may never carry — stores,
+ * escrow, cargo, hands, private words, a score — is refused by name in {@link assertFrameBudgets}.
+ */
+export interface DirectoryLine {
+  readonly principal: PrincipalId;
+  readonly constellation: string;
+  /** Where its HOLDING stands. */
+  readonly at: SystemId;
+  /** Its fresh offer, verbatim (already ≤140 chars by `publish_offer`), or null. */
+  readonly offering: string | null;
+  readonly offeredTick: number | null;
+  /** Forming ventures it is recruiting for: kind, how many roles are still open, of how many. */
+  readonly seeking: readonly {
+    readonly venture: VentureId;
+    readonly kind: VentureKind;
+    readonly open: number;
+    readonly roles: number;
+  }[];
+  /** Live roles held and live ventures run. */
+  readonly liveRoles: number;
+  /** The record beside the mark — §6.4's vectors, never a score. */
+  readonly kept: number;
+  readonly broke: number;
+  readonly counterparties: number;
+}
+
+/**
+ * ★ **THE PARLEY THREAD** — one letter between two principals, drawn from the tick it declassified.
+ *
+ * A thin dotted arc from the sender's holding to the recipient's, in the shape A13 already gave the
+ * DOSSIER THREAD and for the same reason: it is drawn **only from `revealsAtTick`**, the tick every
+ * agent and every viewer read the letter together, so it is a re-read of a `PUBLIC` fact and never an
+ * early disclosure. The text is the sender's own words and §11.2 publishes them (*"its text does
+ * publish"*); the thread carries the first {@link MAX_FRAME_PARLEY_EXCERPT} characters, which is what
+ * §14's receipt reel will quote back beside what the sender actually did.
+ */
+export interface ParleyLine {
+  readonly from: PrincipalId;
+  readonly to: PrincipalId;
+  /** The two holdings, or null for a principal no longer seated. */
+  readonly fromAt: SystemId | null;
+  readonly toAt: SystemId | null;
+  readonly act: string;
+  /** The situation that made the address legal — a reach rung. */
+  readonly why: string;
+  readonly sentTick: number;
+  readonly publishedTick: number;
+  /** True when this letter ANSWERED one (§4 of `say/parley.ts`). Drawn as the return stroke. */
+  readonly answering: boolean;
+  readonly excerpt: string;
+}
+
+/**
+ * The two contact line sets' budgets plus their refusals, with the one clause only a frame can check:
+ * a thread drawn on a frame whose tick is earlier than the letter's reveal would be the disclosure
+ * arriving early — A9 inverted, the `roleTags` shape — so the frame's own tick is the bound.
+ */
+function contactBudgetProblems(
+  frameTick: number,
+  directory: readonly DirectoryLine[],
+  parleys: readonly ParleyLine[],
+): readonly string[] {
+  const problems: string[] = [...contactProblems(directory, parleys)];
+  if (directory.length > MAX_FRAME_DIRECTORY_LINES) {
+    problems.push(`${String(directory.length)} directory lines, budget is ${String(MAX_FRAME_DIRECTORY_LINES)}`);
+  }
+  if (parleys.length > MAX_FRAME_PARLEY_LINES) {
+    problems.push(`${String(parleys.length)} parley threads, budget is ${String(MAX_FRAME_PARLEY_LINES)}`);
+  }
+  for (const line of parleys) {
+    if (line.publishedTick > frameTick) {
+      problems.push(
+        `parley thread ${line.from}→${line.to} publishes at ${String(line.publishedTick)} on a frame of tick ` +
+          `${String(frameTick)}: a letter is PARTIES until it declassifies, and drawing it earlier puts it in front ` +
+          'of a viewer before a non-party agent can read it (A9)',
+      );
+    }
+  }
+  return problems;
+}
+
+/** ★ The DEALING MARK's and the PARLEY THREAD's refusals, shared by both frames. */
+function contactProblems(directory: readonly DirectoryLine[], parleys: readonly ParleyLine[]): readonly string[] {
+  const problems: string[] = [];
+  for (const line of directory) {
+    for (const key of Object.keys(line)) {
+      if (/stores|escrow|balance|cargo|manifest|held|stock|reserve|hand|goods|score|reach|parley|message/i.test(key)) {
+        problems.push(
+          `directory line ${line.principal} carries "${key}". A dealing mark publishes who is dealing, what it ` +
+            'offers or seeks and its public record — never its stores or hands (SENSED), never a reader-specific ' +
+            'reach (that is the agent\'s own `observe`), never a score (§3)',
+        );
+      }
+    }
+    if (line.offering === null && line.seeking.length === 0 && line.liveRoles === 0) {
+      problems.push(`directory line ${line.principal} is listed with nothing to list; a mark asserts dealing`);
+    }
+    if (line.offering !== null && line.offering.length > 140) {
+      problems.push(`directory line ${line.principal} carries an offer over 140 characters`);
+    }
+  }
+  const perConstellation = new Map<string, number>();
+  for (const line of directory) {
+    perConstellation.set(line.constellation, (perConstellation.get(line.constellation) ?? 0) + 1);
+  }
+  for (const [constellation, n] of perConstellation) {
+    if (n > MAX_FRAME_DIRECTORY_PER_CONSTELLATION) {
+      problems.push(
+        `${String(n)} directory lines in ${constellation}, budget is ${String(MAX_FRAME_DIRECTORY_PER_CONSTELLATION)}`,
+      );
+    }
+  }
+  for (const line of parleys) {
+    if (line.publishedTick < line.sentTick) {
+      problems.push(`parley thread ${line.from}→${line.to} publishes before it was sent`);
+    }
+    if (line.excerpt.length > MAX_FRAME_PARLEY_EXCERPT) {
+      problems.push(`parley thread ${line.from}→${line.to} carries ${String(line.excerpt.length)} characters`);
+    }
+    if (line.from === line.to) problems.push(`parley thread ${line.from} is addressed to itself`);
+  }
+  return problems;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -1971,6 +2122,10 @@ export interface LiveFrame {
   readonly saps: readonly SapLine[];
   /** ★ THE FRONT BAND — the cone, before landfall. */
   readonly frontBands: readonly FrontBand[];
+  /** ★ THE DEALING MARK, live: who is offering or recruiting right now, and their record. */
+  readonly directoryLines: readonly DirectoryLine[];
+  /** ★ THE PARLEY THREAD, drawn on the tick each letter declassifies and never before. */
+  readonly parleyLines: readonly ParleyLine[];
   /** The export surface, 140-char bounded, exactly as on the Reckoning frame. */
   readonly ticker: readonly string[];
   /** ★ THE SEASON LINE, live: the FINALE countdown and the crews still forming. */
@@ -2151,6 +2306,7 @@ export function assertLiveFrameBudgets(frame: LiveFrame): void {
   }
 
   problems.push(...convoyProblems(frame.convoyLines), ...compactProblems(frame.compactLinks));
+  problems.push(...contactBudgetProblems(frame.tick, frame.directoryLines, frame.parleyLines));
 
   if (frame.ticksUntilReckoning < 1 || frame.ticksUntilReckoning > TICKS_PER_RECKONING) {
     problems.push(
@@ -2919,6 +3075,7 @@ export function assertFrameBudgets(frame: ReckoningFrame): void {
     );
   }
   problems.push(...convoyProblems(frame.convoyLines), ...compactProblems(frame.compactLinks));
+  problems.push(...contactBudgetProblems(frame.tick, frame.directoryLines, frame.parleyLines));
 
   // ── ★ §14'S STRIP MUST BE ASSEMBLABLE FROM THE FRAME ALONE ────────────────
   //

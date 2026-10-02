@@ -1007,8 +1007,8 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     //
     // Analytic margin 120,000 − 97,882 = **22,118**. The reachable maximum is `outside the Commons
     // and landless, at its fullest` at 91,363 — leaving **28,637**, against a required 4,000.
-    // ★ RE-MEASURED at 41, Season 1's lanes merged — see the cell below for each lane's delta.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(114_291);
+    // ★ RE-MEASURED at 41, Season 1's four lanes merged — see the cell below for each lane's delta.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_132);
     // ── ★ AND AT 32, +2,384 MORE: DESTRUCTIBLE WORKS ────────────────────────
     //
     // §11A `### It can be DESTROYED` — one unit, and it lands on the five positions outside the
@@ -1087,8 +1087,30 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // ── ★ AND THE SEASON LANE, +3,037 ON TOP: §5's `### The season, the FINALE and the grand venture`
     // (+2,624, FLOOR), §5's season row and §6's `· season` header line (+160, FLOOR), and §11B's CLOSED
     // paragraph (+253, the claimant's). The two lanes composed exactly — 111,254 + 3,037 — so neither
-    // displaced the other; MEASURED on the merged tree. Analytic margin 120,000 − 114,291 = **5,709**.
-    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(114_291);
+    // displaced the other; MEASURED on the merged tree. 
+    // ── ★ AND THE CONTACT LANE, +3,841: CONTACT — the PARLEY's reach and price, the DIRECTORY, BUILD and SIEGE ──
+    //
+    // Four sections of `agent.md`, measured by heading rather than estimated, and they sum to the
+    // whole file's delta, so nothing was displaced:
+    //
+    //   §4 intro                 +626   the four-role kinds, and where SIEGE is offered
+    //   ### Negotiating          +972   `ventures.directory`, and that being listed reaches nobody
+    //   ### … the PARLEY       +1,893   eight rungs; answers free, openings priced, the ceiling
+    //   §6 observe block         +350   `parley{}` and `directory{}` on the key lines
+    //
+    // Three of the four are in the always-selected family, so every position pays +1,948; the PARLEY
+    // block reaches only the five positions offered `message {to}`, which pay +3,841. That split is
+    // the gate working, and the ceiling's +3,841 is the whole delta. Read, not added.
+    //
+    // Analytic margin 120,000 − 112,787 = **7,213**. The reachable maximum is `outside the Commons
+    // and landless, at its fullest` at 106,276 — leaving **13,724**, against a required 4,000.
+    //
+    // ── ★ ALL FOUR LANES, MERGED AND MEASURED: 118,132 ──
+    //
+    // Scale's §11H is not excerpted (`CONTRACT_NOT_EXCERPTED`), so it costs no cell. The three lanes that
+    // write excerpted rules composed exactly — 108,946 + 2,308 + 3,037 + 3,841 — so none displaced
+    // another. Analytic margin 120,000 − 118,132 = **1,868**.
+    expect(uncapped.text.length, 'the analytic maximum, uncapped, for the record').toBe(118_132);
     expect(uncapped.dropped, 'uncapped, nothing is squeezed at all').toEqual([]);
 
     // Priced at the real ceiling it comes in under, by dropping CONTEXT and nothing else. The
@@ -1166,9 +1188,12 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
     // delegated-create sentence, corrected from the price to the worst case `create` quotes.
     // Margin 120,000 − 104,743 = **15,257** against a required 4,000.
     // ★ Then +2,784 for the season lane: its FLOOR unit and its two one-line mentions, on every
-    // position. Merged and measured: 104,743 + 2,784 = 107,527, margin 120,000 − 107,527 = **12,473**
-    // against a required 4,000.
-    expect(worst.chars, 'the largest position a principal can occupy').toBe(107_527);
+    // position.
+    // ★ Then +3,841 for the contact lane: the PARLEY block rewritten (+1,893) on top of +1,948 every
+    // position pays (§4's four-role kinds, `ventures.directory`, §6's key lines). All four lanes merged
+    // and measured: 111,368, margin 120,000 − 111,368 = **8,632** against a
+    // required 4,000.
+    expect(worst.chars, 'the largest position a principal can occupy').toBe(111_368);
     expect(
       MAX_CONTRACT_CHARS - worst.chars,
       `the largest REACHABLE position (${worst.name}) is ${String(worst.chars)} against a ceiling ` +
@@ -2879,15 +2904,22 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // A FLOOR unit because the FINALE is scheduled and cannot be dodged (A14): a member that never
       // read the season walks into its last Reckoning with no hand at the stage. Read, not added.
       //
-      // The two lanes composed exactly: every merged reading below is the stakes lane's plus the
-      // season lane's own delta, so neither displaced the other. MEASURED on the merged tree.
-      52_717, // a newcomer on its first wake            (+1,390 stakes, +2,784 season at 41)
-      63_228, // mid-game in the Commons                 (+2,231 stakes, +2,784 season at 41)
-      72_923, // about to take territory                 (+2,231 stakes, +2,784 season at 41)
-      76_065, // at war: party to a live campaign        (+2,231 stakes, +2,784 season at 41)
-      106_279, // a claimant in trouble                  (+2,308 stakes, +3,037 season at 41)
-      87_912, // the Commons at its fullest              (+2,308 stakes, +2,784 season at 41)
-      107_527, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784 at 41)
+      // ── ★ THEN THE CONTACT LANE: +1,948 ON THREE AND +3,841 ON FIVE ──
+      //
+      // +1,948 is §4's four-role paragraph (+626), `### Negotiating`'s directory paragraph (+972) and
+      // §6's two key lines (+350), all always-selected. The other +1,893 is the PARLEY block, which
+      // only a position offered `message {to}` reads — so the three that cannot address anybody yet
+      // pay nothing for eight rungs they cannot use. Measured by heading; the sums are exact.
+      //
+      // The three lanes composed exactly: every merged reading below is the sum of the lanes' own
+      // deltas on that row, so none displaced another. MEASURED on the merged tree, not added.
+      54_665, // a newcomer on its first wake            (+1,390 stakes, +2,784 season, +1,948 contact at 41)
+      65_176, // mid-game in the Commons                 (+2,231 stakes, +2,784 season, +1,948 contact at 41)
+      74_871, // about to take territory                 (+2,231 stakes, +2,784 season, +1,948 contact at 41)
+      79_906, // at war: party to a live campaign        (+2,231 stakes, +2,784 season, +3,841 contact at 41)
+      110_120, // a claimant in trouble                  (+2,308 stakes, +3,037 season, +3,841 contact at 41)
+      91_753, // the Commons at its fullest              (+2,308 stakes, +2,784 season, +3,841 contact at 41)
+      111_368, // outside the Commons and landless, at its fullest: the largest REACHABLE (+2,308, +2,784, +3,841 at 41)
       // ── ★ AT 32, +2,384 TO THE FIVE ROWS OUTSIDE THE COMMONS AND ZERO TO THE THREE INSIDE IT ──
       //
       // ══════════════════════════════════════════════════════════════════════════
@@ -3062,7 +3094,7 @@ describe('the excerpt is SELECTED from the observation, and a needed rule is nev
       // +2,384 for §11A `### It can be DESTROYED`. The ceiling remains unreachable by construction —
       // it holds a claim *and* is landless, which no principal is (`SOV-2` anchors a claimant's
       // holding on its claim).
-      114_291, // the analytic ceiling                    (+848, +266, then +2,308 stakes and +3,037 season at 41)
+      118_132, // the analytic ceiling                    (+848, +266, then +2,308 stakes, +3,037 season, +3,841 contact at 41)
     ]);
     // ══════════════════════════════════════════════════════════════════════════
     // ⚑⚑ **STOP. THE ANALYTIC MARGIN IS 662 OF 72,000 AND THAT IS THE FINDING, NOT THE FOOTNOTE.**
