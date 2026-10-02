@@ -6,6 +6,73 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-01 — SEASON 1 · CONTACT (branch `season1-contact`, `RULES_VERSION` 41, fresh world)
+>
+> **Who may write to whom is read off every situation two principals stood in, answering is free,
+> and the map says who is dealing.** A blind playtester could not message the ally it had just
+> fought beside and got no answer to two parleys; a review measured `reachable_principals` 0 on
+> most observations and no venture with four or more roles in the live world, ever. Verbs stay
+> 40/40 and observe keys 11/11 — every new surface is a parameter or a sub-key.
+>
+> - **Reach** (`say/reach.ts`) gains RAID (either side, while open and two Reckonings after),
+>   SYNDICATE, VENTURE (finished together in the last two Reckonings), OFFER (a fresh offer in your
+>   constellation) and the **earned** CONSTELLATION rung, priced in standing: two distinct
+>   counterparties honoured. Uncapped as a predicate; `MAX_REACH_ROWS` caps only what is printed.
+> - **Answers are free** (`say/parley.ts`): a letter buys one answer inside a rolling 288-tick
+>   window, decided by ring order; an *opening* keeps the A15 price (3 a Reckoning if entitled, 0 if
+>   not); a ceiling of 12 sends a Reckoning bounds the shared 512-letter book, which is now the
+>   captured `say` table (an uncaptured book let an adopted boot fork silently — see owner calls).
+> - **The DIRECTORY** (new §3 row, `say/directory.ts`): `ventures.directory` in `observe` and
+>   `directoryLines`/`parleyLines` on both frames, one builder, PUBLIC facts only, soliciting first
+>   and then by record so a fresh identity sinks. Being listed reaches nobody.
+> - **Four-role ventures in a world nobody steers**: the heuristic cast opens a BUILD about once a
+>   Reckoning per tier, fills it with four distinct principals and honours it IN_FULL out of its own
+>   proceeds; SIEGE is offered outside the Commons. Measured with `scripts/four-role-probe.ts`, six
+>   seeds × three Reckonings × twelve members: **16 opened, all 16 filled by four distinct principals
+>   and settled honoured**, 0 defaults, 0 abandoned, `levyShort` 0 as with the branch off (Σ defaults
+>   72 against 78). At the balance-gate horizon — eight seeds × nine Reckonings × eight members — 30
+>   opened, 24 settled honoured, 6 retired unfilled, 0 defaults, and `levyShort` **0 on and off**,
+>   kept/broken 1,172/86 against 1,173/85 (taken just before the errand fix below, which changes a
+>   world only where a pledged hand would have been walked). (`the-constellation-closes-ranks` pins `g07` at that
+>   horizon and is trajectory-sensitive: an intermediate stream label reproduced a presence-only
+>   shortfall there with no four-role venture live; the final one is clean.) The house heuristic
+>   still writes no letters, so `parleyLines` is empty in every
+>   seeded world (frame census) — threads come from the LLM cast and outside agents, and
+>   `test/say/the-thread-on-the-map.spec.ts` is the key's only non-vacuity proof.
+> - **The LLM cast reads its mail**: `header.parley.awaiting_reply`, on the key projection never
+>   drops, and a mail block with the exact answering call, framed as untrusted text.
+> - **Rendering (A13)**: THE DEALING MARK and THE PARLEY THREAD on the zoom map (§14.5), DEALING and
+>   PARLEY live rows, DEALING and LETTERS dossier panels; assets `?v=35`. Checked in headless Chrome
+>   against seeded frames: lanterns and DEALING lines on four holdings, threads with return strokes,
+>   both dossier panels filled.
+> - **A15, measured** (`scripts/parley-probe.ts`, six seeds × three Reckonings × twelve members, ten
+>   free identities each): cast entitled 69/72, with reach 72/72, offered the act 69/72; free
+>   identities reach 0, allowance 0, offers 0, accepted 0.
+> - **What the full suite found once the trajectory moved** — four latent defects, none in the contact
+>   rules: `alloyErrandFor` and `crewMove` could walk a hand pledged to a standoff (now excluded, the
+>   rule `fill_role` and the aimless walk already obey); `the-record-names-what-was-taken` read
+>   `atStake` after the rename to `magnitude`, vacuous until a partial default appeared on its seed;
+>   `docket`'s stranger scan needs a twelve-member world now that a BUILD introduces four at once;
+>   `a-delegate-can-spend`'s search skips four-role kinds and the grantor's own role. The INVITE
+>   refusal now states the parley price instead of only the verb.
+>
+> **Owner calls, not made here.** (1) `distinct_counterparties` counts identities and D7's
+> endowment can leave by venture payment, so a ring of fresh identities dealing with each other can
+> earn both the opening and the constellation rung — the price is real settled ventures, not zero,
+> but part of it is denominated in identities (A15). (2) The 512-letter shared ring will not hold at
+> thousands of seats: a letter that falls out of the ring stops being answerable for free. (3) **An
+> adopted boot's tail replay has no tripwire**: a captured table missing from a checkpoint replays
+> to a different head hash and boots anyway. `test/durability/a-letter-survives-adoption.spec.ts`
+> pins the `say` case; the class is open. (4) `RULES_VERSION` 41 and `?v=35` were pre-assigned on a
+> parallel branch and must be renumbered at merge. (5) **Merge note for the season branch**: §7.6's
+> GRAND VENTURE is that branch's word, so this one says *four-role* / *top-yield* throughout. Its
+> `topYieldSlotFor`, `topYieldCreateFor`'s one-per-tier check and `electionFor`'s IN_FULL rule for an
+> un-escrowable kind all match a `BUILD`, so at merge they must skip a `grand` venture, which that
+> branch's `grandFor` decides — including a creator whose policy is to KEEP. (6) The house heuristic
+> never writes a letter; whether it should send a recruiting letter when its four-role venture is
+> short of hands is a contact-versus-noise call left open. (7) Master reworded the `?v=` paragraph in
+> `docs/background/INFRA.md` after this branch's base: keep master's text with `?v=35`.
+>
 > ### 2026-10-01 (latest) — THE HOUSE CAST IS PLAYED BY GPT-6 ASTRA, AND THE QUICKFIXES ARE LIVE
 >
 > **The 12 house characters now decide with a model.** GPT-6 Astra (Moving Atoms'
