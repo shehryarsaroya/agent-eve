@@ -235,7 +235,7 @@ import { recipeOf, refine, refineKindOf, unknownRefineKindHint } from '../works/
 // `agent.md` §6's own field names for the Levy block, typed once in the observation
 // layer. Imported as a type so this runtime fills the published shape rather than
 // inventing a second one (§3).
-import type { LevyBlock } from '../observe/sources.js';
+import type { LevyBasis, LevyBlock } from '../observe/sources.js';
 import {
   SealBook,
   cmpDeeds,
@@ -17498,7 +17498,7 @@ export class Runtime {
    * cycle means it is not enrolled. `my_assessment: 0` would read as "assessed at
    * nothing", a claim §5.2 makes about nobody.
    */
-  levyBlockFor(principal: PrincipalId, tick = this.engine.tick): LevyBlock | null {
+  levyBlockFor(principal: PrincipalId, tick = this.engine.tick): (LevyBlock & LevyBasis) | null {
     const reckoning = reckoningOf(tick);
     const found = this.levy.lineFor(reckoning, principal);
     if (found === null) return null;
@@ -17524,6 +17524,14 @@ export class Runtime {
       // the arithmetic that decides a public shortfall.
       assessed_on_exposure_peak: this.levy.exposurePeakOf(reckoning - 1, principal),
       exposure_peak_this_cycle: this.levy.exposurePeakOf(reckoning, principal),
+      // ★ Why the bill is this number, off the plan that cut it (`observe/sources.ts:LevyBlock`). A read
+      // of the book's own rows — the same ones `levy.assessed` publishes — so nothing is recomputed.
+      rule: found.plan.rule,
+      quorum_failed: found.plan.byDefault,
+      constellation_total: found.plan.total,
+      my_weight: found.line.weight,
+      newcomer_floor: found.line.newcomerFloored,
+      spared: found.line.spared,
       ballot: window.open
         ? {
             id: `${LEVY_BALLOT}::${String(window.forReckoning)}::${constellation}`,
