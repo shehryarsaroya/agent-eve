@@ -253,7 +253,16 @@ if not args.skip_supabase:
         print('reviewer login', 'created' if status in (200, 201) else 'updated', '(password sign-in flagged)')
         del service
 
-    status, metadata = http('GET', f'{supabase_url}/.well-known/oauth-authorization-server/auth/v1', {})
+    # Supabase applies an auth-config PATCH asynchronously: the first deploy (2026-10-03) read
+    # `feature_disabled: OAuth server is disabled` seconds after enabling it, and the same request
+    # answered 200 a minute later. So wait for the discovery document instead of failing on the first read.
+    for attempt in range(24):
+        status, metadata = http('GET', f'{supabase_url}/.well-known/oauth-authorization-server/auth/v1', {}, ok=(200, 404))
+        if status == 200 and metadata:
+            break
+        time.sleep(5)
+    else:
+        raise SystemExit('the OAuth 2.1 server is still disabled two minutes after enabling it; check the project in the dashboard')
     assert metadata['issuer'] == f'{supabase_url}/auth/v1', 'issuer mismatch'
     assert 'S256' in metadata['code_challenge_methods_supported'], 'S256 PKCE not advertised'
     assert metadata.get('registration_endpoint'), 'dynamic client registration is not on'
