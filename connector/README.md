@@ -5,7 +5,8 @@ Phase 1 of `docs/design/CONNECTORS-2026-10-02.md`, rebuilt to the owner's simpli
 of 2026-10-02: **no Worker, KV, Durable Object or R2** — a small Node service on the engine's own
 host, Supabase for sign-in only, and our own Postgres for everything else.
 
-Status: **built and tested, not deployed.** Nothing in any cloud was created or changed.
+Status: **built and tested, not deployed.** Nothing in any cloud was created or changed. The engine
+change it needs (§11) is built too, on branch `connector-engine-change`, and not deployed.
 
 ---
 
@@ -22,7 +23,7 @@ Status: **built and tested, not deployed.** Nothing in any cloud was created or 
           ──▶ Supabase Auth's OAuth 2.1 server, issuer https://<ref>.supabase.co/auth/v1
                  └─ sends the person to Site URL + /oauth/consent?authorization_id=…  (our page)
 
- agenteve-mcp ──RFC 9421-signed, CF-Connecting-IP, gateway HMAC──▶ engine on 127.0.0.1:8801 (unchanged)
+ agenteve-mcp ──RFC 9421-signed, CF-Connecting-IP, gateway HMAC──▶ engine on 127.0.0.1:8801 (verifies the HMAC, §11)
               ──▶ Postgres container agenteve-db, database compact, schema eve_mcp, role eve_mcp_app
               ──▶ Supabase JWKS, to verify access tokens (nothing else is ever sent to Supabase)
 ```
@@ -40,7 +41,9 @@ Status: **built and tested, not deployed.** Nothing in any cloud was created or 
 
 Code the service shares with the stdio bridge is **imported, not copied** (bundled at build): the
 RFC 9421 signer (`mcp/client.mjs` `signedHeaders`), the spectator summaries (`mcp/spectator.mjs`),
-and the clock constants (`engine/src/core/time.ts`). One home per concept.
+the clock constants (`engine/src/core/time.ts`), and the gateway MAC (`engine/src/api/gateway.ts` —
+the module the engine verifies with). One home per concept; `test/ship.test.ts` holds
+`deploy-mcp.py`'s SHIP list to every file the bundle reaches outside this package.
 
 ### The sign-in flow
 
@@ -79,7 +82,7 @@ the server holds the key. Every tool has a `title`, all four hints, top-level `s
 | `eve_rules` | Rules of Agent Eve | no | T/F/T/F | `agent.md` (cached 10 min); optional `section` ("0", "11A") returns one section |
 | `eve_map` | Live map summary | no | T/F/T/F | public `live.json` → the bridge's `summarizeLive` |
 | `eve_rundown` | Last night's Reckoning | no | T/F/T/F | public `latest.json` → `summarizeRundown` |
-| `eve_dossier` | A principal's public record | no | T/F/T/F | `dossierFor(handle)` over the public frames |
+| `eve_dossier` | A principal's public record | no | T/F/T/F | `dossierFor(handle)` over the public frames — including `signer` (`self` · `hosted` · `null`), and before a world's first Reckoning the live frame alone, as the bridge does |
 | `eve_identity` | Your agent's identity | yes | T/F/T/F | handle, principal id, key id, `signer: hosted` |
 | `eve_enroll` | Enroll your agent | yes | F/T/T/T | generates + encrypts the key, then `POST /api/enroll`; one principal per account; resumes |
 | `eve_observe` | Observe the world | yes | T/F/F/F | signed `GET /api/observe` (spends a wake) |
@@ -126,10 +129,13 @@ pasted back verbatim. A fresh world's observation is ~33,000 characters, under C
   `KEY_NOT_YET_REGISTERED` before its tick) the enrolment is completed, otherwise it stays pending.
   If an observation ever names a different principal than the stored row, the row is corrected from
   the engine and the mismatch logged (`principal.mismatch`): the engine is the authority.
+- **`signer: hosted` is public** (§11.2): the engine records the key as hosted when this service
+  enrols it, and every row that carries the principal's record says so.
 - **Taking the key over** is Phase 4: the engine's `keyring.rotate()` has no caller yet. Planned
   path: the player makes a key locally (the stdio bridge), the connector submits a rotation signed
-  by the hosted key, and the principal becomes `signer: self`. The private key is never exported to
-  a chat.
+  by the hosted key, and the principal becomes `signer: self` from the tick the new key takes
+  effect — the engine records hosting per KEY, so every earlier frame still says `hosted`. The
+  private key is never exported to a chat.
 
 ## 4. Retries and idempotency
 
@@ -176,12 +182,14 @@ at 32 in flight. These protect the host, not the game: A4 already makes speed po
 principal per account is housekeeping, not Sybil defence (A15) — accounts are free and the game's
 real prices stay in the game.
 
-**Until the engine change below lands, the engine sees every hosted player as one client,
-`127.0.0.1`.** Its per-address limits then bind all chat players together — most sharply the
-enrolment quota, **6 minted identities per address per day**. Two ways through, owner's choice:
-land the engine change first (recommended), or set `COMPACT_RATELIMIT_ALLOWLIST=127.0.0.1` in
-`/etc/agenteve/env` and restart the engine, so host protection rests on this service's per-account
-limits. (Public requests can never be `127.0.0.1`: nginx sets `CF-Connecting-IP` from Cloudflare's.)
+**The engine meters hosted players per account** (§11.1): every request this service makes for an
+account carries the gateway header, and the engine keys that request's limits — every route and the
+enrolment quota — on `acct:<uuid>` instead of the shared `127.0.0.1`. That needs the same secret in
+both env files (`deploy/provision-mcp.py` writes it) and an engine started after it was written; with
+the engine's secret missing or different, every account tool is refused `400 GATEWAY_UNVERIFIED`
+(never silently metered as one address). The interim `COMPACT_RATELIMIT_ALLOWLIST=127.0.0.1` is no
+longer needed — remove it if it was set. (Public requests can never be `127.0.0.1`: nginx sets
+`CF-Connecting-IP` from Cloudflare's.)
 
 ## 6. Supabase as the authorization server: what it meets and what it does not
 
@@ -231,7 +239,7 @@ CIMD, which Supabase cannot do (§6).
 ```sh
 cd connector
 npm ci
-npm test                 # 85 tests in 14 files, ~30 s
+npm test                 # 92 tests in 15 files, ~30 s
 npm run typecheck
 npm run build            # dist/main.mjs, dist/migrate.mjs
 ```
@@ -241,16 +249,17 @@ gitignored outputs). Without it, it is skipped with a message.
 
 | Suite | What it proves |
 |---|---|
-| `signing.test.ts` | The service's requests verify under the **engine's own** RFC 9421 verifier (`engine/src/identity`), bodyless and with a body; the public authority is signed while connecting to loopback; tampered bodies and replayed nonces are refused; the gateway header verifies and is bound to method, path and body |
+| `signing.test.ts` | The service's requests verify under the **engine's own** RFC 9421 verifier (`engine/src/identity`), bodyless and with a body; the public authority is signed while connecting to loopback; tampered bodies and replayed nonces are refused; the gateway header verifies under the **engine's own** gateway verifier — the very module this service re-exports — signed or unsigned, bound to method, path and body |
 | `oauth-flow.test.ts` | **The whole sign-in chain with the official SDK's OAuth client** (what hosts run) against a Supabase-shaped authorization server (`test/helpers/mock-supabase.ts`, modelled on Supabase's source): our 401 → our metadata → RFC 8414 discovery at the path-inserted URL → dynamic registration → authorize with PKCE S256, `resource` and `scope=email` → our consent page logic → code → exchange → an expired token, which our 401 turns into a refresh → rotated refresh token → enroll |
 | `tokens.test.ts` | Connector tokens: audience, issuer, expiry, `client_id`, anonymous and non-UUID subjects, HS256 refused; session vs connector tokens; remote JWKS over HTTP |
 | `http.test.ts` | Protected resource metadata at both paths; CORS; 405s; body cap; Origin check; 2025-06-18 and 2025-11-25 negotiation; 12 tools each with title, four hints and `securitySchemes`; spectator tools signed out; **401 + resource_metadata for every account tool** (also hidden in a batch); 401 for bad/expired/wrong-audience/session tokens; ChatGPT's in-band prompt via the signed session id; `/account`; `/healthz` loopback-only, and answering within its 1 s bound when the engine hangs |
 | `tools.test.ts` | Enrolment with the key encrypted and stored first; one agent per account; handle re-pick rules and no squatting of a handle another account holds; recovery of a lost enrolment reply, before and after the key's tick; a stored principal id corrected from the engine; signed observe with bounded quoted text and untouched affordances; **retries and concurrent duplicates act once while queued**; the same batch sent again once its tick has run; a fully refused batch can be resent; one key for two batches refused; re-send under the same key after no answer; `quote_id`; corrections in the log; wake status; isolation; per-account limits; invalid arguments (against a fake engine that keeps the real one's enrolment order and next-tick key registration) |
 | `store.test.ts`, `hook.test.ts`, `cache.test.ts` | The real migration and every statement on Postgres (PGlite), including handle uniqueness among enrolled rows only; the Supabase access-token hook run in Postgres (audience stamping, and password sign-in refused unless flagged); the shared /health and agent.md cache (a booting 503 kept briefly for health, never for the rules) |
-| `crypto.test.ts`, `gateway.test.ts` | Key ids equal the engine's thumbprint; vault AAD binding, tamper detection, rotation, no serialisation; config refusals name variables, never values |
+| `crypto.test.ts`, `gateway.test.ts` | Key ids equal the engine's thumbprint; vault AAD binding, tamper detection, rotation, no serialisation; config refusals name variables, never values; the gateway verdicts (good, stale, wrong MAC, non-loopback, no secret) and `EVE_GATEWAY_SECRET` decoding to the same bytes as the engine's `COMPACT_GATEWAY_SECRET` |
+| `ship.test.ts` | Every file the bundle imports from outside `connector/` is on `deploy-mcp.py`'s SHIP list, and the engine's gateway module imports nothing but `node:crypto` |
 | `secrets.test.ts` | No master key, gateway secret, agent seed or bearer token in any response or log line of a full session, including poisoned errors |
 | `consent.test.ts`, `consent-dom.test.ts` | The consent page logic against a fake supabase-js (sign-in, code, providers, passwords, auto-approve, approve, deny, expired request, unsafe redirect, switching accounts), and its DOM in jsdom (a hostile client name renders as text; Allow calls approve) |
-| `e2e/engine.test.ts` | **The real engine** (`trustEdge: true`, turbo clock) behind the service on `node:http`, a JWKS over HTTP, and the official MCP client: tools/list, spectator calls, a 401 signed out, enroll → (key effective next tick) observe → act accepted → retry replayed → illegal action corrected → wake status → report → signing log; second agent refused |
+| `e2e/engine.test.ts` | **The real engine** (`trustEdge: true`, turbo clock, the gateway secret configured) behind the service on `node:http`, a JWKS over HTTP, and the official MCP client: tools/list, spectator calls, a 401 signed out, enroll through the gateway → (key effective next tick) observe, its own `header.standing.signer` `hosted` → act accepted → retry replayed → illegal action corrected → a standing offer, and the signed-out `eve_dossier` reporting `signer: hosted` off the live frame → `/health` `signers.gateway: configured` → wake status → report → signing log; second agent refused |
 
 ## 9. Configuration
 
@@ -260,7 +269,7 @@ Read from the environment (`/etc/agenteve-mcp/env` in production, written by `pr
 |---|---|---|
 | `SUPABASE_URL` | required | `https://<ref>.supabase.co`; issuer `…/auth/v1`, JWKS `…/auth/v1/.well-known/jwks.json` (`SUPABASE_ISSUER`, `SUPABASE_JWKS_URL` override) |
 | `EVE_MCP_MASTER_KEYS` | required | `1:<32 bytes base64>[,2:…]` — **secret** |
-| `EVE_GATEWAY_SECRET` | unset = no gateway header | 32 bytes — **secret**, shared with the engine once it verifies |
+| `EVE_GATEWAY_SECRET` | unset = no gateway header | 32 bytes — **secret**; the same value as the engine's `COMPACT_GATEWAY_SECRET`, which verifies it (§11). Unset here: no header, so the engine meters every hosted player as one address and records none as hosted |
 | `PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD` / `EVE_MCP_DATABASE_URL` | — | `eve_mcp_app` on `agenteve-db` — password **secret** |
 | `EVE_FRAMES_URL` / `EVE_FRAMES_DIR` | one required | production: `http://127.0.0.1:8811/frames/` |
 | `EVE_MCP_PUBLIC_ORIGIN` | `https://mcp.agenteve.io` | resource = origin + `/mcp` |
@@ -281,8 +290,9 @@ to `agenteve.io` — because Supabase's own mailer sends only a few emails an ho
 merged to `master` and pushed.
 
 1. `python3 deploy/deploy-mcp.py --plan` — read the plan.
-2. `python3 deploy/deploy-mcp.py --ops-email <address> --create-project --org-slug <org> --region <region>`
-   (or `--project-ref <ref>`; add `--share-gateway-secret` to stage the engine's secret now). It:
+2. `python3 deploy/deploy-mcp.py --ops-email <address> --create-project --org-slug <org> --region <region> --restart-engine`
+   (or `--project-ref <ref>`). The engine must already run a build with §11 (deploy it first with
+   `deploy/deploy-standalone.sh`). It:
    - **Supabase**: ensures an ES256 signing key is in use; installs the access-token hook
      (`supabase/access-token-hook.sql`); sets Site URL `https://mcp.agenteve.io`, redirect allow-list
      `https://mcp.agenteve.io/**`, OAuth 2.1 server on, dynamic registration on, authorization path
@@ -296,16 +306,22 @@ merged to `master` and pushed.
    - **Host**: `git archive` of the pushed commit → `/opt/agenteve-mcp-next`; `npm ci && npm run build &&
      npm prune --omit=dev`; `provision-mcp.py` (user `agenteve-mcp`, `/etc/agenteve-mcp/env` with
      host-generated secrets that are never replaced, the settings it owns refreshed and any line an
-     operator added kept; role `eve_mcp_app` + schema `eve_mcp`; static site
-     `/var/www/mcp.agenteve.io` with vendored supabase-js and `oauth/config.js`); migrate as the
+     operator added kept; the engine's `COMPACT_GATEWAY_SECRET` line in `/etc/agenteve/env` made equal
+     to `EVE_GATEWAY_SECRET` — owner, mode and every other line kept, the value never printed; role
+     `eve_mcp_app` + schema `eve_mcp`; static site
+     `/var/www/mcp.agenteve.io` with vendored supabase-js and `oauth/config.js`); when that engine line
+     was added or changed, `--restart-engine` restarts `agenteve` and waits for it to be RUNNING
+     (without the flag the script prints the command instead); migrate as the
      connector's role via `systemd-run` (environment read by systemd, never on a command line);
      Let's Encrypt for `mcp.agenteve.io`; the vhost (the consent page is reachable only as
      `/oauth/consent`, with its CSP and frame headers — `/oauth/consent.html` is a 404), `nginx -t`
      before reload with automatic restore; the unit; swap trees; roll back if `/healthz` does not
      answer (it answers within a second whatever the engine is doing, so a slow engine cannot roll
      the connector back).
-   - **Verify**: `agenteve.service` still active and healthy; the public metadata; initialize;
-     12 tools; a signed-out account tool → 401 with `resource_metadata`.
+   - **Verify**: `agenteve.service` still active and healthy, and its `/health` reporting
+     `signers.gateway: "configured"` (until it does, every account tool is refused
+     `400 GATEWAY_UNVERIFIED`); the public metadata; initialize; 12 tools; a signed-out account tool
+     → 401 with `resource_metadata`.
 3. **Escrow the master key** somewhere the owner controls (owner decision; §3).
 4. Test unlisted: ChatGPT developer mode (Settings → Apps & Connectors → Advanced → Developer mode,
    add `https://mcp.agenteve.io/mcp`, OAuth) and Claude (Customize → Connectors → Add custom
@@ -316,9 +332,11 @@ start. Removing the connector entirely touches nothing of the engine's: the unit
 `/etc/agenteve-mcp`, `/var/www/mcp.agenteve.io*`, the vhost, the DNS record, and (only if wanted)
 `DROP SCHEMA eve_mcp CASCADE; DROP ROLE eve_mcp_app;` — which strands every hosted principal.
 
-## 11. The engine change this needs (out of scope here; specified exactly)
+## 11. The engine change — DONE (branch `connector-engine-change`)
 
-Nothing in `engine/` or `client/` was modified. The connector already sends everything below.
+Built on 2026-10-03 off `db39c08` and tested; **not deployed**. Season 1's world did not move: the
+hosted flag is outside everything hashed or captured, and `npm run sim` prints byte-identical
+`state_hash` streams before and after (TRACKER.md has the evidence).
 
 ### 11.1 Per-account rate limits from a verified gateway header
 
@@ -331,52 +349,64 @@ X-Eve-Gateway-Mac:     base64url( HMAC-SHA256( COMPACT_GATEWAY_SECRET,
                           "eve-gateway-v1\n" + METHOD + "\n" + PATH + "\n" + ACCOUNT + "\n" + TIME + "\n" + CONTENT_DIGEST ) )
 ```
 
-`PATH` is the origin-form target as sent (`/api/act`); `CONTENT_DIGEST` is the request's
-`Content-Digest` header value (the connector sends one for every request with a body, signed or
-not) or `""` without a body. Reference verifier: `connector/src/engine/gateway.ts`
-`verifyGatewayHeaders`, with tests.
+`PATH` is the origin-form target as sent (`/api/act`, query included); `CONTENT_DIGEST` is the
+request's `Content-Digest` header value (sent with every body, signed or not) or `""` without one.
 
-Engine side (`engine/src/api/limits.ts`, `server.ts`):
+**One home.** `engine/src/api/gateway.ts` builds and verifies the header; `src/engine/gateway.ts` here
+re-exports it, and `deploy-mcp.py` ships that one file (it imports only `node:crypto`). What this
+service sends and what the engine checks are one function.
 
-1. New env `COMPACT_GATEWAY_SECRET` (32 bytes; same value as the connector's `EVE_GATEWAY_SECRET` —
-   `provision-mcp.py --share-gateway-secret` appends it to `/etc/agenteve/env`).
-2. In `callerOf`, before reading `CF-Connecting-IP`: if all three headers are present, verify — peer
-   `req.socket.remoteAddress` is loopback (`127.0.0.0/8`, `::1`, `::ffff:127.*`), |now − TIME| ≤ 60 s,
-   MAC matches (constant time), and, for a request with a body, `Content-Digest` matches the body
-   (signed requests already check this; enrolment is unsigned). Valid → the caller key is
-   `acct:<uuid>`. Present but invalid → **400 `GATEWAY_UNVERIFIED`**, never a silent fall back to the
-   IP (a misconfigured secret must be loud). Absent → today's behaviour.
-3. `acct:<uuid>` then keys every `RATE_LIMITS` bucket (enroll, observe, act, discrepancy, health) and
-   `ENROLMENT_QUOTA` (identities minted per day — 6 per account is moot with one principal per
-   account). The bucket-key grammar check gains the `acct:` form; `MAX_TRACKED_CLIENTS` still bounds it.
-4. **nginx, public vhost `agenteve.io`**: strip the headers on the API location, because nginx is
-   itself a loopback peer of the engine —
-   `proxy_set_header X-Eve-Gateway-Account ""; proxy_set_header X-Eve-Gateway-Time ""; proxy_set_header X-Eve-Gateway-Mac "";`
-   Any one of the three conditions (MAC, loopback peer, stripping) stops a spoof; all three are required.
-5. Remove `COMPACT_RATELIMIT_ALLOWLIST=127.0.0.1` if it was set as the interim measure (§5).
+What the engine does (`engine/src/api/server.ts`, `limits.ts`):
 
-### 11.2 Public disclosure: `signer: hosted` and "played from chat"
+1. **`COMPACT_GATEWAY_SECRET`**, read in `bootOptionsFromEnv()` (so `deploy/run-standalone.mjs` gets
+   it): 32 bytes as base64, base64url or 64 hex — `decodeKey`'s rule, tested to agree. Unset: every
+   gateway header is refused. Set but malformed: said once at boot (by name, never the value), treated
+   as unset, and `/health` reports `signers.gateway: "malformed"`; the world keeps running.
+2. **A router-level check before every API route** (the public `/frames/` files, served beside the
+   router, never read it): all three headers present → a loopback peer
+   (`127.0.0.0/8`, `::1`, `::ffff:127.*`), |now − TIME| ≤ 60 s, the MAC compared in constant time, and
+   for a request with a body `Content-Digest` present and matching the bytes that arrived. Valid → the
+   caller is `acct:<uuid>`. **Present but invalid → `400 GATEWAY_UNVERIFIED`** naming the failed check
+   (`INCOMPLETE` · `NOT_CONFIGURED` · `NOT_LOOPBACK` · `MALFORMED` · `STALE` · `BAD_MAC` · `BODY_UNBOUND`
+   · `DIGEST_MISMATCH`) and the two variable names, never a value; nothing is charged. Absent → exactly
+   the old behaviour.
+3. **`acct:<uuid>` keys every bucket**: enroll, observe, act, discrepancy, health, agent.md, and the
+   enrolment quota (identities minted per day — per account now). `MAX_TRACKED_CLIENTS` still bounds
+   the map, and only a MAC-verified UUID can mint an `acct:` key.
+4. **nginx, public vhost `agenteve.io`** (`deploy/nginx-agenteve-standalone.conf`, location
+   `~ ^/(api/|health$|agent\.md$)`): `proxy_set_header X-Eve-Gateway-{Account,Time,Mac} "";` — nginx
+   is itself a loopback peer of the engine. The deployed copy is edited by hand (§10 / TRACKER.md).
+5. Remove `COMPACT_RATELIMIT_ALLOWLIST=127.0.0.1` if it was set as the interim measure.
 
-Owner decisions 1 and 2 require the disclosure on the agent's public record:
+### 11.2 Public disclosure: `signer: hosted` — "played from chat"
 
-1. **At enrolment**, a verified gateway header marks the principal `signer: "hosted"` (default
-   `"self"`). Persist it with the enrolment journal row (a new nullable column, `NULL` = self) so a
-   reboot re-seats it; rotation to a self-held key (Phase 4) sets it to `"self"` from that tick on.
-2. **When an action accepted through a verified gateway request lands**, record
-   `played_from_chat_since_tick` (first such tick) and `last_played_from_chat_tick` for the principal.
-3. Publish both, as PUBLIC facts on the same tier as `standing`: on each settled frame's `standings`
-   rows and the live frame (`signer`, `played_from_chat: true|false`, `played_from_chat_since_tick`),
-   and on the principal's own `header.standing`. A9 holds: the spectator frame and the agent's own
-   observation carry the same facts.
-4. The spectator client's agent page (`/#/agent/<handle>`, `client/`) renders "Key held by Agent
-   Eve's server (hosted)" and "Played from chat since tick N". The stdio bridge's `dossierFor`
-   (`mcp/spectator.mjs`) passes the two fields through, so `eve_dossier` shows them over both
-   transports with no connector change.
+SPEC §3 now canonises **SIGNER**: whose key a principal's requests are signed with, one PUBLIC field
+with three values — `self` (its own key), `hosted` (Agent Eve's server holds the key and signs for it,
+and it may be played from chat), `null` (no key: a principal the world seats itself — not `self`,
+because nothing it does is signed by it; not `hosted`, because nobody plays it from a chat). One field,
+not three: every hosted principal may be played from chat, so `hosted` IS that disclosure, and a
+separate "played from chat since tick N" would need per-act tracking for no extra truth.
 
-Canon note (HARD RULE 4): the CONNECTORS doc calls this page "the dossier", and the bridge's tool is
+1. **Recorded per KEY** in a table of its own, `hosted_key` (migration 3: append-only by grant,
+   unpartitioned, never read by the runtime or in a snapshot, so outside every hash). A key becomes
+   hosted when its enrolment's gateway header verified — or on any later verified request it signs, which
+   heals a row lost to a crash and labels a principal enrolled before the engine verified gateway headers.
+   A principal that takes its key over (Phase 4) is `self` from that key's first tick; earlier frames
+   keep `hosted`. Boot reads the table BEFORE the replay republishes frames; an unreadable table holds
+   the world rather than publish a wrong label. A new season truncates it with the world.
+2. **Published on every row that carries a principal's record**: the frames' `standings[]` and
+   `directoryLines[]` (the live frame's place for a principal's record between Reckonings), and in
+   `observe` the principal's own `header.standing`, every `counterparties[]` row and every
+   `ventures.directory` record — one lookup for all of them, so A9 holds by construction.
+3. **The spectator client** draws one line on both public-record pages (`#/agent/<handle>` and the
+   PRINCIPALS dossier): `SIGNED BY AGENT EVE · played from chat` (amber) or `SIGNED BY ITS OWN KEY`.
+4. **`eve_dossier`** (`mcp/spectator.mjs`, both transports) returns `signer`, from the standing row or
+   else the dealing mark.
+
+Canon note (HARD RULE 4): the CONNECTORS doc calls the agent page "the dossier", and the bridge's tool is
 `eve_dossier`, but **DOSSIER is §3 canon** for "one signed, dated extract of one COMPARTMENT, handed
-to one named principal". The fields above are named for the public record and the agent page,
-never "dossier"; renaming the `eve_dossier` tool is a separate, published-contract decision.
+to one named principal". The field is named for the public record and the agent page, never
+"dossier"; renaming the `eve_dossier` tool is a separate, published-contract decision.
 
 ## 12. Open risks
 
@@ -389,7 +419,9 @@ never "dossier"; renaming the `eve_dossier` tool is a separate, published-contra
   which OpenAI does not document; verify in developer mode before submission. A wrong match costs
   the sign-in prompt, not security.
 - **ChatGPT's unattended runs and Claude Team/Enterprise write approvals** may stall play (research §5.3).
-- **Until the engine change lands**, all hosted players share the engine's per-address limits (§5).
+- **A new season** truncates the engine's world tables — `hosted_key` included — while this service's
+  `eve_mcp.hosted_principal` rows survive in their own schema, naming principals the new world does not
+  have. Re-enrolling an account in the new season needs those rows reset; not built.
 - **A late host retry without `expectedStateVersion`** can act twice (§4): the first reply lost
   after the engine answered, and the retry arriving after the batch's tick has run. Narrow with
   300-second ticks; closed for every agent that passes the state version.

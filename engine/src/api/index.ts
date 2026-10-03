@@ -29,6 +29,33 @@ export {
 } from './idempotency.js';
 
 export {
+  GATEWAY_HEADER,
+  GATEWAY_MAC_VERSION,
+  GATEWAY_MAX_SKEW_SECONDS,
+  GATEWAY_REFUSAL,
+  GATEWAY_SECRET_BYTES,
+  decodeGatewaySecret,
+  gatewayHeaders,
+  isLoopback,
+  verifyGatewayHeaders,
+  type GatewayHeaders,
+  type GatewayInput,
+  type GatewayRefusal,
+  type GatewayVerdict,
+} from './gateway.js';
+
+export {
+  HOSTED_FAILURE_ALARM,
+  HostedSigners,
+  InMemoryHostedKeyStore,
+  PgHostedKeyStore,
+  type HostedKeyRecord,
+  type HostedKeyStore,
+  type HostedSignersHealth,
+} from './hosted.js';
+
+export {
+  ACCOUNT_KEY_PREFIX,
   CLIENT_IP_HEADER,
   ENROLMENT_QUOTA,
   IP_REFUSAL,
@@ -37,6 +64,7 @@ export {
   RATE_LIMITS,
   RateLimiter,
   REPLAY_STORE_LIMITS,
+  accountKey,
   clientAddress,
   type Allowance,
   type ClientAddress,
@@ -77,6 +105,7 @@ export {
 
 export {
   API_BASE_PATH,
+  GATEWAY_SECRET_ENV,
   MAX_ACTIONS_PER_BATCH,
   MAX_DISCREPANCIES,
   createApp,
@@ -84,6 +113,7 @@ export {
   type ApiOptions,
   type CreatedApp,
   type DiscrepancyReport,
+  type GatewaySetting,
 } from './server.js';
 
 export { IDENTIFYING_PARAMS, nearestLegal } from './nearest.js';

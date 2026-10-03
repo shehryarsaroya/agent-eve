@@ -1386,6 +1386,14 @@ body.landing-mode #stage { padding: 0; }
 .d-head { display: flex; gap: 14px; align-items: center; }
 .d-head h2 { margin: 0; font-size: clamp(22px, 6vw, 34px); letter-spacing: 0.06em; font-weight: 500; }
 .d-addr { color: var(--dim); font-size: 12.5px; }
+/* ★ SPEC §3's SIGNER (U.signerLine): one line, on both public-record pages. `hosted` is the disclosure,
+   so it is the one with colour — amber, the console's "know this" hue, never the red of a broken promise. */
+.signer {
+  display: inline-block; margin-top: 6px; padding: 2px 7px;
+  font-size: 10px; letter-spacing: 0.14em; color: var(--dim);
+  border: 1px solid var(--rule-dim);
+}
+.signer.hosted { color: var(--amber); border-color: var(--amber); background: var(--amber-wash); }
 .d-standing { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; }
 .d-tile {
   border: 1px solid var(--rule); background: var(--panel);

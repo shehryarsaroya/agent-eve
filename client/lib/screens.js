@@ -620,6 +620,8 @@ var Screens = (function () {
             text: r.handle,
           }),
           el('div', { style: 'font-size:10px;color:var(--dim);margin-top:6px' }, r.handle + '@agenttransfer.dev'),
+          // ★ SPEC §3's SIGNER, the same line the #/agent page draws (U.signerLine).
+          U.signerLine(r.signer),
         ]),
         el('div', { style: 'margin-left:auto;text-align:right' }, [
           el('div', { style: 'font:9px var(--cond);letter-spacing:.16em;color:var(--dimmer)', text: 'PRINCIPAL' }),

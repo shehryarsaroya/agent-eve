@@ -171,7 +171,9 @@ describe('★ structural: nothing that writes or replays the record can reach a 
       expect(APPEND_ONLY_UNPARTITIONED as readonly string[]).not.toContain(table);
       for (const list of lists) expect(list).not.toContain(table);
     }
-    expect(SCHEMA_MIGRATIONS.map(([v]) => v)).toEqual([1, 2]);
+    // 3 is `hosted_key` (the SIGNER disclosure): append-only, so it is the follow tables' opposite on
+    // the property this test guards, and `test/api/signer-is-not-in-the-world.spec.ts` holds it there.
+    expect(SCHEMA_MIGRATIONS.map(([v]) => v)).toEqual([1, 2, 3]);
   });
 
   it('schema.sql declares them unpartitioned, with every column the design names', () => {

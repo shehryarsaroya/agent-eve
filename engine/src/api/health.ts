@@ -34,6 +34,7 @@ import type { DecisionSource, WorldStatus } from '../core/types.js';
 import { BPS_ONE } from '../core/units.js';
 import { CENSUS_WINDOW_TICKS, type Runtime } from '../sim/runtime.js';
 import type { FollowHealth } from './follow/setup.js';
+import type { HostedSignersHealth } from './hosted.js';
 import type { SeatBook } from './seats.js';
 
 /**
@@ -125,6 +126,12 @@ export interface HealthReport {
   readonly cast: CastHealth | null;
   /** Follow by email's counters, when the server runs it. Never contributes to `failures`. */
   readonly follow: FollowHealth | null;
+  /**
+   * ★ The SIGNER disclosure (`api/hosted.ts`): keys recorded as hosted, how many are not yet durable,
+   * and whether this engine verifies the connector's gateway header at all. Counts and a DB error,
+   * never a key, an account or a secret. Null where the server runs none (a bare `buildHealth` call).
+   */
+  readonly signers: HostedSignersHealth | null;
   /** Every reason it is unhealthy. Empty when healthy. Read this, not the status. */
   readonly failures: readonly string[];
 }
@@ -187,6 +194,12 @@ export interface HealthOptions {
    * something the tick loop is designed not to notice.
    */
   readonly follow?: () => FollowHealth | null;
+  /**
+   * ★ The SIGNER disclosure's probe. Unlike mail it CAN fail the check: a hosted key that never reaches
+   * storage is a public label a restart would silently drop, so three straight failed writes with rows
+   * still waiting is a failure an operator must see — `alarming` decides, `api/hosted.ts` counts.
+   */
+  readonly signers?: () => (HostedSignersHealth & { readonly alarming: boolean }) | null;
 }
 
 /** What the house cast is doing and what it is spending. */
@@ -385,6 +398,25 @@ export function buildHealth(
         '. The permanent public record is not reaching storage; an operator must look.',
     );
   }
+  const signerProbe = options.signers?.() ?? null;
+  const signers: HostedSignersHealth | null =
+    signerProbe === null
+      ? null
+      : {
+          hosted: signerProbe.hosted,
+          undurable: signerProbe.undurable,
+          consecutive_failures: signerProbe.consecutive_failures,
+          last_error: signerProbe.last_error,
+          gateway: signerProbe.gateway,
+        };
+  if (signerProbe !== null && signerProbe.alarming) {
+    failures.push(
+      `the signer disclosure is not durable: ${String(signerProbe.undurable)} hosted key(s) recorded and not ` +
+        `written after ${String(signerProbe.consecutive_failures)} attempts` +
+        (signerProbe.last_error === null ? '' : ` (last error: ${signerProbe.last_error})`) +
+        '. A restart would publish those principals as signing for themselves; an operator must look.',
+    );
+  }
 
   return {
     status: failures.length === 0 ? 'healthy' : 'unhealthy',
@@ -420,6 +452,7 @@ export function buildHealth(
     durability,
     cast,
     follow: options.follow?.() ?? null,
+    signers,
     failures,
   };
 }

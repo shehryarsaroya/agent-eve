@@ -37,6 +37,9 @@ export type { PrivateKeyJwk, PublicKeyJwk, PublicKeyRecord } from './keys.js';
 export { Keyring, keyLiveAt } from './keyring.js';
 export type { KeyDirectory, KeyRegistration } from './keyring.js';
 
+export { SIGNERS, signerAt } from './signer.js';
+export type { KeyHistory, Signer, SignerLookup } from './signer.js';
+
 export { BoundedReplayStore } from './replay.js';
 export type { ReplayOutcome, ReplayStore, ReplayStoreLimits } from './replay.js';
 

@@ -1,17 +1,20 @@
 """Run as root on the Agent Eve host. Provision only the MCP connector's own, freshly named resources.
 
     python3 provision-mcp.py --tree /opt/agenteve-mcp-next --supabase-url https://<ref>.supabase.co \
-        --supabase-key <publishable key> [--providers google,github] [--share-gateway-secret]
+        --supabase-key <publishable key> [--providers google,github]
 
 Creates, if absent: the `agenteve-mcp` system user; /etc/agenteve-mcp (0700) and its env file (0600)
 with a freshly generated master key, gateway secret and database password; the database role
 `eve_mcp_app` and its schema `eve_mcp` in the engine's database; the static site
 /var/www/mcp.agenteve.io (consent page, landing page, vendored supabase-js, generated config.js).
 
-Secrets are generated HERE and written only to /etc/agenteve-mcp/env. Nothing secret is printed or
-returned. It never touches agenteve.io's files, units or env — except that --share-gateway-secret
-appends COMPACT_GATEWAY_SECRET to /etc/agenteve/env when absent (unused until the engine change,
-README "Engine change"), and only then.
+Secrets are generated HERE and written only to the two env files. Nothing secret is printed or
+returned. It touches exactly one thing of agenteve.io's: the line COMPACT_GATEWAY_SECRET in
+/etc/agenteve/env, which it makes equal to the connector's EVE_GATEWAY_SECRET — the engine verifies
+every account request's gateway header with it (engine/src/api/gateway.ts) and refuses them all
+without it. Every other line of that file, its owner and its mode are kept. The engine reads its env
+only at start: when the line was added or changed, `engine_restart_needed` is true in the output, and
+`systemctl restart agenteve` (deploy-mcp.py --restart-engine) is what makes it take effect.
 """
 import argparse
 import base64
@@ -20,6 +23,7 @@ import os
 import re
 import secrets
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 
@@ -39,8 +43,8 @@ parser.add_argument('--policy-url', default='')
 parser.add_argument('--terms-url', default='')
 parser.add_argument('--docs-url', default='')
 parser.add_argument('--audiences', default='', help='override EVE_MCP_TOKEN_AUDIENCES (comma-separated)')
-parser.add_argument('--share-gateway-secret', action='store_true')
 args = parser.parse_args()
+ENGINE_ENV = Path('/etc/agenteve/env')
 
 assert os.geteuid() == 0, 'run as root'
 assert re.fullmatch(r'https://[a-z0-9]{20}\.supabase\.co', args.supabase_url), 'unexpected Supabase URL shape'
@@ -49,6 +53,9 @@ providers = [p for p in args.providers.split(',') if p]
 assert all(p in ('google', 'github') for p in providers), 'providers must be google and/or github'
 tree = Path(args.tree)
 assert (tree / 'connector' / 'dist' / 'main.mjs').exists(), 'build the connector before provisioning'
+# The engine verifies the connector's gateway header with the same secret, so a connector beside an
+# unprovisioned engine would have every account request refused. Checked before anything is written.
+assert ENGINE_ENV.exists(), f'{ENGINE_ENV} is missing: provision the engine (provision-standalone.py) before the connector'
 
 
 def run(command, **kwargs):
@@ -154,14 +161,26 @@ if SITE.exists():
     SITE.rename(previous)
 staged.rename(SITE)
 
-# ── optionally hand the engine the same gateway secret (inert until the engine change) ──────
-shared = False
-if args.share_gateway_secret:
-    engine_env = Path('/etc/agenteve/env')
-    text = engine_env.read_text()
-    if not re.search(r'^COMPACT_GATEWAY_SECRET=', text, re.M):
-        with open(engine_env, 'a') as stream:
-            stream.write(('' if text.endswith('\n') else '\n') + f"COMPACT_GATEWAY_SECRET={generated['EVE_GATEWAY_SECRET']}\n")
-        shared = True
+# ── hand the engine the SAME gateway secret: it verifies every account request with it ───────
+# The connector's value wins: it was generated once on this host and is kept forever, and nothing
+# persistent depends on the gateway secret (it authenticates requests, it signs nothing kept), so a
+# stale or hand-set engine value is replaced rather than adopted. The file is rewritten atomically
+# with its own owner and mode; every other line survives in place.
+want = generated['EVE_GATEWAY_SECRET']
+engine_st = ENGINE_ENV.stat()
+engine_lines = ENGINE_ENV.read_text().splitlines()
+current = [line.split('=', 1)[1] for line in engine_lines if line.startswith('COMPACT_GATEWAY_SECRET=')]
+if current == [want]:
+    engine_gateway = 'unchanged'
+else:
+    kept = [line for line in engine_lines if not line.startswith('COMPACT_GATEWAY_SECRET=')]
+    temporary = ENGINE_ENV.with_name(ENGINE_ENV.name + '.gateway.tmp')
+    fd = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, 'w') as stream:
+        stream.write('\n'.join(kept + [f'COMPACT_GATEWAY_SECRET={want}']) + '\n')
+    os.chown(temporary, engine_st.st_uid, engine_st.st_gid)
+    os.chmod(temporary, stat.S_IMODE(engine_st.st_mode))
+    os.replace(temporary, ENGINE_ENV)
+    engine_gateway = 'replaced' if current else 'added'
 
-print(json.dumps({'user': 'agenteve-mcp', 'env': str(ENV_FILE), 'database_role': 'eve_mcp_app', 'schema': 'eve_mcp', 'site': str(SITE), 'secrets': 'generated on host; not returned', 'gateway_secret_shared_with_engine': shared}))
+print(json.dumps({'user': 'agenteve-mcp', 'env': str(ENV_FILE), 'database_role': 'eve_mcp_app', 'schema': 'eve_mcp', 'site': str(SITE), 'secrets': 'generated on host; not returned', 'engine_gateway_secret': engine_gateway, 'engine_restart_needed': engine_gateway != 'unchanged'}))

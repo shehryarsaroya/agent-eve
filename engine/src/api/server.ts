@@ -83,12 +83,27 @@ import {
   RequestVerifier,
   DEFAULT_SIGNATURE_POLICY,
   recordFromJwk,
+  verifyContentDigest,
   verifySignedRequest,
   wallSecondsFrom,
   type PublicKeyJwk,
   type RefusalDiagnostic,
   type SignableRequest,
 } from '../identity/index.js';
+import {
+  GATEWAY_HEADER,
+  GATEWAY_MAX_SKEW_SECONDS,
+  GATEWAY_REFUSAL,
+  decodeGatewaySecret,
+  verifyGatewayHeaders,
+  type GatewayRefusal,
+} from './gateway.js';
+import {
+  HostedSigners,
+  InMemoryHostedKeyStore,
+  PgHostedKeyStore,
+  type HostedKeyStore,
+} from './hosted.js';
 import { buildHealth, type CastHealth, type HaltRecord, type HealthOptions } from './health.js';
 import {
   FOLLOW_PATHS,
@@ -103,6 +118,7 @@ import {
   MAX_BODY_BYTES,
   RateLimiter,
   REPLAY_STORE_LIMITS,
+  accountKey,
   clientAddress,
   type RouteName,
 } from './limits.js';
@@ -247,6 +263,37 @@ export interface ApiOptions {
    * either way — with no service they answer `503 FOLLOW_DISABLED`, never `NO_SUCH_ROUTE`.
    */
   readonly follow?: FollowService | null;
+  /**
+   * ★ The connector's gateway header (`api/gateway.ts`): the secret it is verified with, as
+   * `COMPACT_GATEWAY_SECRET` was read at boot. Absent or not `configured` = every gateway header is
+   * refused, never trusted.
+   */
+  readonly gateway?: GatewaySetting;
+  /**
+   * ★ The hosted keys (`api/hosted.ts`) — SPEC §3's SIGNER for every principal row this app serves.
+   * Built over this app's keyring with an in-memory store when absent; `serve()` passes the one boot
+   * loaded from the database, so the frames it republished and the rows it serves agree.
+   */
+  readonly signers?: HostedSigners;
+}
+
+/**
+ * `COMPACT_GATEWAY_SECRET`, as read. Three states rather than a nullable buffer, so `/health` can tell
+ * an operator "not set" from "set and wrong" without ever printing the value.
+ */
+export type GatewaySetting =
+  | { readonly state: 'configured'; readonly secret: Buffer }
+  | { readonly state: 'unset' }
+  | { readonly state: 'malformed' };
+
+/** Who is asking, for the limiter: a verified connector ACCOUNT, or the client address. */
+interface Caller {
+  /** The bucket key: `acct:<uuid>` or an IP address. */
+  readonly key: string;
+  /** The verified account behind a gateway request, or null for an ordinary one. */
+  readonly account: string | null;
+  /** How a refusal names the caller back to it. */
+  readonly label: string;
 }
 
 /**
@@ -260,6 +307,8 @@ export interface ApiContext {
   readonly limiter: RateLimiter;
   readonly idempotency: IdempotencyStore;
   readonly follow: FollowService | null;
+  /** ★ The hosted keys: SPEC §3's SIGNER for every principal row this app serves. */
+  readonly signers: HostedSigners;
   readonly discrepancies: readonly DiscrepancyReport[];
   /** Wakes spent per principal, this Reckoning. §12.4's budget. */
   wakesSpent(principal: PrincipalId): number;
@@ -291,6 +340,15 @@ export function createApp(options: ApiOptions): CreatedApp {
   const seats = options.seats ?? new SeatBook();
   const keyring = options.keyring ?? new Keyring();
   const limiter = options.limiter ?? new RateLimiter();
+  const gateway: GatewaySetting = options.gateway ?? { state: 'unset' };
+  const gatewaySecret = gateway.state === 'configured' ? gateway.secret : null;
+  const signers = options.signers ?? new HostedSigners(keyring, new InMemoryHostedKeyStore(), gateway.state);
+  /**
+   * ★ The verified connector account behind each request, set by the gateway check below and read by
+   * {@link callerOf}. Keyed by the request object, so it dies with it — nothing about an account
+   * outlives the request that proved it.
+   */
+  const gatewayAccounts = new WeakMap<Request, string>();
   // Host books sized from the HOST's seats, not the world's ceiling: a flat 20,000 keys evicted
   // live replays once a few hundred principals each held their per-principal allowance.
   const idempotency = new IdempotencyStore(MAX_KEYS_PER_PRINCIPAL, MAX_KEYS_PER_PRINCIPAL * seats.capacity);
@@ -361,6 +419,30 @@ export function createApp(options: ApiOptions): CreatedApp {
   // that hands us an object has thrown those bytes away.
   router.use(express.raw({ type: () => true, limit: MAX_BODY_BYTES }));
 
+  // ── ★ THE GATEWAY HEADER, CHECKED ONCE, BEFORE ANY ROUTE ────────────────────
+  //
+  // Agent Eve's chat connector reaches this process over loopback, so behind it every chat player
+  // is one client. A request carrying a VERIFIED `X-Eve-Gateway-*` header (`api/gateway.ts`) is metered
+  // per ACCOUNT instead — every bucket, the enrolment quota included (`callerOf`) — and a key it
+  // registers or signs with is recorded as hosted (SPEC §3 SIGNER). Absent: today's behaviour, exactly.
+  //
+  // **Present and wrong is a 400 on every route, never a fall back to the IP.** A misconfigured secret
+  // that silently degraded to address-keyed limits would present as every chat player throttled as one
+  // — the failure this header exists to end — with nothing anywhere saying why.
+  router.use((req, res, next) => {
+    const verdict = gatewayCheck(req);
+    if (verdict.ok) {
+      gatewayAccounts.set(req, verdict.accountId);
+      next();
+      return;
+    }
+    if (verdict.reason === 'ABSENT') {
+      next();
+      return;
+    }
+    send(res, 400, refusal(WIRE_REASON.GATEWAY_UNVERIFIED, gatewayRefusalDetail(verdict.reason)));
+  });
+
   // ── enroll ────────────────────────────────────────────────────────────────
   //
   // Ordered `callerOf → validate → meter → create`, and the middle two are in that
@@ -368,8 +450,8 @@ export function createApp(options: ApiOptions): CreatedApp {
   // not spend one of three enrolment windows in ten minutes.
   router.post('/enroll', (req, res) => {
     guard(res, () => {
-      const ip = callerOf(req, res);
-      if (ip === null) return;
+      const caller = callerOf(req, res);
+      if (caller === null) return;
 
       const parsed = parseBody(bytesOf(req), MAX_BODY_BYTES);
       if (!parsed.ok) return send(res, 400, uncharged(parsed.refusal));
@@ -416,7 +498,7 @@ export function createApp(options: ApiOptions): CreatedApp {
 
       // Everything past here reads or writes world state, so everything past here is
       // metered — including handle enumeration, which a free path would hand over.
-      const gate = meter(res, 'enroll', ip);
+      const gate = meter(res, 'enroll', caller);
       if (gate === null) return;
 
       // ── ★ AND THE DAILY QUOTA: identities MINTED per address per day ───────────
@@ -425,19 +507,21 @@ export function createApp(options: ApiOptions): CreatedApp {
       // handles must get in on its first sitting). This bounds how many identities one
       // address turns into seats in a day. Asked here, charged only once the identity exists
       // below — so a taken handle or a full world never costs any of it.
-      const quota = limiter.quotaVerdict(ip, wallSecondsFrom(clock));
+      const quota = limiter.quotaVerdict(caller.key, wallSecondsFrom(clock));
       if (!quota.allowed) {
         res.setHeader('Retry-After', String(quota.retryAfterSeconds));
         const cap = limiter.enrolmentQuota;
+        // Behind the chat connector the caller is an ACCOUNT, and the sentence says so throughout.
+        const one = caller.account === null ? 'address' : 'account';
         return send(
           res,
           429,
           refusal(
             WIRE_REASON.RATE_LIMITED,
-            `${ip} has already minted ${String(cap.burst)} identities in the last ` +
-              `${String(Math.round(cap.windowSeconds / 3600))} hours, the most one address may; retry in ` +
+            `${caller.label} has already minted ${String(cap.burst)} identities in the last ` +
+              `${String(Math.round(cap.windowSeconds / 3600))} hours, the most one ${one} may; retry in ` +
               `${String(quota.retryAfterSeconds)}s. Only identities actually minted count — refused handles and ` +
-              'malformed requests do not. Enrolment is free and stays free; this bounds how fast one address ' +
+              `malformed requests do not. Enrolment is free and stays free; this bounds how fast one ${one} ` +
               'fills the seats, and a seat is kept by play, not by holding a key.',
           ),
         );
@@ -559,7 +643,16 @@ export function createApp(options: ApiOptions): CreatedApp {
         );
       }
       // The identity exists now, so this is the one moment the daily quota is charged.
-      limiter.chargeQuota(ip, wallSecondsFrom(clock));
+      limiter.chargeQuota(caller.key, wallSecondsFrom(clock));
+
+      // ★ SPEC §3's SIGNER. Enrolled through Agent Eve's own connector — the gateway header verified —
+      // means the connector generated this key and holds it, so the server signs for this principal
+      // from its first tick: `hosted`, published on its record from this response on. Recorded before
+      // the observation below is built, so the enrol response's own `header.standing` already says so.
+      // Not world state: `signers` is a table the runtime never reads (`api/hosted.ts`).
+      if (caller.account !== null) {
+        signers.markHosted({ keyid: registered.keyid, principal, recordedAtTick: tick, recordedMs: clock.nowMs() });
+      }
 
       // Persist the enrolment so a restart re-seats it. After the world seat
       // succeeded and before the response, so a recorded enrolment is always one the
@@ -879,7 +972,10 @@ export function createApp(options: ApiOptions): CreatedApp {
     guard(res, () => {
       const gate = admit(req, res, 'health');
       if (gate === null) return;
-      const report = buildHealth(runtime, seats, options.health ?? {});
+      const report = buildHealth(runtime, seats, {
+        ...(options.health ?? {}),
+        signers: () => ({ ...signers.health(), alarming: signers.alarming }),
+      });
       // 503 when the world is boring. See the header of `health.ts`: a green check
       // on a world where nothing is deciding is the exact shape of scar #14b.
       return send(res, report.status === 'healthy' ? 200 : 503, { ok: report.status === 'healthy', report });
@@ -911,15 +1007,15 @@ export function createApp(options: ApiOptions): CreatedApp {
   // ══════════════════════════════════════════════════════════════════════════
   router.post('/discrepancy', (req, res) => {
     guard(res, () => {
-      const ip = callerOf(req, res);
-      if (ip === null) return;
+      const caller = callerOf(req, res);
+      if (caller === null) return;
 
       const parsed = parseBody(bytesOf(req), MAX_BODY_BYTES);
       if (!parsed.ok) return send(res, 400, uncharged(parsed.refusal));
       const read = readDiscrepancy(parsed.value.json);
       if (!read.ok) return send(res, 400, uncharged(read.refusal));
 
-      const gate = meter(res, 'discrepancy', ip);
+      const gate = meter(res, 'discrepancy', caller);
       if (gate === null) return;
 
       const signed = tryAuthenticate(req);
@@ -1143,6 +1239,7 @@ export function createApp(options: ApiOptions): CreatedApp {
     limiter,
     idempotency,
     follow: options.follow ?? null,
+    signers,
     discrepancies,
     wakesSpent: (principal) => wakes.get(principal)?.spent ?? 0,
     cacheHits: () => cacheHits,
@@ -1159,25 +1256,76 @@ export function createApp(options: ApiOptions): CreatedApp {
    * global bucket.
    */
   function admit(req: Request, res: Response, route: RouteName): true | null {
-    const ip = callerOf(req, res);
-    if (ip === null) return null;
-    return meter(res, route, ip);
+    const caller = callerOf(req, res);
+    if (caller === null) return null;
+    return meter(res, route, caller);
   }
 
   /**
-   * Establish the real client address, or reply and return null.
+   * Establish who is asking, or reply and return null.
+   *
+   * A request whose gateway header verified (the router-level check above) is Agent Eve's connector
+   * acting for one ACCOUNT, and is keyed `acct:<uuid>` — on every bucket, the quota included. Anything
+   * else is keyed by the real client address, exactly as before the gateway existed.
    *
    * Split out of {@link admit} so that a route can identify its caller *before*
    * deciding whether the request is even worth metering. Nothing here consumes a
    * limiter window; that is {@link meter}'s job and its only job.
    */
-  function callerOf(req: Request, res: Response): string | null {
+  function callerOf(req: Request, res: Response): Caller | null {
+    const account = gatewayAccounts.get(req);
+    if (account !== undefined) return { key: accountKey(account), account, label: 'this account' };
     const address = clientAddress(req.headers, req.socket.remoteAddress, { trustEdge });
     if (!address.ok) {
       send(res, 400, refusal(WIRE_REASON.CLIENT_IP_UNVERIFIED, `${address.reason}: ${address.detail}`));
       return null;
     }
-    return address.value.ip;
+    return { key: address.value.ip, account: null, label: address.value.ip };
+  }
+
+  /**
+   * The gateway verdict for one request: the three headers under this engine's secret, from this
+   * socket's peer, at this clock — and, for a request with a body, `Content-Digest` against the bytes
+   * that actually arrived, so the MAC binds the body rather than a claim about it. Total: a throw
+   * anywhere in here is a refusal, never a 500 and never a pass.
+   */
+  function gatewayCheck(req: Request): { readonly ok: true; readonly accountId: string } | { readonly ok: false; readonly reason: 'ABSENT' | GatewayRefusal } {
+    try {
+      const rawDigest = req.headers['content-digest'];
+      const digest = typeof rawDigest === 'string' ? rawDigest : null;
+      const verdict = verifyGatewayHeaders(gatewaySecret, req.headers, {
+        method: req.method,
+        // The target exactly as sent: the connector reaches this process directly, never through
+        // nginx's prefix strip, so `originalUrl` is the path it MAC'd.
+        path: req.originalUrl,
+        contentDigest: digest,
+        peer: req.socket.remoteAddress,
+        now: wallSecondsFrom(clock),
+      });
+      if (!verdict.ok) return verdict;
+      const body = bytesOf(req);
+      if (body.length > 0) {
+        if (digest === null) return { ok: false, reason: GATEWAY_REFUSAL.BODY_UNBOUND };
+        if (!verifyContentDigest(digest, body).ok) return { ok: false, reason: GATEWAY_REFUSAL.DIGEST_MISMATCH };
+      }
+      return verdict;
+    } catch {
+      return { ok: false, reason: GATEWAY_REFUSAL.MALFORMED };
+    }
+  }
+
+  /**
+   * ★ Record the key a verified gateway request was signed with as hosted.
+   *
+   * Only Agent Eve's connector can produce a verified gateway header, and it signs only with keys it
+   * generated and holds — so a request it signed with K proves the server holds K. Normally the key
+   * was recorded at enrolment and this is one set lookup; it is what heals a hosted row lost to a crash
+   * before it was durable, and what labels a principal the connector enrolled before this engine
+   * verified gateway headers at all.
+   */
+  function noteHostedSigner(req: Request, principal: PrincipalId, keyid: string): void {
+    if (!gatewayAccounts.has(req) || signers.isHosted(keyid)) return;
+    signers.markHosted({ keyid, principal, recordedAtTick: Math.max(0, runtime.engine.tick), recordedMs: clock.nowMs() });
   }
 
   /**
@@ -1202,8 +1350,8 @@ export function createApp(options: ApiOptions): CreatedApp {
    * surface the allowance exists for.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  function meter(res: Response, route: RouteName, ip: string): true | null {
-    const verdict = limiter.check(route, ip, wallSecondsFrom(clock));
+  function meter(res: Response, route: RouteName, caller: Caller): true | null {
+    const verdict = limiter.check(route, caller.key, wallSecondsFrom(clock));
     if (!verdict.allowed) {
       res.setHeader('Retry-After', String(verdict.retryAfterSeconds));
       send(
@@ -1211,7 +1359,7 @@ export function createApp(options: ApiOptions): CreatedApp {
         429,
         refusal(
           WIRE_REASON.RATE_LIMITED,
-          `too many ${route} requests from ${ip}; retry in ${String(verdict.retryAfterSeconds)}s. ` +
+          `too many ${route} requests from ${caller.label}; retry in ${String(verdict.retryAfterSeconds)}s. ` +
             'This limit protects the host and is not a game rule: sending requests faster never helps you. ' +
             'A request refused for a MALFORMED FIELD costs you nothing — validation runs before this ' +
             'check — so fix the shape and resend at once. A request that reached real state DID cost a ' +
@@ -1243,6 +1391,7 @@ export function createApp(options: ApiOptions): CreatedApp {
       return null;
     }
     const principal = verified.value.principal;
+    noteHostedSigner(req, principal, verified.value.keyid);
     if (!seats.isSeated(principal)) {
       // A dormant principal returning. It never lost identity, holding or standing —
       // only the seat — so it is re-seated here if there is room, and told plainly
@@ -1270,7 +1419,9 @@ export function createApp(options: ApiOptions): CreatedApp {
       directory: keyring,
       replay,
     });
-    return verified.ok ? verified.value.principal : null;
+    if (!verified.ok) return null;
+    noteHostedSigner(req, verified.value.principal, verified.value.keyid);
+    return verified.value.principal;
   }
 
   /**
@@ -1335,6 +1486,8 @@ export function createApp(options: ApiOptions): CreatedApp {
       corrections: drain ? runtime.takeCorrections(principal) : runtime.peekCorrections(principal),
       correctionsDropped,
       actionsRemaining: actionsRemainingFor(principal),
+      // ★ SPEC §3's SIGNER on every principal row, as of the tick this observation reads.
+      signerOf: (who) => signers.signerAt(who, Math.max(0, runtime.engine.tick)),
     });
   }
 
@@ -1477,6 +1630,33 @@ function uncharged(source: WireRefusal): WireRefusal {
   return refusal(
     source.reason,
     `${source.detail} Nothing was created and no rate-limit window was charged: correct it and send it again immediately.`,
+  );
+}
+
+/**
+ * The detail of a `400 GATEWAY_UNVERIFIED`: which check failed, and what fixes it.
+ *
+ * Specific on purpose. The only caller that can ever read it is Agent Eve's own connector — nginx
+ * strips these headers from every public request — and a misconfigured secret has to be diagnosable
+ * from one response. It names the two environment variables and never a value.
+ */
+function gatewayRefusalDetail(reason: GatewayRefusal): string {
+  const why: Readonly<Record<GatewayRefusal, string>> = {
+    INCOMPLETE: `send all three of ${GATEWAY_HEADER.account}, ${GATEWAY_HEADER.time} and ${GATEWAY_HEADER.mac}, or none of them`,
+    NOT_CONFIGURED:
+      'this engine has no usable COMPACT_GATEWAY_SECRET (it must decode to 32 bytes), so it refuses every gateway header rather than trust one',
+    NOT_LOOPBACK: 'gateway headers are accepted only from a loopback peer: the connector on this host',
+    MALFORMED: 'the account must be a lowercase UUID, the time whole unix seconds, and the MAC 43 base64url characters',
+    STALE: `the time is more than ${String(GATEWAY_MAX_SKEW_SECONDS)} seconds from this engine's clock`,
+    BAD_MAC:
+      "the MAC does not match this method, path, account, time and Content-Digest; the connector's EVE_GATEWAY_SECRET " +
+      "and this engine's COMPACT_GATEWAY_SECRET must hold the same value",
+    BODY_UNBOUND: 'a request with a body must carry Content-Digest, or the MAC binds nothing about the bytes',
+    DIGEST_MISMATCH: 'Content-Digest does not match the body that arrived',
+  };
+  return (
+    `${reason}: ${why[reason]}. Nothing was charged and nothing was recorded. These headers are for Agent ` +
+    "Eve's own connector; a public client must never send them."
   );
 }
 
@@ -1845,6 +2025,17 @@ export interface ServeOptions {
    * `COMPACT_FOLLOW_SECRET` are both set.
    */
   readonly follow?: FollowSetup | null;
+  /**
+   * ★ `COMPACT_GATEWAY_SECRET`, as {@link bootOptionsFromEnv} read it. Absent = `unset`: every
+   * `X-Eve-Gateway-*` header is refused, and the connector's players are metered by address.
+   */
+  readonly gateway?: GatewaySetting;
+  /**
+   * ★ Where the hosted keys live (`api/hosted.ts`). When omitted: a Postgres store on the same
+   * database as the journal, or in memory beside an injected or ephemeral journal — the follow
+   * store's rule, so a test's hosted keys never reach a real database.
+   */
+  readonly hostedKeys?: HostedKeyStore;
 }
 
 export interface ServeResult {
@@ -1933,6 +2124,10 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
   );
   const clock = systemClock();
   const store = options.store ?? storeFromEnv(options, clock);
+  // ★ The hosted keys, beside the journal and never inside it (`api/hosted.ts`): the runtime never
+  // reads them, so they move no hash. An injected journal store is a test; its hosted keys stay in memory.
+  const hostedKeys = options.hostedKeys ?? hostedKeysFromEnv(options);
+  const gateway: GatewaySetting = options.gateway ?? { state: 'unset' };
 
   // Bound first, so there is something to ask from the first millisecond of a
   // multi-minute replay, and something to answer with if the replay refuses.
@@ -1951,7 +2146,7 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     `compact: booting — port ${String(port)} is bound and answering 503 while the record replays\n`,
   );
 
-  const boot = await bootTheWorld(options, store, clock, gate);
+  const boot = await bootTheWorld(options, store, clock, gate, hostedKeys, gateway);
   if (boot.outcome.status === 'HELD') {
     process.stderr.write(`\n${describeDiagnosis(boot.outcome.diagnosis)}\n\n`);
     process.stderr.write(
@@ -1967,11 +2162,21 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
       close: async () => {
         await closed(server);
         await store.close();
+        await boot.signers.close();
       },
     };
   }
 
-  const { runtime, cast, keyring, seats, seed } = boot;
+  const { runtime, cast, keyring, seats, seed, signers } = boot;
+  process.stderr.write(
+    `compact: signer — ${String(signers.health().hosted)} hosted key(s) on the record; gateway header ` +
+      (gateway.state === 'configured'
+        ? 'verified per account (COMPACT_GATEWAY_SECRET set)'
+        : gateway.state === 'malformed'
+          ? 'REFUSED: COMPACT_GATEWAY_SECRET is set but does not decode to 32 bytes'
+          : 'refused (COMPACT_GATEWAY_SECRET unset)') +
+      '\n',
+  );
   const result = boot.outcome.result;
   process.stderr.write(
     `compact: boot ${result.mode}, head tick ${String(result.headTick)}, ` +
@@ -2047,6 +2252,8 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     keyring,
     seats,
     limiter: new RateLimiter(undefined, undefined, rateLimitAllowlist),
+    gateway,
+    signers,
     follow: follow?.service ?? null,
     health: {
       // Informational: a mail outage is never a reason for `/health` to go 503.
@@ -2136,13 +2343,15 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
       journal.record(runtime, report);
       void journal.flushPending();
     }
+    // A hosted key the last write could not store is retried every tick, like the journal's backlog.
+    void signers.flush();
 
     // Publish the settled Reckoning for the spectator client. Wrapped so a frame
     // write can NEVER touch the world: a full disk or a bad path drops a frame rather
     // than halting the sim. The frame is a read model over the committed outcome.
     if (options.framesDir !== null && report.clock.isSettlementTick) {
       try {
-        const frame = runtime.reckoningFrame();
+        const frame = runtime.reckoningFrame(signers.lookup);
         if (frame !== null) {
           publishFrame(options.framesDir, frame);
           // The followers' recaps, from the file just written. `kick` returns at once and
@@ -2183,7 +2392,7 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
     // ══════════════════════════════════════════════════════════════════════════
     if (options.framesDir !== null && !report.halted) {
       try {
-        publishLiveFrame(options.framesDir, runtime.liveFrame());
+        publishLiveFrame(options.framesDir, runtime.liveFrame(signers.lookup));
       } catch (error: unknown) {
         process.stderr.write(
           `live frame publish failed at tick ${String(report.tick)} (non-fatal): ` +
@@ -2212,6 +2421,13 @@ export async function serve(options: ServeOptions): Promise<ServeResult> {
       // logged backlog — the bounded tail loss the Journal header describes — never a
       // silent claim of durability.
       await journal.close();
+      const unwritten = await signers.close();
+      if (unwritten > 0) {
+        process.stderr.write(
+          `compact: ⚑ ${String(unwritten)} hosted key(s) were not written before shutdown; each is recorded again ` +
+            "by that principal's next request through the connector\n",
+        );
+      }
       await closed(server);
     },
   };
@@ -2260,6 +2476,8 @@ interface BootedWorld {
   readonly keyring: Keyring;
   readonly seats: SeatBook;
   readonly seed: string;
+  /** ★ The hosted keys, loaded before the replay so every frame it republishes carries the same SIGNER. */
+  readonly signers: HostedSigners;
 }
 
 /**
@@ -2276,6 +2494,8 @@ async function bootTheWorld(
   store: JournalStore,
   clock: Clock,
   gate: ServeGate,
+  hostedKeys: HostedKeyStore,
+  gateway: GatewaySetting,
 ): Promise<BootedWorld> {
   const seed = (await store.masterSeed().catch(() => null)) ?? options.seed;
   if (seed !== options.seed) {
@@ -2292,9 +2512,15 @@ async function bootTheWorld(
   // seat as it re-seats the world principal — the identity half of A10.
   const keyring = new Keyring();
   const seats = new SeatBook(options.seats ?? DEFAULT_SEATS);
-  const shell = { runtime, cast, keyring, seats, seed };
+  // Over the same keyring the replay fills, so a republished frame's SIGNER is the key live on its night.
+  const signers = new HostedSigners(keyring, hostedKeys, gateway.state);
+  const shell = { runtime, cast, keyring, seats, seed, signers };
 
   try {
+    // ★ BEFORE the replay: it republishes every Reckoning it crosses, and a frame published before the
+    // hosted keys were read would call every chat player `self` until the next settlement. A table that
+    // cannot be read holds the world (this catch), rather than publishing a disclosure known to be wrong.
+    await signers.load();
     cast.seat(seed);
     const outcome = await bootWorld(runtime, store, {
       seed,
@@ -2326,7 +2552,7 @@ async function bootTheWorld(
         // night's frame permanently, and a renderer change reached a viewer only at the
         // next settlement — up to a whole Reckoning of wall clock after the deploy. See
         // `frames/write.ts:publishReplayedFrame`; unchanged Reckonings are a no-op write.
-        publishReplayedFrame(options.framesDir, tick, () => runtime.reckoningFrame());
+        publishReplayedFrame(options.framesDir, tick, () => runtime.reckoningFrame(signers.lookup));
       },
     });
     // Replay is over; everything after this tick is live play. The census forgets the
@@ -2473,6 +2699,19 @@ function storeFromEnv(options: ServeOptions, clock: Clock): JournalStore {
 }
 
 /**
+ * ★ The hosted-key store (`api/hosted.ts`): Postgres when the journal has a database, else memory.
+ *
+ * The follow store's rule, for the follow store's reason — an injected journal store is a test, and its
+ * hosted keys must stay in memory beside it rather than reach whatever database the environment names.
+ */
+function hostedKeysFromEnv(options: ServeOptions): HostedKeyStore {
+  if (options.store !== undefined) return new InMemoryHostedKeyStore();
+  const database = databaseFromEnv(options);
+  if (database === null) return new InMemoryHostedKeyStore();
+  return new PgHostedKeyStore(database.connectionString === null ? {} : { connectionString: database.connectionString });
+}
+
+/**
  * Is a database configured, and by which connection string (null: the `PG*` variables)?
  *
  * One reader of the database environment for both stores that use it — the journal and the
@@ -2581,12 +2820,39 @@ function acceptDivergenceFromEnv(): string | null {
  * `COMPACT_SEATS=1000` in `/etc/agenteve/env` and served 500 seats, and the operator door could never
  * have opened on the standalone host. A launcher that spreads this cannot drop one of the three.
  */
-export function bootOptionsFromEnv(): Pick<ServeOptions, 'seats' | 'acceptDivergence' | 'disableCheckpointAdoption'> {
+export function bootOptionsFromEnv(): Pick<ServeOptions, 'seats' | 'acceptDivergence' | 'disableCheckpointAdoption' | 'gateway'> {
   return {
     acceptDivergence: acceptDivergenceFromEnv(),
     disableCheckpointAdoption: checkpointAdoptionDisabledFromEnv(),
     seats: seatCapacityFrom(process.env['COMPACT_SEATS']),
+    gateway: gatewayFromEnv(),
   };
+}
+
+/** The variable's NAME. Its value is read here, decoded, and never printed or returned in any text. */
+export const GATEWAY_SECRET_ENV = 'COMPACT_GATEWAY_SECRET';
+
+/**
+ * ★ `COMPACT_GATEWAY_SECRET` — the key the chat connector's `X-Eve-Gateway-*` header is verified with
+ * (`api/gateway.ts`). The same value as the connector's `EVE_GATEWAY_SECRET`; `deploy/provision-mcp.py`
+ * generates it on the host and writes it to both env files.
+ *
+ * **Total, and loud rather than fatal.** Unset: gateway headers are refused and chat players are metered
+ * by address — today's behaviour. Set but not 32 bytes: treated as unset, said once here, and every
+ * connector request then answers `400 GATEWAY_UNVERIFIED` naming the variable — the world keeps running
+ * for everyone else, and `/health` reports `signers.gateway: "malformed"`. Exiting instead would be a
+ * crash loop under `Restart=on-failure` over a setting that concerns one client.
+ */
+function gatewayFromEnv(): GatewaySetting {
+  const raw = process.env[GATEWAY_SECRET_ENV];
+  if (raw === undefined || raw.trim().length === 0) return { state: 'unset' };
+  const decoded = decodeGatewaySecret(raw);
+  if (decoded.ok) return { state: 'configured', secret: decoded.secret };
+  process.stderr.write(
+    `compact: ⚑ ${GATEWAY_SECRET_ENV} is set but does not decode to 32 bytes (base64, base64url or 64 hex). ` +
+      'It is IGNORED: every gateway header will be refused with 400 GATEWAY_UNVERIFIED until it is fixed.\n',
+  );
+  return { state: 'malformed' };
 }
 
 const entry = process.argv[1];

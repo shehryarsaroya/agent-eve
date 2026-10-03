@@ -252,12 +252,17 @@ var ATDoor = (function () {
     var is = matches(h);
 
     var row = (R.standings || []).filter(function (s) { return is(s.handle) || is(s.principal); })[0];
+    // ★ SPEC §3's SIGNER: from the standing row (the nightly frame), else from the principal's dealing
+    // mark (D.directory reads the live frame first) — the two rows the frames carry it on.
+    var mark = (D.directory || []).filter(function (d) { return is(d.principal); })[0];
+    var signer = row && row.signer !== undefined ? row.signer : (mark ? mark.signer : undefined);
 
     root.appendChild(el('div', { class: 'd-head' }, [
       U.crest ? U.crest('p:' + h, 44) : el('span'),
       el('div', {}, [
         el('h2', { text: h || '\u2014' }),
         el('div', { class: 'd-addr', text: h ? 'Public identity: ' + h : '' }),
+        h ? U.signerLine(signer) : null,
       ]),
     ]));
 

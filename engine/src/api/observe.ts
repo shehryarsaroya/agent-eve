@@ -55,6 +55,7 @@ import {
   ticksUntilReckoning,
 } from '../core/time.js';
 import type { GoodId, Grant, PrincipalId, Standing, SystemId, VentureId, VentureKind } from '../core/types.js';
+import type { Signer } from '../identity/signer.js';
 import { BPS_ONE, minor, type Minor } from '../core/units.js';
 import { DEFAULT_VALUATION_RULE, storesAccount } from '../ledger/index.js';
 import {
@@ -549,6 +550,17 @@ export interface ObserveInput {
    * the number and no opinion about how it is counted.
    */
   readonly actionsRemaining: number;
+  /**
+   * ★ SPEC §3's SIGNER for any principal, as of this observation's tick — `self`, `hosted` or `null`
+   * (`api/hosted.ts`). Carried on every principal row this observation holds (`header.standing`,
+   * `counterparties[]`, `ventures.directory` records), the same field the frames publish, so A9 holds by
+   * construction.
+   *
+   * Supplied by the server and NOT read off the runtime, because it is not world state. Absent — the
+   * house cast's own observation, a test — means the caller cannot answer it, and the field is then
+   * omitted rather than invented: a constant that looks like data is worse than a missing field.
+   */
+  readonly signerOf?: (principal: PrincipalId) => Signer | null;
 }
 
 /**
@@ -668,7 +680,7 @@ export function buildObservation(input: ObserveInput): Observation {
        * `agent.md` §4's standing rules are unverifiable by an agent that cannot see its own
        * vectors move.
        */
-      standing: standingRow(runtime, principal),
+      standing: standingRow(runtime, principal, input.signerOf),
       /**
        * **THE PUBLISHED RAID SCHEDULE** (§9, A14, A2).
        *
@@ -1044,7 +1056,7 @@ export function buildObservation(input: ObserveInput): Observation {
        * the reader's own situation, never a world fact, which is why the frame does not carry it.
        * ══════════════════════════════════════════════════════════════════════════
        */
-      directory: directoryBlock(runtime, principal, tick),
+      directory: directoryBlock(runtime, principal, tick, input.signerOf),
     },
 
     /**
@@ -1068,7 +1080,7 @@ export function buildObservation(input: ObserveInput): Observation {
      *     20,000 a hand can now read the asker's `last_default` first.
      * ══════════════════════════════════════════════════════════════════════════
      */
-    counterparties: counterpartiesFor(runtime, principal, mine, board, tick).slice(0, MAX_LIST_ROWS),
+    counterparties: counterpartiesFor(runtime, principal, mine, board, tick, input.signerOf).slice(0, MAX_LIST_ROWS),
 
     grants: {
       // Authority you HANDED OUT (you are the grantor): watch each delegate's spend
@@ -6136,6 +6148,7 @@ function counterpartiesFor(
   mine: readonly VentureRecord[],
   board: readonly BoardRow[],
   tick: number,
+  signerOf: ((principal: PrincipalId) => Signer | null) | undefined,
 ): Readonly<Record<string, unknown>>[] {
   const named = new Set<PrincipalId>();
   for (const venture of mine) {
@@ -6217,7 +6230,7 @@ function counterpartiesFor(
     const sent = outbound.get(other);
     const pair = pairwise.get(other);
     return {
-      ...standingRow(runtime, other),
+      ...standingRow(runtime, other, signerOf),
       /**
        * ★ **ITS RECORD WITH *YOU*** — four counts, and the only ones `grant`'s shortlist reads.
        *
@@ -6283,7 +6296,12 @@ function counterpartiesFor(
  * reader-specific field (the reach rung, if any) and the rule. Present for an unseated principal as
  * an honest empty block, because an absent key and an empty one read the same to a reader.
  */
-function directoryBlock(runtime: Runtime, principal: PrincipalId, tick: number): Readonly<Record<string, unknown>> {
+function directoryBlock(
+  runtime: Runtime,
+  principal: PrincipalId,
+  tick: number,
+  signerOf: ((principal: PrincipalId) => Signer | null) | undefined,
+): Readonly<Record<string, unknown>> {
   const directory = runtime.directoryFor(principal, tick);
   if (directory === null) {
     return {
@@ -6324,6 +6342,8 @@ function directoryBlock(runtime: Runtime, principal: PrincipalId, tick: number):
           distinct_counterparties: row.record.counterparties,
           last_default: row.record.lastDefaultTick,
           bond_posted: row.record.bondMinor,
+          // ★ SPEC §3's SIGNER — the frames' `directoryLines[].signer`, from the same lookup (A9).
+          ...(signerOf === undefined ? {} : { signer: signerOf(row.principal) }),
         },
         /** The reach rung that lets YOU address this principal now, or null — listing grants none. */
         parley: rung === undefined ? null : { why: rung.why, about: rung.about },
@@ -6368,7 +6388,11 @@ interface ParleyRead {
  * *unproven*, which `agent.md` §4 already teaches ("a fully escrowed venture earns you a
  * performance record and **zero** trust"). What it must never be is a *constant*.
  */
-function standingRow(runtime: Runtime, who: PrincipalId): Readonly<Record<string, unknown>> {
+function standingRow(
+  runtime: Runtime,
+  who: PrincipalId,
+  signerOf: ((principal: PrincipalId) => Signer | null) | undefined,
+): Readonly<Record<string, unknown>> {
   const row: Standing = runtime.standing.row(who);
   return {
     principal: who,
@@ -6399,6 +6423,14 @@ function standingRow(runtime: Runtime, who: PrincipalId): Readonly<Record<string
     sureties: [],
     /** The tick of the latest recorded default, or null. A stamp, never a count. */
     last_default: row.lastDefaultTick,
+    /**
+     * ★ SPEC §3's SIGNER: whose key this record rests on. `self` — the principal's own; `hosted` —
+     * Agent Eve's server holds the key and signs for it, and it may be played from chat; `null` — no key
+     * at all, a principal the world seated itself. The frames publish the same field on `standings`, so a
+     * viewer never knows this about a principal when an agent cannot (A9). Omitted only where the caller
+     * has no lookup to answer it (`ObserveInput.signerOf`).
+     */
+    ...(signerOf === undefined ? {} : { signer: signerOf(who) }),
   };
 }
 

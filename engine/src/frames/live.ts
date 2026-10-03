@@ -58,12 +58,13 @@ import {
   MAX_RAID_LINES,
   assertLiveFrameBudgets,
   publishedTicker,
+  signerIndex,
   type AuthorityLine,
   type BattleLine,
   type ClaimLine,
   type CompactLink,
   type ConvoyLine,
-  type DirectoryLine,
+  type DirectoryMark,
   type LiveFrame,
   type MapSystem,
   type ParleyLine,
@@ -71,6 +72,7 @@ import {
   type RaidLine,
   type SapLine,
   type SeasonLine,
+  type SignerRow,
   type VentureGlyph,
 } from './contract.js';
 
@@ -109,8 +111,13 @@ export interface LiveSource {
   readonly claimLines?: readonly ClaimLine[];
   readonly saps?: readonly SapLine[];
   readonly frontBands?: readonly FrontBand[];
-  /** ★ 41 — who is dealing, per constellation. */
-  readonly directoryLines?: readonly DirectoryLine[];
+  /** ★ 41 — who is dealing, per constellation. The renderer adds each mark's SIGNER from {@link signers}. */
+  readonly directoryLines?: readonly DirectoryMark[];
+  /**
+   * ★ SPEC §3's SIGNER for the principals this frame names (`api/hosted.ts` through
+   * `Runtime.liveFrame`). Absent means no lookup was given — a sim, a fixture — and every mark reads null.
+   */
+  readonly signers?: readonly SignerRow[];
   /** ★ 41 — letters that have declassified, newest first. */
   readonly parleyLines?: readonly ParleyLine[];
   /** The world's ticker, OLDEST first as its ring keeps it; published newest first. */
@@ -159,6 +166,7 @@ function liveGlyph(v: LiveVentureView): VentureGlyph {
 
 /** Build the live frame. Pure, total, and asserted before it can be written. */
 export function renderLiveFrame(src: LiveSource): LiveFrame {
+  const signerOf = signerIndex(src.signers);
   const forming = src.ventures.filter((v) => v.state === 'FORMING');
   const live = src.ventures.filter((v) => v.state === 'LIVE');
 
@@ -221,8 +229,11 @@ export function renderLiveFrame(src: LiveSource): LiveFrame {
     claimLines: (src.claimLines ?? []).slice(0, MAX_FRAME_CLAIM_LINES),
     saps: src.saps ?? [],
     frontBands: (src.frontBands ?? []).slice(0, MAX_FRAME_FRONT_BANDS),
-    // Pass-throughs: ordered by their builders, capped here because the budget is the renderer's.
-    directoryLines: (src.directoryLines ?? []).slice(0, MAX_FRAME_DIRECTORY_LINES),
+    // Pass-throughs: ordered by their builders, capped here because the budget is the renderer's. Each
+    // dealing mark gains its principal's SIGNER — the one field of it the directory builder cannot know.
+    directoryLines: (src.directoryLines ?? [])
+      .slice(0, MAX_FRAME_DIRECTORY_LINES)
+      .map((line) => ({ ...line, signer: signerOf(line.principal) })),
     parleyLines: (src.parleyLines ?? []).slice(0, MAX_FRAME_PARLEY_LINES),
     // ★ NEWEST FIRST, by the rule the nightly frame publishes with (`contract.ts:publishedTicker`).
     ticker: publishedTicker(src.ticker ?? []),
@@ -294,6 +305,10 @@ export const LIVE_FACT_KEYS: readonly (keyof LiveSource)[] = Object.freeze([
   // declassified, and `assertLiveFrameBudgets` refuses one whose reveal is later than the frame.
   'directoryLines',
   'parleyLines',
+  // ── ★ SPEC §3's SIGNER, on the marks above. On `PUBLIC_FACT_KEYS` with its argument: who holds a
+  // principal's key is a fact about the KEY, true from the tick it took effect and declassifying on no
+  // clock, so publishing it per tick is a re-read — never an early disclosure.
+  'signers',
   'ticker',
   // ★ The season line. On `PUBLIC_FACT_KEYS` with its argument; its one clock-tier field — a crew's
   // stake committed inside the commitment window — is carried as a count and never as an amount.

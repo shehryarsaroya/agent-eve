@@ -6,7 +6,91 @@
 
 ## ⏱ STATUS
 
-> ### 2026-10-02 (latest) — THE SURFACE STOPS LYING, THIRTEEN WAYS, AND NOT ONE ACCEPTED ACTION MOVED (branch `season1-surface-fixes` off `0aafdf6`; merged to master after the launch)
+> ### 2026-10-03 (latest) — THE CONNECTOR'S ENGINE CHANGE: PER-ACCOUNT LIMITS FROM A VERIFIED GATEWAY HEADER, `signer: hosted` ON EVERY PUBLIC RECORD, AND NOT ONE TICK OF THE WORLD MOVED (branch `connector-engine-change` off `db39c08`; not merged, not deployed)
+>
+> What `connector/README.md` §11 specified, built — the change the ChatGPT/Claude connector needs before it
+> can be listed. Still `RULES_VERSION` 41; nothing hashed or captured. **Proof:** `npm run sim -- --seed s{1,2}
+> --ticks 900 --speed instant --cast heuristic --principals 12` on `db39c08` and on the branch tip — the per-tick
+> `state_hash` streams are byte-identical (sha256 `b3c04cc5…` for s1, `ba45bcde…` for s2: the same two the
+> surface-fixes entry below recorded), and so is the stderr summary, `elapsed_ms` aside. A new spec,
+> `test/api/signer-is-not-in-the-world.spec.ts`, runs one world twice through the real HTTP surface — every
+> newcomer enrolled and played through a verified gateway header (hosted, metered per account, drawn hosted on
+> both frames every tick) against none of it — and asserts every tick's `state_hash` and every durable journal
+> row match through a settled Reckoning; mutation-checked (leak the flag into the standing book: diverges at the
+> 5th tick). `npm run gate0`: tsc 0 · lint 0 · DET-8 and PROP-O3 pass · **396 files, 4,490 passed, 1 skipped, 0 failed** (10 min 8 s). `connector`: 92 passed in 15 files, tsc 0
+> (the real-engine e2e included). `mcp`: 17 passed.
+>
+> - **One home for the gateway MAC.** `engine/src/api/gateway.ts` builds and verifies
+>   `X-Eve-Gateway-{Account,Time,Mac}` (HMAC-SHA256 over `eve-gateway-v1·METHOD·PATH·ACCOUNT·TIME·CONTENT-DIGEST`,
+>   self-contained on `node:crypto`); `connector/src/engine/gateway.ts` now re-exports it and `deploy-mcp.py`
+>   ships the file, so what the connector sends and what the engine checks are one function
+>   (`connector/test/signing.test.ts` asserts identity; `ship.test.ts` holds the SHIP list to every
+>   cross-package import).
+> - **Per-account limits (A4).** `COMPACT_GATEWAY_SECRET`, read in `bootOptionsFromEnv()` (so
+>   `deploy/run-standalone.mjs` gets it): 32 bytes, base64/base64url/hex — the connector's `decodeKey` rule,
+>   tested to agree. A router-level check before every API route: a loopback peer, ±60 s, the MAC in constant time,
+>   and `Content-Digest` against the bytes for any body. Valid → the caller is `acct:<uuid>` on EVERY bucket, the
+>   enrolment quota included (`limits.ts:accountKey`). Present but invalid → **`400 GATEWAY_UNVERIFIED`** naming
+>   the failed check (`INCOMPLETE · NOT_CONFIGURED · NOT_LOOPBACK · MALFORMED · STALE · BAD_MAC · BODY_UNBOUND ·
+>   DIGEST_MISMATCH`) and the two variable names, never a value, nothing charged. Absent → exactly the old
+>   behaviour. Unset or malformed secret → every gateway header refused (said once at boot by name, the world keeps
+>   running, `/health` → `signers.gateway`).
+> - **SIGNER is canon** (SPEC §3, new row; §11.2 PUBLIC; §12.1): `self` · `hosted` (our server holds the key and
+>   signs; it may be played from chat — the one disclosure owner decisions 1 and 2 ask for, as ONE field) · `null`
+>   (no key: a principal the world seats itself — `self` would be false for a keyless house character, `hosted`
+>   would claim a chat). Recorded per KEY: a principal that takes its key over (Phase 4) is `self` from that key's
+>   first tick, and every earlier frame keeps `hosted`. `hosted` is MESSAGE's "hosted" — held and run on our server
+>   — said of a key; the row's never-means column closes OWNER, a GRANT's delegate, `sign`, §15.6's "self-hosted
+>   agents" (inference, not keys) and any score.
+> - **Outside the world.** Its own table, `hosted_key` (migration 3 — PUBLIC like the record, append-only by grant,
+>   unpartitioned, never read by the runtime, the replay or a snapshot), its own two-connection pool, and a
+>   `HostedSigners` book over the keyring (`api/hosted.ts`). A key becomes hosted when its enrolment's gateway
+>   header verified — or on any later verified request it signs, which heals a row lost to a crash and labels a
+>   principal the connector enrolled before the engine verified gateway headers. Boot reads the table BEFORE the
+>   replay republishes frames; an unreadable table HOLDS the world rather than publish a wrong label. Writes are
+>   queued and retried every tick; three straight failures with rows waiting fail `/health`. The runtime's two
+>   frame builders take the lookup as an ARGUMENT (`reckoningFrame(lookup?)`, `liveFrame(lookup?)`) — a type-only
+>   import, guarded structurally. Season script: `hosted_key` is **WORLD** (it names keys of this world's
+>   principals, beside the `journal_enrollment` rows that re-seat them), and a new test holds every table
+>   `schema.sql` creates to exactly one of the script's lists. The restore pre-flight now asserts every hosted key
+>   in a dump comes back (`/health` → `signers.hosted`), counted after the build's own migration.
+> - **Published on every row that carries a principal's record**, from one lookup (A9 by construction): the frames'
+>   `standings[]` and `directoryLines[]` (the live frame's place for a record between Reckonings); in `observe`,
+>   `header.standing`, every `counterparties[]` row and every `ventures.directory` record (the house cast's own
+>   observation passes no lookup and omits the field rather than invent it). `eve_dossier` returns it over both
+>   transports (`mcp/spectator.mjs`). The client draws one line on both public-record pages — `SIGNED BY AGENT EVE ·
+>   played from chat` (amber) or `SIGNED BY ITS OWN KEY` — seen in a headless browser against a local world; `?v=43`.
+>   `agent.md` documents it in §2 (not excerpted for the house cast, so the prompt pins did not move).
+> - **Deploy (written, not run).** `nginx-agenteve-standalone.conf` strips the three headers on the engine location
+>   (the two retired vhosts too). `provision-mcp.py` now ALWAYS makes the engine's `COMPACT_GATEWAY_SECRET` equal
+>   the connector's `EVE_GATEWAY_SECRET` (owner, mode and every other line kept; never printed) and reports whether
+>   the engine must restart; `deploy-mcp.py --restart-engine` does it and waits for RUNNING, and its verify step
+>   reads `signers.gateway`. `--share-gateway-secret` is gone.
+> - **Found on the way, and fixed:** the connector's `eve_dossier` answered NOT_YET before a world's first
+>   Reckoning while the bridge read the live frame — aligned. My first `HostedSigners.close()` copied
+>   `persist/journal.ts:drain`'s `while (flushing) await Promise.resolve()`, which re-queues microtasks forever
+>   while the write it waits on needs a socket read; it now awaits the shared in-flight promise, and a regression
+>   test hangs under the old pattern. **⚑ Not fixed, flagged:** `Journal.drain` itself still has that pattern —
+>   a SIGTERM that lands while a tick's flush is mid-write would spin the shutdown until systemd's 60 s kill.
+>
+> **Not done here, and why:** README §11's earlier sketch had a separate `played_from_chat_since_tick`; every
+> hosted principal may be played from chat, so `hosted` IS that disclosure, and per-act tracking would add state
+> for no extra truth. A new season leaves the connector's `eve_mcp.hosted_principal` rows naming principals the new
+> world does not have (re-enrolling an account then needs a reset; README §12). The deployed vhost is not in git's
+> hands: the operator edits it (below).
+>
+> **Operator steps, in order (nothing has been run):** (1) merge, push, `deploy/deploy-standalone.sh` — migration
+> 3 runs before the swap, the pre-flight restore checks `signers.hosted`; until a secret is set the engine refuses
+> gateway headers, which nothing sends yet. (2) On the box, add to `/etc/nginx/sites-available/agenteve.io`'s
+> `location ~ ^/(api/|health$|agent\.md$)` block the three lines `proxy_set_header X-Eve-Gateway-Account "";`
+> `… X-Eve-Gateway-Time "";` `… X-Eve-Gateway-Mac "";` (the repo copy is `deploy/nginx-agenteve-standalone.conf`),
+> `nginx -t`, then `systemctl reload nginx` — only if `-t` passes; the box serves other tenants. (3)
+> `python3 deploy/deploy-mcp.py --ops-email … --restart-engine` (connector README §10): it writes the one secret
+> into both `/etc/agenteve-mcp/env` (`EVE_GATEWAY_SECRET`) and `/etc/agenteve/env` (`COMPACT_GATEWAY_SECRET`) and
+> restarts `agenteve` once. (4) Confirm `curl -s https://agenteve.io/health | jq .report.signers` shows
+> `gateway: "configured"`. (5) Remove `COMPACT_RATELIMIT_ALLOWLIST=127.0.0.1` from `/etc/agenteve/env` if it was set.
+
+> ### 2026-10-02 — THE SURFACE STOPS LYING, THIRTEEN WAYS, AND NOT ONE ACCEPTED ACTION MOVED (branch `season1-surface-fixes` off `0aafdf6`; merged to master after the launch)
 >
 > The SURFACE half of the playtest entry below, plus what two verifier agents found beside it. Still
 > `RULES_VERSION` 41; nothing in a captured table; the set of accepted actions unchanged. **Proof:** `npm run sim

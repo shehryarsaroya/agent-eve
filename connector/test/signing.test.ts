@@ -10,7 +10,11 @@ import { BoundedReplayStore, Keyring, recordFromJwk, verifySignedRequest, wallSe
 import type { PrincipalId } from '../../engine/src/core/types.js';
 import { generateAgentKey, privateJwk } from '../src/crypto/keys.js';
 import { EngineClient } from '../src/engine/client.js';
-import { verifyGatewayHeaders } from '../src/engine/gateway.js';
+import * as connectorGateway from '../src/engine/gateway.js';
+// The ENGINE's verifier, imported from the engine — the one the server runs on every request.
+import * as engineGateway from '../../engine/src/api/gateway.js';
+
+const { verifyGatewayHeaders } = engineGateway;
 
 interface Captured {
   readonly method: string;
@@ -118,7 +122,13 @@ describe('signed engine requests', () => {
     if (!again.ok) expect(again.reason).toBe('NONCE_REPLAYED');
   });
 
-  it('carries a gateway header the reference verifier accepts, binding the body even unsigned', async () => {
+  it("the connector's gateway module IS the engine's — one function signs and verifies", () => {
+    expect(connectorGateway.gatewayHeaders).toBe(engineGateway.gatewayHeaders);
+    expect(connectorGateway.verifyGatewayHeaders).toBe(engineGateway.verifyGatewayHeaders);
+    expect(connectorGateway.GATEWAY_HEADER).toBe(engineGateway.GATEWAY_HEADER);
+  });
+
+  it("carries a gateway header the engine's verifier accepts, binding the body even unsigned", async () => {
     captured.length = 0;
     await client().call({ method: 'POST', path: '/api/enroll', payload: { handle: 'vale', publicKey: key.publicKey }, accountId: account });
     const request = captured[0] as Captured;
@@ -130,5 +140,18 @@ describe('signed engine requests', () => {
     expect(verdict).toEqual({ ok: true, accountId: account });
     const lifted = verifyGatewayHeaders(secret, headers, { method: 'POST', path: '/api/act', contentDigest: digest, peer: request.peer, now: Date.now() / 1000 });
     expect(lifted.ok).toBe(false);
+  });
+
+  it("signed requests carry a gateway header the engine's verifier accepts, over the exact Content-Digest the signature covers", async () => {
+    captured.length = 0;
+    await client().call({ method: 'POST', path: '/api/act', payload: { actions: [{ verb: 'levy_vote', params: { choice: 'EVEN' }, clientSequence: 2 }] }, signer, accountId: account });
+    await client().call({ method: 'GET', path: '/api/observe', signer, accountId: account });
+    for (const request of captured) {
+      const headers = Object.fromEntries(Object.entries(request.headers).filter((e): e is [string, string] => typeof e[1] === 'string'));
+      const digest = typeof request.headers['content-digest'] === 'string' ? request.headers['content-digest'] : null;
+      expect(digest !== null, 'a body travels with its digest, and a bodyless request with none').toBe(request.body.length > 0);
+      const verdict = verifyGatewayHeaders(secret, headers, { method: request.method, path: request.url, contentDigest: digest, peer: request.peer, now: Date.now() / 1000 });
+      expect(verdict, `${request.method} ${request.url}`).toEqual({ ok: true, accountId: account });
+    }
   });
 });

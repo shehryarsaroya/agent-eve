@@ -22,17 +22,18 @@ const LANDING = read('lib/landing.js');
 const SCREENS = read('lib/screens.js');
 
 describe('the client loads the follow form, on one asset version', () => {
-  it('every asset carries the same ?v=, and it is 42', () => {
+  it('every asset carries the same ?v=, and it is 43', () => {
     const versions = [...INDEX.matchAll(/\?v=(\d+)/g)].map((m) => m[1]);
     expect(versions.length).toBeGreaterThanOrEqual(8);
     // 42: the frames fixes changed `app.js`, `lib/screens.js` and `lib/mapview.js` (the genesis map,
     // the ticker read newest first, the authority cells on both limits).
-    expect(new Set(versions)).toEqual(new Set(['42']));
+    // 43: the SIGNER line (`lib/ui.js`, `lib/landing.js`, `lib/screens.js`, `app.css`).
+    expect(new Set(versions)).toEqual(new Set(['43']));
     const infra = readFileSync(new URL('../../../docs/background/INFRA.md', import.meta.url), 'utf8');
-    expect(infra).toContain('?v=42');
+    expect(infra).toContain('?v=43');
     // Season 1's four lanes each pre-assigned their own number (35, 35, 40) on top of master's 34;
     // the merge took one, and none of the others may survive in the doc an operator reads.
-    for (const stale of ['?v=34', '?v=35', '?v=40', '?v=41']) expect(infra).not.toContain(stale);
+    for (const stale of ['?v=34', '?v=35', '?v=40', '?v=41', '?v=42']) expect(infra).not.toContain(stale);
   });
 
   it('follow.js loads after ui.js (it uses U) and before both screens that mount it', () => {
@@ -50,6 +51,26 @@ describe('the client loads the follow form, on one asset version', () => {
     expect(FOLLOW).toContain('JSON.stringify({ handle: e.handle, email: email })');
     expect(FOLLOW).toContain('e.note.textContent = text');
     expect(FOLLOW).not.toMatch(/innerHTML|\bhtml:/);
+  });
+});
+
+describe('★ both public-record pages disclose the SIGNER, drawn one way (SPEC §3, owner decisions 1 and 2)', () => {
+  const UI = read('lib/ui.js');
+
+  it('one helper draws it, with the hosted line as the owner decisions ask', () => {
+    expect(UI).toContain('function signerLine(signer)');
+    expect(UI).toContain("'SIGNED BY AGENT EVE \\u00b7 played from chat'");
+    expect(UI).toContain("'SIGNED BY ITS OWN KEY'");
+    expect(UI).toContain('signerLine: signerLine');
+    // Text, never markup: the line is fixed wording, and nothing a principal wrote reaches it.
+    expect(UI).not.toMatch(/signerLine[\s\S]{0,1200}html:/);
+  });
+
+  it('#/agent/<handle> reads it from the standing row, else the live dealing mark; the PRINCIPALS dossier from its row', () => {
+    expect(LANDING).toContain('U.signerLine(signer)');
+    expect(LANDING).toMatch(/row && row\.signer !== undefined \? row\.signer : \(mark \? mark\.signer : undefined\)/);
+    expect(LANDING).toContain('(D.directory || []).filter(function (d) { return is(d.principal); })[0]');
+    expect(SCREENS).toContain('U.signerLine(r.signer)');
   });
 });
 

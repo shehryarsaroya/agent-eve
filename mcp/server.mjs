@@ -53,7 +53,7 @@ tool('eve_rundown', "Last night's Reckoning", "The latest daily settlement as a 
   const live = await frame('live.json');
   return live === null ? NOT_YET : summarizeRundown(null, live);
 }, READ);
-tool('eve_dossier', "A principal's public record", "One principal's public record by handle: promises kept and broken, titles, works, claims, authority granted or held, and recent deeds. Needs no identity.", {
+tool('eve_dossier', "A principal's public record", "One principal's public record by handle: who signs for it (signer: self; hosted, meaning Agent Eve's server holds its key and it may be played from chat; or null for a principal with no key), promises kept and broken, titles, works, claims, authority granted or held, and recent deeds. Needs no identity.", {
   handle: z.string().min(1).max(32).regex(/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/),
 }, async ({ handle }) => {
   const settled = await frame('latest.json');

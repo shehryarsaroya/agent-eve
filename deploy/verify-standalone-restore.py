@@ -43,6 +43,10 @@ try:
     # Occupancy is not the test: a seat is recycled four Reckonings after its last accepted action,
     # or one Reckoning after it was taken if it never played (engine/src/api/seats.ts).
     enrolled = int(subprocess.run(prefix + ['psql', '-U', 'compact', '-d', database, '-Atc', 'SELECT count(*) FROM journal_enrollment'], text=True, capture_output=True, check=True).stdout)
+    # Every hosted key in the dump (migration 3, the SIGNER disclosure) must come back too, or a restored
+    # world would publish its chat players as signing for themselves. Counted AFTER the migration above,
+    # so a dump taken before the table existed restores with zero and the check still means something.
+    hosted = int(subprocess.run(prefix + ['psql', '-U', 'compact', '-d', database, '-Atc', 'SELECT count(*) FROM hosted_key'], text=True, capture_output=True, check=True).stdout)
     env = dict(os.environ)
     env.update(dict(line.split('=', 1) for line in Path('/etc/agenteve/env').read_text().splitlines()))
     env.update(PGDATABASE=database, COMPACT_PORT='8802', COMPACT_SPEED='prod', COMPACT_FRAMES_DIR='/var/lib/agenteve/restore-frames')
@@ -76,7 +80,8 @@ try:
                 assert report['durability']['healthy'], report['durability']
                 assert report['tick'] >= 0 if backup is None else report['tick'] > 0
                 assert report['seats']['rows'] == enrolled, (report['seats'], enrolled)
-                print(json.dumps({'engine': str(root), 'backup': None if backup is None else backup.name, 'status': 'GENESIS_PASSED' if backup is None else 'RESTORE_PASSED', 'tick': report['tick'], 'state_hash': report['state_hash'], 'population': report['seats']['population'], 'enrolled_identities': enrolled, 'seated_agents': report['seats']['occupied']}))
+                assert report['signers']['hosted'] == hosted, (report['signers'], hosted)
+                print(json.dumps({'engine': str(root), 'backup': None if backup is None else backup.name, 'status': 'GENESIS_PASSED' if backup is None else 'RESTORE_PASSED', 'tick': report['tick'], 'state_hash': report['state_hash'], 'population': report['seats']['population'], 'enrolled_identities': enrolled, 'seated_agents': report['seats']['occupied'], 'hosted_keys': hosted, 'gateway': report['signers']['gateway']}))
                 break
             last = f"world {report['world']}"
         else:

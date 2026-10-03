@@ -589,4 +589,38 @@ CREATE TABLE IF NOT EXISTS follow_mail_day (
   CONSTRAINT follow_mail_day_nonneg CHECK (sent >= 0)
 );
 
+-- ─────────────────────────────────────────────────────────────────────────────
+-- HOSTED KEYS — migration 003. PUBLIC, APPEND-ONLY, AND STILL NOT PART OF THE WORLD.
+--
+-- The keys Agent Eve's own server signs with: every key the chat connector generated and enrolled,
+-- so each principal's SIGNER (SPEC §3: `self` · `hosted` · null) can be published on its record
+-- (src/identity/signer.ts, src/api/hosted.ts). A different kind of fact from both halves above:
+--
+--   * PUBLIC, unlike the follow tables. The whole point of the row is a public disclosure — the
+--     frames' `standings` and `directoryLines`, and every principal row in `observe`, read it.
+--   * APPEND-ONLY BY GRANT, like the record (APPEND_ONLY_UNPARTITIONED in migrate.ts). A key the
+--     server held stays a key the server held, so nothing ever updates or deletes a row — and the
+--     process that writes a disclosure must not be able to quietly take it back.
+--   * NOT THE WORLD. Not partitioned, not in a snapshot, not read by boot's replay, not in
+--     `state_hash`: the runtime never sees it, so recording a key moves no tick of the record. Boot
+--     reads it once, BEFORE the replay, so the frames it republishes carry the same signer.
+--
+-- Keyed by KEY, not by principal: a principal that later takes its key over (Phase 4, a rotation to
+-- a key it made itself) is `self` from the tick the new key takes effect, and every earlier frame
+-- still says `hosted`. A keyid is the key's RFC 7638 thumbprint — 43 base64url characters — and can
+-- only ever belong to one principal (identity/keyring.ts refuses a second owner).
+-- ─────────────────────────────────────────────────────────────────────────────
+
+CREATE TABLE IF NOT EXISTS hosted_key (
+  keyid             text    PRIMARY KEY,
+  principal         text    NOT NULL,
+  -- The tick the engine first recorded the key: an enrolment's own first tick. Audit only.
+  recorded_at_tick  integer NOT NULL,
+  recorded_ms       bigint  NOT NULL,
+  CONSTRAINT hosted_key_keyid_shape CHECK (keyid ~ '^[A-Za-z0-9_-]{43}$'),
+  CONSTRAINT hosted_key_tick_nonneg CHECK (recorded_at_tick >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS hosted_key_principal_idx ON hosted_key (principal);
+
 COMMIT;

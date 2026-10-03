@@ -205,6 +205,7 @@ export function standing(handle: string, over: Partial<StandingRow> = {}): Stand
     contradictedSeals: 0,
     distinctCounterparties: 0,
     lastDefaultTick: null,
+    signer: null,
     ...over,
   };
 }

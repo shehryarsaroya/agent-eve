@@ -11,5 +11,5 @@ type Frame = Record<string, unknown>;
 
 export const summarizeLive = bridge.summarizeLive as unknown as (frame: Frame) => Record<string, unknown>;
 export const summarizeRundown = bridge.summarizeRundown as unknown as (frame: Frame) => Record<string, unknown>;
-export const dossierFor = bridge.dossierFor as unknown as (handle: string, settled: Frame, live: Frame | null, origin: string) => Record<string, unknown>;
+export const dossierFor = bridge.dossierFor as unknown as (handle: string, settled: Frame | null, live: Frame | null, origin: string) => Record<string, unknown>;
 export const UNTRUSTED_NOTE: string = bridge.UNTRUSTED_NOTE;

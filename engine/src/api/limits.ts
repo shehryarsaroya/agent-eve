@@ -133,6 +133,36 @@ export function clientAddress(
   return { ok: true, value: { ip: normalised, viaEdge: false } };
 }
 
+// ── The connector's accounts ────────────────────────────────────────────────
+
+/**
+ * ★ The bucket key for a request Agent Eve's own chat connector made for one ACCOUNT: `acct:<uuid>`.
+ *
+ * ══════════════════════════════════════════════════════════════════════════
+ * The connector reaches this process over loopback, so behind it every chat player is the same client
+ * — `127.0.0.1` — and the limits below would bind them all together: most sharply the enrolment quota,
+ * six identities a day for the whole of ChatGPT and Claude. A request whose gateway header verified
+ * (`api/gateway.ts`: a MAC under the shared secret, from a loopback peer, inside the skew window) is
+ * metered per account instead, on **every** bucket here: each route and the quota.
+ *
+ * The key space stays bounded, and not by trust: only a request the MAC verified can mint an `acct:`
+ * key, the account half is a UUID the verifier has already shape-checked (so `acct:` can never collide
+ * with an address — no IP contains a colon followed by that grammar), and {@link MAX_TRACKED_CLIENTS}
+ * bounds the map either way. A4 still holds without any of this — speed buys nothing in a tick-batched
+ * world — so the limiter remains what it always was: protection for the host.
+ * ══════════════════════════════════════════════════════════════════════════
+ */
+export const ACCOUNT_KEY_PREFIX = 'acct:';
+
+/** A verified connector account id — a lowercase UUID — as a bucket key. */
+const VERIFIED_ACCOUNT = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+/** `acct:<uuid>`. Refuses anything that is not a verified-shape account id, so no header text reaches a key. */
+export function accountKey(accountId: string): string {
+  if (!VERIFIED_ACCOUNT.test(accountId)) throw new Error('an account bucket key needs a lowercase UUID');
+  return `${ACCOUNT_KEY_PREFIX}${accountId}`;
+}
+
 // ── The buckets ─────────────────────────────────────────────────────────────
 
 export interface Allowance {
@@ -143,7 +173,8 @@ export interface Allowance {
 }
 
 /**
- * Per-route allowances, per client address.
+ * Per-route allowances, per client address — or per connector account, `acct:<uuid>`, when the
+ * request's gateway header verified ({@link accountKey}).
  *
  * Sized for `fast` (10 s/tick), the speed the agent suite runs at, so a legitimate
  * agent observing once and acting once per tick is nowhere near any of them. Each
@@ -196,6 +227,10 @@ export type RouteName = keyof typeof RATE_LIMITS;
  * protects the seat cap, not the game: a seat is kept by play (`seats.ts`), and this caps how
  * fast one address can turn new keys into seats that have to be waited out. The operator
  * allowlist exempts it, exactly as it exempts every route.
+ *
+ * Behind the chat connector the "address" is the ACCOUNT ({@link accountKey}): six a day per account,
+ * which the connector's own one-principal-per-account rule makes moot, rather than six a day for
+ * every chat player at once.
  * ══════════════════════════════════════════════════════════════════════════
  */
 export const ENROLMENT_QUOTA: Allowance = { burst: 6, windowSeconds: 86_400 };
