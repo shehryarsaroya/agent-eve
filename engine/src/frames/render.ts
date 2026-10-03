@@ -41,8 +41,10 @@ import {
   MAX_FRAME_PARLEY_LINES,
   type CompactLink,
   type ConvoyLine,
-  type DirectoryLine,
+  type DirectoryMark,
   type ParleyLine,
+  type SignerRow,
+  signerIndex,
   MAX_RAID_LINES,
   MAX_FRAME_BATTLE_LINES,
   MAX_LABELS_PER_FRAME,
@@ -210,12 +212,22 @@ export interface FrameSource {
    * `observe`'s `ventures.directory` reads — and never derived here, because a renderer that chose
    * who is "dealing" would be a second opinion on a list agents read as fact.
    */
-  readonly directoryLines?: readonly DirectoryLine[];
+  readonly directoryLines?: readonly DirectoryMark[];
   /**
    * ★ THE PARLEY THREAD (41). Supplied already filtered to letters that have DECLASSIFIED; the frame
    * asserts the bound against its own tick, so a thread can never be drawn ahead of its reveal (A9).
    */
   readonly parleyLines?: readonly ParleyLine[];
+  /**
+   * ★ SPEC §3's SIGNER for every principal this frame names — on `standings` and `directoryLines`.
+   *
+   * Passed in, never derived, for the reason every line set is and one of its own: the renderer has no
+   * key directory, and must not be given one. It is NOT world state either — `api/hosted.ts` answers it
+   * from a table the runtime never reads — so `Runtime.reckoningFrame` takes the lookup as an argument
+   * and this is its output. Absent (a sim, a fixture): every principal reads null, which is true of a
+   * world where nobody enrolled a key.
+   */
+  readonly signers?: readonly SignerRow[];
 }
 
 export interface SettledView {
@@ -675,6 +687,7 @@ function consequenceFor(src: FrameSource, v: SettledView): string {
  * the rundown is a broadcast rather than a batch.
  */
 export function renderFrame(src: FrameSource): ReckoningFrame {
+  const signerOf = signerIndex(src.signers);
   const broadcastOrder = (a: SettledView, b: SettledView): number => {
     // Defaults last regardless of size: the delta, not the amount, is the story.
     if (a.defaulted !== b.defaulted) return a.defaulted ? 1 : -1;
@@ -1021,7 +1034,9 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
     compactLinks: (src.compactLinks ?? []).slice(0, MAX_FRAME_COMPACT_LINKS),
     // Pass-throughs, ordered by their builders (`say/directory.ts` ranks; the runtime orders threads
     // newest first) — a second ordering here would be a second home for one rule.
-    directoryLines: (src.directoryLines ?? []).slice(0, MAX_FRAME_DIRECTORY_LINES),
+    directoryLines: (src.directoryLines ?? [])
+      .slice(0, MAX_FRAME_DIRECTORY_LINES)
+      .map((line) => ({ ...line, signer: signerOf(line.principal) })),
     parleyLines: (src.parleyLines ?? []).slice(0, MAX_FRAME_PARLEY_LINES),
     syndicateLines: (src.syndicateLines ?? [])
       .slice()
@@ -1052,6 +1067,8 @@ export function renderFrame(src: FrameSource): ReckoningFrame {
         contradictedSeals: row.contradictedSeals,
         distinctCounterparties: row.distinctCounterparties,
         lastDefaultTick: row.lastDefaultTick,
+        // ★ SPEC §3's SIGNER — the same lookup `observe` puts on `header.standing` (A9).
+        signer: signerOf(principal),
       })),
     places: src.places ?? [],
     // ── THE RUINS: RE-SORTED HERE, NEWEST FIRST, AND THE CAP APPLIED HERE ─────

@@ -42,6 +42,7 @@ import type {
   ZoneTier,
 } from '../core/types.js';
 import type { Minor, Qty } from '../core/units.js';
+import type { Signer } from '../identity/signer.js';
 import { TICKS_PER_RECKONING } from '../core/time.js';
 import { MAX_GROWN_CONSTELLATIONS, MAX_MAP_SYSTEMS } from '../world/growth.js';
 
@@ -167,6 +168,48 @@ export interface StandingRow {
   readonly contradictedSeals: number;
   readonly distinctCounterparties: number;
   readonly lastDefaultTick: number | null;
+  /**
+   * ★ SPEC §3's SIGNER: whose key this principal's record rests on — `self`, `hosted` (Agent Eve's
+   * server holds the key and signs for it; it may be played from chat), or `null` (no key: a principal
+   * the world seated itself). The same field `observe` puts on `header.standing` and every
+   * `counterparties[]` row, read from the same lookup (`api/hosted.ts`), so A9 holds by construction.
+   */
+  readonly signer: Signer | null;
+}
+
+/**
+ * ★ One principal's SIGNER, as the frame builders are handed it (`FrameSource.signers`,
+ * `LiveSource.signers`). A list sorted by principal rather than a Map so both sources stay canonical.
+ */
+export interface SignerRow {
+  readonly principal: PrincipalId;
+  readonly signer: Signer | null;
+}
+
+/**
+ * The signer of each principal in `rows`, and `null` for one it does not name — a frame built with no
+ * lookup at all (the sim, a fixture) is a world where nobody holds a key, which is what a sim's
+ * all-house cast is.
+ */
+export function signerIndex(rows: readonly SignerRow[] | undefined): (principal: PrincipalId) => Signer | null {
+  const index = new Map<PrincipalId, Signer | null>();
+  for (const row of rows ?? []) index.set(row.principal, row.signer);
+  return (principal) => index.get(principal) ?? null;
+}
+
+/**
+ * The rows a frame builder hands its renderer: each principal it names once, in byte order, with the
+ * lookup's answer at the frame's own tick — so an archived frame republished after a principal took its
+ * key over still says what was true on its night. Bounded by the principals the frame names.
+ */
+export function signerRowsFor(
+  lookup: (principal: PrincipalId, atTick: number) => Signer | null,
+  atTick: number,
+  principals: Iterable<PrincipalId>,
+): readonly SignerRow[] {
+  return [...new Set(principals)]
+    .sort((a, b) => (a < b ? -1 : a > b ? 1 : 0))
+    .map((principal) => ({ principal, signer: lookup(principal, atTick) }));
 }
 
 export interface Meters {
@@ -1822,7 +1865,16 @@ export interface DirectoryLine {
   readonly kept: number;
   readonly broke: number;
   readonly counterparties: number;
+  /**
+   * ★ SPEC §3's SIGNER, beside the record it qualifies — on the live frame this mark is where a
+   * principal's record appears, so this is where a chat player's is disclosed between Reckonings. Added
+   * by the renderer from `signers`, never by the directory builder (`DirectoryMark` has no such field).
+   */
+  readonly signer: Signer | null;
 }
+
+/** A dealing mark as the directory builder produces it — everything but the SIGNER the renderer adds. */
+export type DirectoryMark = Omit<DirectoryLine, 'signer'>;
 
 /**
  * ★ **THE PARLEY THREAD** — one letter between two principals, drawn from the tick it declassified.

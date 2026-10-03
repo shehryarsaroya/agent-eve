@@ -521,14 +521,16 @@ import {
   MAX_FRAME_RUINS,
   MAX_FRAME_MARKET_LINES,
   MAX_RAID_LINES,
+  signerRowsFor,
   type ClaimLine,
-  type DirectoryLine,
+  type DirectoryMark,
   type MarketLine,
   type ParleyLine,
   type SwayLine,
   type WorksLine,
   type SyndicateLine,
 } from '../frames/contract.js';
+import type { SignerLookup } from '../identity/signer.js';
 import {
   ANCHOR_FUEL_BY_TIER,
   ANCHOR_QTY,
@@ -11417,9 +11419,9 @@ export class Runtime {
    * `MAX_FRAME_DIRECTORY_PER_CONSTELLATION` of each, in canonical constellation order, capped at
    * `MAX_FRAME_DIRECTORY_LINES` — the same rows and the same order `observe` gives a reader there.
    */
-  directoryLines(tick: number): readonly DirectoryLine[] {
+  directoryLines(tick: number): readonly DirectoryMark[] {
     const port = this.directoryPort();
-    const out: DirectoryLine[] = [];
+    const out: DirectoryMark[] = [];
     for (const constellation of this.world.map.constellationOrder) {
       const directory = buildDirectory(port, String(constellation), tick, MAX_FRAME_DIRECTORY_PER_CONSTELLATION);
       for (const row of directory.rows) {
@@ -18325,8 +18327,10 @@ export class Runtime {
    * `HAZARD` gained a subject the step budget had no term for.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  liveFrame(): LiveFrame {
+  liveFrame(signers?: SignerLookup): LiveFrame {
     const tick = this.engine.tick;
+    // Built before the source so the SIGNER rows can name exactly the principals the marks name.
+    const directoryLines = this.directoryLines(Math.max(0, tick));
     const ventures: LiveVentureView[] = this.ventures.live().map((v) => ({
       venture: v.id,
       stage: v.stage,
@@ -18373,8 +18377,13 @@ export class Runtime {
       frontBands: this.frontBandLines(tick),
       // ★ 41 — the DEALING MARK and the PARLEY THREAD. Both bounded: the directory by the map's
       // constellations and a per-constellation cap, the threads by the shared 512-row book.
-      directoryLines: this.directoryLines(Math.max(0, tick)),
+      directoryLines,
       parleyLines: this.parleyLines(Math.max(0, tick)),
+      // ★ SPEC §3's SIGNER for the principals the marks name — an INPUT, never runtime state: the lookup
+      // answers from `api/hosted.ts`, a table this class never reads, so nothing here can move a hash.
+      ...(signers === undefined
+        ? {}
+        : { signers: signerRowsFor(signers, Math.max(0, tick), directoryLines.map((line) => line.principal)) }),
       ticker: this.raidTicker.all,
       // ★ THE SEASON LINE, from the block every agent's `header.season` is built by, with no viewer.
       season: this.seasonLine(Math.max(0, tick)),
@@ -18409,7 +18418,7 @@ export class Runtime {
    * elective promise anyway), and wiring the declassified negotiation transcript in is a
    * follow-up, not a blocker on the map having motion.
    */
-  reckoningFrame(): ReckoningFrame | null {
+  reckoningFrame(signers?: SignerLookup): ReckoningFrame | null {
     const outcome = this.outcome;
     if (outcome === null) return null;
 
@@ -18609,6 +18618,8 @@ export class Runtime {
       this.authoritySource(outcome.tick, retain),
     );
 
+    // Built before the source so the SIGNER rows can name exactly the principals the frame names.
+    const directoryLines = this.directoryLines(outcome.tick);
     const source: FrameSource = {
       reckoning: outcome.reckoning,
       tick: outcome.tick,
@@ -18803,8 +18814,18 @@ export class Runtime {
       seasonRecords: seasonRecordLinesFor(this.seasonRecordsForFrame(), this.frameHandles()),
       // ★ 41 — who was dealing at the settlement tick, and the letters that declassified over the
       // Reckoning just closed. Both builders are the live frame's, at the settlement tick.
-      directoryLines: this.directoryLines(outcome.tick),
+      directoryLines,
       parleyLines: this.parleyLines(outcome.tick),
+      // ★ SPEC §3's SIGNER for every principal on `standings` and `directoryLines`, at the settlement
+      // tick. An INPUT, never runtime state — see the note on the live frame's.
+      ...(signers === undefined
+        ? {}
+        : {
+            signers: signerRowsFor(signers, outcome.tick, [
+              ...standings.keys(),
+              ...directoryLines.map((line) => line.principal),
+            ]),
+          }),
     };
     // A9 as a boundary rather than a habit. Everything above is tier-legal today, but
     // this frame is built by reading live books directly, so nothing structural stopped

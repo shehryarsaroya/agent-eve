@@ -15,7 +15,7 @@ import { bootOptionsFromEnv } from '../../src/api/server.js';
 const SAVED = { ...process.env };
 
 afterEach(() => {
-  for (const key of ['COMPACT_SEATS', 'COMPACT_ACCEPT_DIVERGENCE_AT_TICK', 'COMPACT_CHECKPOINT_ADOPTION']) {
+  for (const key of ['COMPACT_SEATS', 'COMPACT_ACCEPT_DIVERGENCE_AT_TICK', 'COMPACT_CHECKPOINT_ADOPTION', 'COMPACT_GATEWAY_SECRET']) {
     if (SAVED[key] === undefined) delete process.env[key];
     else process.env[key] = SAVED[key];
   }
@@ -34,6 +34,33 @@ describe('★ boot options come from the environment, in one place', () => {
     delete process.env['COMPACT_CHECKPOINT_ADOPTION'];
     expect(bootOptionsFromEnv().acceptDivergence).toBeNull();
     expect(bootOptionsFromEnv().disableCheckpointAdoption).toBe(false);
+  });
+
+  it('★ reads COMPACT_GATEWAY_SECRET: unset, configured (base64, base64url or hex), or malformed — and never prints it', () => {
+    const secret = Buffer.alloc(32, 0x2c);
+    delete process.env['COMPACT_GATEWAY_SECRET'];
+    expect(bootOptionsFromEnv().gateway).toEqual({ state: 'unset' });
+    for (const text of [secret.toString('base64'), secret.toString('base64url'), secret.toString('hex')]) {
+      process.env['COMPACT_GATEWAY_SECRET'] = text;
+      const gateway = bootOptionsFromEnv().gateway;
+      expect(gateway?.state).toBe('configured');
+      if (gateway?.state === 'configured') expect(gateway.secret.equals(secret)).toBe(true);
+    }
+    const written: string[] = [];
+    const write = process.stderr.write.bind(process.stderr);
+    process.stderr.write = (chunk: string | Uint8Array): boolean => {
+      written.push(String(chunk));
+      return true;
+    };
+    try {
+      process.env['COMPACT_GATEWAY_SECRET'] = 'too-short-to-be-a-key';
+      expect(bootOptionsFromEnv().gateway).toEqual({ state: 'malformed' });
+    } finally {
+      process.stderr.write = write;
+    }
+    const said = written.join('');
+    expect(said).toContain('COMPACT_GATEWAY_SECRET is set but does not decode to 32 bytes');
+    expect(said).not.toContain('too-short-to-be-a-key');
   });
 
   it('the production launcher spreads it, so no entry point can drop one of the three', () => {

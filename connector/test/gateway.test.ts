@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
-import { GATEWAY_HEADER, gatewayHeaders, isLoopback, verifyGatewayHeaders } from '../src/engine/gateway.js';
+import { decodeKey } from '../src/config.js';
+import { GATEWAY_HEADER, decodeGatewaySecret, gatewayHeaders, isLoopback, verifyGatewayHeaders } from '../src/engine/gateway.js';
 
 const secret = randomBytes(32);
 const account = randomUUID();
@@ -41,5 +42,19 @@ describe('the gateway header', () => {
 
   it('refuses to name a non-UUID account', () => {
     expect(() => gatewayHeaders(secret, { accountId: 'p:vale', method: 'GET', path: '/', contentDigest: null, now })).toThrow();
+  });
+
+  it("is refused outright when the engine has no secret — it never trusts the header without one", () => {
+    expect(verifyGatewayHeaders(null, headersFor(), request)).toEqual({ ok: false, reason: 'NOT_CONFIGURED' });
+  });
+
+  it("decodes EVE_GATEWAY_SECRET to the same 32 bytes the engine decodes COMPACT_GATEWAY_SECRET to", () => {
+    // provision-mcp.py writes one value into both env files; this service reads it with decodeKey and the
+    // engine with decodeGatewaySecret, so the two readings must be one key in every encoding it accepts.
+    for (const text of [secret.toString('base64'), secret.toString('base64url'), secret.toString('hex')]) {
+      const engine = decodeGatewaySecret(text);
+      expect(engine.ok).toBe(true);
+      if (engine.ok) expect(engine.secret.equals(decodeKey(text, 'EVE_GATEWAY_SECRET'))).toBe(true);
+    }
   });
 });

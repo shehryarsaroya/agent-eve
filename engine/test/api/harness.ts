@@ -19,7 +19,7 @@ import type { Server } from 'node:http';
 import { fixedClock, setSpeed, type Clock } from '../../src/core/time.js';
 import { buildSignedRequest, generateKeypair, type AgentKeypair } from '../../src/identity/index.js';
 import { wallSeconds } from '../../src/identity/index.js';
-import { createApp, API_BASE_PATH, type ApiContext } from '../../src/api/index.js';
+import { createApp, API_BASE_PATH, type ApiContext, type GatewaySetting } from '../../src/api/index.js';
 import { RateLimiter, type Allowance } from '../../src/api/index.js';
 import { SeatBook } from '../../src/api/index.js';
 import { Runtime } from '../../src/sim/runtime.js';
@@ -52,6 +52,8 @@ export interface HarnessOptions {
   /** The SeatBook's leases, for the files that drive the seat policy rather than live with it. */
   readonly idleTicks?: number;
   readonly unplayedTicks?: number;
+  /** ★ `COMPACT_GATEWAY_SECRET` as the server read it. Absent = unset: gateway headers are refused. */
+  readonly gateway?: GatewaySetting;
 }
 
 /** Wide allowances, so only the tests that mean to hit the limiter hit it. */
@@ -79,6 +81,7 @@ export async function harness(options: HarnessOptions = {}): Promise<Harness> {
     trustEdge: options.trustEdge ?? false,
     seats: new SeatBook(options.seats ?? 64, options.idleTicks, options.unplayedTicks),
     limiter: new RateLimiter(options.limits ?? LOOSE_LIMITS, undefined, undefined, options.quota ?? LOOSE_QUOTA),
+    ...(options.gateway === undefined ? {} : { gateway: options.gateway }),
   });
 
   const server: Server = await new Promise((resolve) => {

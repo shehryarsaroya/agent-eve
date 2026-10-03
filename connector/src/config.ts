@@ -46,7 +46,11 @@ export interface Config {
   readonly scopes: readonly string[];
   /** Master keys that encrypt agent keys, by version. The highest version encrypts new keys. */
   readonly masterKeys: ReadonlyMap<number, Buffer>;
-  /** The HMAC key for the gateway header the engine will verify; null disables the header. */
+  /**
+   * The HMAC key for the gateway header (`EVE_GATEWAY_SECRET`) — the same value as the engine's
+   * `COMPACT_GATEWAY_SECRET`, which verifies it. Null sends no header: the engine then meters every
+   * hosted player as one address and records none of them as hosted.
+   */
   readonly gatewaySecret: Buffer | null;
   /** Hosts whose initialize `clientInfo.name` matches get ChatGPT's in-band sign-in prompt. */
   readonly inbandAuthClients: RegExp;

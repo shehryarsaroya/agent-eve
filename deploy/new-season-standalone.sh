@@ -32,9 +32,16 @@ SHIP=(engine client deploy mcp README.md TRACKER.md)
 ARCHIVE_LOCAL="${AGENTEVE_ARCHIVE_DIR:-$HOME/agenteve-archive}"
 # Tables a new season empties, and tables it must never touch. Every table in `public` that is not
 # a partition must be on exactly one list, or the script stops before anything is changed.
+#
+# hosted_key (migration 3, the SIGNER disclosure) is WORLD: each row names a key the chat connector
+# enrolled for one of THIS world's principals, beside the journal_enrollment row that re-seats it — and
+# those principals end with the world. Kept, it would be the old world's record carried into the new one
+# (harmless — a label shows only when a principal's own key matches — but it belongs in the final dump,
+# with the world it describes). The connector's own rows live in schema eve_mcp, which this script never
+# touches; after a new season its accounts name principals the new world does not have.
 WORLD_TABLES=(principal mandate account event event_audience posting action_log idempotency
   wake_offer observation_fetch snapshot world_status journal_meta tick_seed journal_enrollment
-  journal_divergence)
+  journal_divergence hosted_key)
 KEEP_TABLES=(schema_migration follow_subscription follow_mail_day)
 
 SEED=''

@@ -2,7 +2,7 @@
 
 Run from the repo root on the operator's machine, on a clean `master` that is already pushed:
 
-    python3 deploy/deploy-mcp.py --ops-email <address> [--project-ref <ref>] [--share-gateway-secret]
+    python3 deploy/deploy-mcp.py --ops-email <address> [--project-ref <ref>] [--restart-engine]
     python3 deploy/deploy-mcp.py --ops-email <address> --create-project --org-slug <slug> --region <region>
     python3 deploy/deploy-mcp.py --plan     # print the steps and touch nothing
 
@@ -15,11 +15,16 @@ What it creates or updates, in order (every step is idempotent; re-running conve
   2. Cloudflare: the `mcp.agenteve.io` A record (DNS-only until the origin certificate exists,
      then proxied, like agenteve.io).
   3. The host (89.117.78.215): ships the pushed commit with `git archive`, builds it in
-     /opt/agenteve-mcp-next, provisions (deploy/provision-mcp.py), migrates schema eve_mcp, gets
-     the origin certificate, installs the nginx vhost (`nginx -t` first), installs and restarts
-     agenteve-mcp.service, rolls back by itself if the new build will not stay up.
-  4. Verifies the connector publicly AND that agenteve.service, which it never touches, is
-     still running and healthy.
+     /opt/agenteve-mcp-next, provisions (deploy/provision-mcp.py — which also makes the engine's
+     COMPACT_GATEWAY_SECRET equal to the connector's EVE_GATEWAY_SECRET, generated on the host and
+     never printed), migrates schema eve_mcp, gets the origin certificate, installs the nginx vhost
+     (`nginx -t` first), installs and restarts agenteve-mcp.service, rolls back by itself if the new
+     build will not stay up. The engine reads COMPACT_GATEWAY_SECRET only at start: when provisioning
+     added or changed it, --restart-engine restarts agenteve.service (and waits for it to be
+     RUNNING again); without the flag the script stops short and prints the one command to run.
+  4. Verifies the connector publicly AND that agenteve.service is still running and healthy, and
+     that the engine reports its gateway header as `configured` — until it does, every account
+     tool is refused 400 GATEWAY_UNVERIFIED (the engine never trusts the header without the secret).
 
 Reads, by NAME only, from the private kit vault (~/Projects/yc-gstack-kit/credentials/.env):
   required  SUPABASE_ACCESS_TOKEN, CLOUDFLARE_EMAIL, CLOUDFLARE_GLOBAL_API_KEY
@@ -54,7 +59,9 @@ ZONE = 'agenteve.io'
 NAME = 'mcp.agenteve.io'
 ORIGIN = f'https://{NAME}'
 RESOURCE = f'{ORIGIN}/mcp'
-SHIP = ['connector', 'mcp/client.mjs', 'mcp/spectator.mjs', 'engine/src/core/time.ts', 'deploy/agenteve-mcp.service', 'deploy/nginx-mcp-agenteve.conf', 'deploy/provision-mcp.py']
+# engine/src/api/gateway.ts is the ONE home of the gateway MAC: the connector bundles it (the engine
+# verifies with the same file), so what is sent and what is checked cannot drift.
+SHIP = ['connector', 'mcp/client.mjs', 'mcp/spectator.mjs', 'engine/src/core/time.ts', 'engine/src/api/gateway.ts', 'deploy/agenteve-mcp.service', 'deploy/nginx-mcp-agenteve.conf', 'deploy/provision-mcp.py']
 ROOT = Path(__file__).resolve().parent.parent
 
 parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -63,7 +70,7 @@ parser.add_argument('--project-ref')
 parser.add_argument('--create-project', action='store_true')
 parser.add_argument('--org-slug')
 parser.add_argument('--region')
-parser.add_argument('--share-gateway-secret', action='store_true', help='append COMPACT_GATEWAY_SECRET to /etc/agenteve/env if absent (inert until the engine change)')
+parser.add_argument('--restart-engine', action='store_true', help='restart agenteve.service when provisioning added or changed COMPACT_GATEWAY_SECRET in /etc/agenteve/env (the engine reads it only at start)')
 parser.add_argument('--skip-supabase', action='store_true')
 parser.add_argument('--skip-dns', action='store_true')
 parser.add_argument('--skip-host', action='store_true')
@@ -288,14 +295,34 @@ npm ci --no-audit --no-fund --loglevel=error
 npm run build --silent
 npm prune --omit=dev --no-audit --no-fund --loglevel=error
 ''')
-    flags = ' --share-gateway-secret' if args.share_gateway_secret else ''
     providers_arg = ','.join(providers)
-    ssh(f'''set -euo pipefail
-python3 /opt/agenteve-mcp-next/deploy/provision-mcp.py --tree /opt/agenteve-mcp-next --supabase-url {supabase_url} --supabase-key {publishable} --providers '{providers_arg}'{flags}
+    provisioned = ssh(f'''set -euo pipefail
+python3 /opt/agenteve-mcp-next/deploy/provision-mcp.py --tree /opt/agenteve-mcp-next --supabase-url {supabase_url} --supabase-key {publishable} --providers '{providers_arg}'
+''')
+    # The provisioner's one JSON line: names and states only, never a value.
+    report = json.loads([line for line in provisioned.stdout.splitlines() if line.startswith('{')][-1])
+    print('engine gateway secret:', report['engine_gateway_secret'])
+    ssh('''set -euo pipefail
 chown -R root:root /opt/agenteve-mcp-next && chmod -R go-w /opt/agenteve-mcp-next
 # Migrate as the connector's role, its environment read by systemd (never on a command line).
 systemd-run --quiet --wait --pipe --uid=agenteve-mcp --gid=agenteve-mcp --property=EnvironmentFile=/etc/agenteve-mcp/env /usr/bin/node /opt/agenteve-mcp-next/connector/dist/migrate.mjs
 ''')
+    if report['engine_restart_needed']:
+        if args.restart_engine:
+            # A restart replays the record from the newest checkpoint; the world never resets (A10).
+            ssh('''set -euo pipefail
+systemctl restart agenteve
+for _ in $(seq 1 120); do
+  if curl -fsS -m 5 -H "CF-Connecting-IP: 127.0.0.1" http://127.0.0.1:8801/api/health 2>/dev/null | grep -q '"world":"RUNNING"'; then exit 0; fi
+  sleep 5
+done
+echo "agenteve did not come back RUNNING within 10 minutes; read journalctl -u agenteve" >&2
+exit 1
+''')
+            print('agenteve.service restarted with the shared COMPACT_GATEWAY_SECRET')
+        else:
+            print('RESTART NEEDED: the engine reads COMPACT_GATEWAY_SECRET only at start. Until `systemctl restart agenteve` '
+                  'runs on the host (or this script with --restart-engine), every account tool is refused 400 GATEWAY_UNVERIFIED.')
     ssh(f'''set -euo pipefail
 site=/etc/nginx/sites-available/{NAME}
 if [ ! -s /etc/letsencrypt/live/{NAME}/fullchain.pem ]; then
@@ -343,8 +370,12 @@ echo "connector up; previous tree kept as /opt/agenteve-mcp-prev-$stamp"
 
 # ── 4. Verify, including what this script did not touch ──────────────────────────────────────
 say('4/5 verify')
-engine = ssh('systemctl is-active agenteve && curl -fsS -m 10 -H "CF-Connecting-IP: 127.0.0.1" http://127.0.0.1:8801/api/health | head -c 300', check=False)
-print('engine (untouched):', 'active' if engine.stdout.startswith('active') else 'NOT ACTIVE — investigate before anything else')
+engine = ssh('systemctl is-active agenteve && curl -sS -m 10 -H "CF-Connecting-IP: 127.0.0.1" http://127.0.0.1:8801/api/health', check=False)
+print('engine:', 'active' if engine.stdout.startswith('active') else 'NOT ACTIVE — investigate before anything else')
+gateway_state = re.search(r'"gateway":"(configured|unset|malformed)"', engine.stdout)
+print('engine gateway header:', gateway_state.group(1) if gateway_state else 'not reported (an engine build older than the gateway change)')
+if not gateway_state or gateway_state.group(1) != 'configured':
+    print('WARNING: until the engine reports gateway "configured", every account tool is refused 400 GATEWAY_UNVERIFIED.')
 time.sleep(5)
 _, prm = http('GET', f'{ORIGIN}/.well-known/oauth-protected-resource/mcp', {})
 assert prm['resource'] == RESOURCE, 'protected resource metadata names the wrong resource'

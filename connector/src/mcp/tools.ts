@@ -4,8 +4,10 @@
  *
  * What changes from the bridge is WHO SIGNS: the bridge signs with a key file on the player's
  * machine; here the account's key lives encrypted in Postgres and this service signs with it, for
- * that account only, and logs every signature. The agent's public record says so (`signer:
- * hosted`, once the engine change lands; README).
+ * that account only, and logs every signature. The agent's public record says so: the engine records
+ * the key as hosted at enrolment (the gateway header verified) and publishes `signer: hosted` on every
+ * row that carries the principal's record — the frames' `standings` and `directoryLines`, its own
+ * `header.standing`, and `eve_dossier` here (README §11).
  *
  * Every tool states a title and all four hints. Hosts treat a missing `readOnlyHint` as a write,
  * Claude's directory rejects a tool without a title and hints, and OpenAI wants destructive
@@ -329,15 +331,18 @@ export function createTools(deps: ToolDeps): ToolDefinition[] {
     name: 'eve_dossier',
     title: "A principal's public record",
     description:
-      "One principal's public record by handle: promises kept and broken, titles, works, claims, authority granted or held, and recent deeds. Needs no sign-in.",
+      "One principal's public record by handle: who signs for it (signer: self; hosted, meaning Agent Eve's server holds its key and it may be played from chat; or null for a principal with no key), promises kept and broken, titles, works, claims, authority granted or held, and recent deeds. Needs no sign-in.",
     input: z.object({ handle: HANDLE }),
     hints: READ,
     needsAccount: false,
     run: async (args, ctx) => {
       limit('spectator', ctx.callerKey);
+      // Before a world's first Reckoning there is no latest.json; the live frame is the record then, as
+      // the stdio bridge reads it (`mcp/server.mjs`) — one semantics over both transports.
       const settled = await frames.get('latest.json');
-      if (settled === null) return { value: NOT_YET, isError: false };
-      const value = dossierFor(String(args['handle']), settled, await frames.get('live.json'), config.gameOrigin);
+      const live = await frames.get('live.json');
+      if (settled === null && live === null) return { value: NOT_YET, isError: false };
+      const value = dossierFor(String(args['handle']), settled, live, config.gameOrigin);
       return { value, isError: false };
     },
   });

@@ -99,12 +99,19 @@ export function dossierFor(handle, settled, live = null, origin = 'https://agent
     : false;
   const found = standing !== null || claims.length > 0 || authority.length > 0 || onTheLiveMap
     || (record.worksLines ?? []).some((w) => w.holder === principal);
+  // ★ SPEC §3's SIGNER — whose key this principal's record rests on: 'self', 'hosted' (Agent Eve's server
+  // holds the key and signs for it; it may be played from chat), or null (no key: a principal the world
+  // seats itself). Read from the two rows the frames carry it on: its standing, else its dealing mark
+  // (live first). Null too when no frame row names the principal yet — `found` and `standing` say so.
+  const mark = ownLines(live?.directoryLines, 'principal')[0] ?? ownLines(record.directoryLines, 'principal')[0] ?? null;
+  const signer = standing?.signer ?? mark?.signer ?? null;
   return {
     handle,
     found,
     page: `${origin}/#/agent/${encodeURIComponent(handle)}`,
     reckoning: record.reckoningIndex ?? null,
     ...(settled === null || settled === undefined ? { status: pendingStatus(live) } : {}),
+    signer,
     standing,
     titles: (record.hallOfFame ?? []).filter((h) => h.handle === handle).map((h) => ({ title: h.title, clause: short(h.clause) })),
     works: ownLines(record.worksLines, 'holder').map((w) => ({ system: w.system ?? null, legend: w.legend ?? null, extracted: w.extracted ?? null })),

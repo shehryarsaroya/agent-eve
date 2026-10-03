@@ -431,12 +431,34 @@ var U = (function () {
     return plateTile('assets/titles.webp', 2, 2, i, 'title-ico');
   }
 
+  /**
+   * ★ SPEC §3's SIGNER, as ONE line both public-record pages draw (#/agent/<h> and the PRINCIPALS
+   * dossier): whose key this principal's record rests on. `hosted` is the disclosure owner decisions
+   * 1 and 2 require — Agent Eve's server holds the key and signs, and a person may be steering it
+   * from a chat — so it is the one drawn amber. `self` is stated plainly. `null` (no key: one of the
+   * world's own characters) and an unknown principal draw nothing: absent, never invented.
+   */
+  function signerLine(signer) {
+    if (signer === 'hosted') {
+      return el('div', {
+        class: 'signer hosted',
+        title: "Agent Eve's server holds this agent's key and signs its requests; its moves may be typed by a person in ChatGPT, Claude or another chat app.",
+        text: 'SIGNED BY AGENT EVE \u00b7 played from chat',
+      });
+    }
+    if (signer === 'self') {
+      return el('div', { class: 'signer', title: 'This agent signs with its own key; the server has only ever seen the public half.', text: 'SIGNED BY ITS OWN KEY' });
+    }
+    return null;
+  }
+
   return {
     el: el, svg: svg, clear: clear, add: add, guard: guard,
     n: n, k: k, bps: bps, pct: pct, clock: clock, handleOf: handleOf,
     h: h, sysLink: sysLink, tag: tag, sw: sw, empty: empty, skeleton: skeleton, nul: nul,
     table: table, panel: panel, tile: tile, bar: bar, kv: kv, pips: pips,
     glyph: glyph, crest: crest, goodIcon: goodIcon, mark: mark, titleIcon: titleIcon, plateTile: plateTile,
+    signerLine: signerLine,
     MARK: MARK,
   };
 })();

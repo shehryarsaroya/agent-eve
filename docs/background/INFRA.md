@@ -129,7 +129,24 @@ Its two private, deletable tables (`follow_subscription`, `follow_mail_day`) are
 ordinary migration (`schema.sql`, migration 2) and are deliberately outside the append-only
 grants. No extra service or timer: the recap worker runs inside `agenteve.service`.
 
-Spectator assets carry `?v=42`; bump that version when changing client scripts or
+**The chat connector's gateway header and the SIGNER disclosure** (`engine/src/api/gateway.ts`,
+`engine/src/api/hosted.ts`; built on branch `connector-engine-change`, not yet deployed). One more
+engine variable, by NAME — its value is generated on the box and lives only in `/etc/agenteve/env`
+and the connector's `/etc/agenteve-mcp/env`:
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `COMPACT_GATEWAY_SECRET` | for the connector | 32 bytes (base64, base64url or 64 hex); the SAME value as the connector's `EVE_GATEWAY_SECRET`, written to both files by `deploy/provision-mcp.py`. The engine verifies every `X-Eve-Gateway-*` header with it (a MAC, a loopback peer, ±60 s) and then meters that request per connector account (`acct:<uuid>`) instead of per address, enrolment quota included, and records the key it registers or signs with as hosted. Unset: every gateway header is refused `400 GATEWAY_UNVERIFIED`. Read only at start — restart `agenteve` after changing it. `/health` → `signers.gateway` says `configured`, `unset` or `malformed`, never the value. |
+
+The hosted keys live in their own append-only table, `hosted_key` (migration 3) — outside the world:
+the runtime never reads it and no snapshot captures it, so it moves no `state_hash`. A new season
+truncates it with the world (`WORLD_TABLES`); the restore pre-flight checks that every hosted key in
+a dump comes back (`/health` → `signers.hosted`). **nginx** must strip the three headers from every
+public request to the engine — `deploy/nginx-agenteve-standalone.conf` does, in the
+`location ~ ^/(api/|health$|agent\.md$)` block; the deployed copy is
+`/etc/nginx/sites-available/agenteve.io`, changed by hand, `nginx -t` before `systemctl reload nginx`.
+
+Spectator assets carry `?v=43`; bump that version when changing client scripts or
 styles so browsers fetch the new files. The engine and MCP checks are run locally
 before publishing; there is no CI workflow.
 
@@ -151,7 +168,7 @@ deployed; `connector/README.md`).** Fresh names throughout, none shared with the
 | Resource | Location |
 |---|---|
 | Service / Unix user | `agenteve-mcp.service` / `agenteve-mcp` |
-| Code | `/opt/agenteve-mcp/{connector,mcp,engine/src/core,deploy}` (previous trees `-prev-<stamp>`) |
+| Code | `/opt/agenteve-mcp/{connector,mcp,engine/src/core,engine/src/api/gateway.ts,deploy}` (previous trees `-prev-<stamp>`) |
 | Ports | `127.0.0.1:8810` (the service); `127.0.0.1:8811` (nginx, public frames for the service only) |
 | Secret configuration | `/etc/agenteve-mcp/env`, mode 0600: `EVE_MCP_MASTER_KEYS` (encrypts hosted agent keys — never in the database or its backups), `EVE_GATEWAY_SECRET`, `PGPASSWORD` — all generated on the host |
 | Database | schema `eve_mcp` in `compact`, role `eve_mcp_app` (no access to the engine's tables) |
@@ -159,8 +176,10 @@ deployed; `connector/README.md`).** Fresh names throughout, none shared with the
 | DNS | `mcp.agenteve.io` A → 89.117.78.215 (Cloudflare, proxied once its origin certificate exists) |
 | Sign-in | a dedicated Supabase project (auth only), by vault name `AGENTEVE_SUPABASE_PROJECT_REF`; sign-in mail via a Resend key `AGENTEVE_RESEND_AUTH_KEY` |
 
-Deploy with `python3 deploy/deploy-mcp.py --plan` first; it never restarts or edits the engine
-(except `--share-gateway-secret`, which appends one inert line to `/etc/agenteve/env`).
+Deploy with `python3 deploy/deploy-mcp.py --plan` first. It touches exactly one thing of the
+engine's: the line `COMPACT_GATEWAY_SECRET` in `/etc/agenteve/env`, made equal to the connector's
+`EVE_GATEWAY_SECRET` (owner and mode kept, value never printed). It restarts `agenteve` only with
+`--restart-engine`, and only when that line was added or changed; otherwise it prints the one command.
 
 The old AgentThread workspace is historical and is not a dependency of this service.
 The old season's archive was not present locally; the new season has its own seed

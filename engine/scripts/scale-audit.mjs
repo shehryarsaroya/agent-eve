@@ -42,6 +42,11 @@ const WHITELIST = [
       'Rate limits are deliberately wall-clock: they protect the host, not the game, so they must NOT compress with the tick. Asserted scale-invariant by design.',
   },
   {
+    file: 'src/api/gateway.ts',
+    reason:
+      "The gateway header's skew window (GATEWAY_MAX_SKEW_SECONDS) is wall-clock by nature: it bounds how long a captured MAC could be replayed, which is real time at any world speed — the same reason RFC 9421's freshness window in identity/httpsig.ts is wall-clock. Compressing it with the tick would hand a turbo world a 150x shorter window and refuse the connector's own requests. The file holds no tick-scaled quantity and must not acquire one.",
+  },
+  {
     file: 'src/cast/budget.ts',
     reason:
       'The cast spend window is deliberately wall-clock, for the same reason limits.ts is: it bounds MONEY, not play. Compressing it with the tick is the specific bug this file argues against — a turbo world runs a Reckoning in ~48 min, so a window that scaled would hand out the daily allowance six times a real day and the cap would be decoration. This file holds no tick-scaled quantity and must not acquire one; if it ever needs a duration in game time, take it in ticks from the caller rather than removing this entry.',

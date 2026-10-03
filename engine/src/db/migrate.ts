@@ -77,6 +77,10 @@ export const APPEND_ONLY_UNPARTITIONED = [
   // `INSERT ... ON CONFLICT (tick) DO NOTHING`, which needs INSERT only, and nothing
   // anywhere UPDATEs or DELETEs this table.
   'snapshot',
+  // ★ The SIGNER disclosure (migration 3). Not the world — the runtime never reads it — but a public
+  // statement that Agent Eve's server signs with a key, and the process that writes a disclosure must
+  // not be able to take it back. `HostedSigners` only ever INSERTs with ON CONFLICT DO NOTHING.
+  'hosted_key',
 ] as const;
 
 /**
@@ -87,10 +91,15 @@ export const APPEND_ONLY_UNPARTITIONED = [
  * Migration 2 is the follow-by-email tables, and its description says the one thing about
  * them that matters: they are not part of the record. They are in NEITHER append-only list
  * above, deliberately — an email address must be deletable, and an unsubscribe is an UPDATE.
+ *
+ * Migration 3 is `hosted_key`, the opposite on both counts that matter: PUBLIC (it is the SIGNER
+ * disclosure) and append-only by grant — yet, like the follow tables, outside the world: the
+ * runtime never reads it and it is in no snapshot, so it moves no `state_hash`.
  */
 export const SCHEMA_MIGRATIONS: readonly (readonly [number, string])[] = Object.freeze([
   [1, 'initial: identity, value, event ledger, action log, wake accounting, snapshots'],
   [2, 'follow by email: private, deletable follow_subscription and follow_mail_day, outside the record'],
+  [3, 'hosted keys: the keys Agent Eve signs with, so a principal\'s signer is public; append-only, outside the hash'],
 ]);
 
 /**
@@ -99,6 +108,15 @@ export const SCHEMA_MIGRATIONS: readonly (readonly [number, string])[] = Object.
  * stop receiving mail.
  */
 export const PRIVATE_DELETABLE_TABLES = ['follow_subscription', 'follow_mail_day'] as const;
+
+/**
+ * ★ Tables that publish a fact about principals without being part of the world (migration 3).
+ *
+ * Named so a test can hold the three properties together: append-only by grant (it is in
+ * {@link APPEND_ONLY_UNPARTITIONED}), never partitioned, and never named by the journal — the
+ * runtime, the snapshot and boot's replay must not read it, or recording a key would be a rules change.
+ */
+export const PUBLIC_DISCLOSURE_TABLES = ['hosted_key'] as const;
 
 export function partitionIndexForTick(tick: number): number {
   return Math.floor(tick / TICKS_PER_PARTITION);

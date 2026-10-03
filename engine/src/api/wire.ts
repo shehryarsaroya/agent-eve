@@ -60,6 +60,11 @@ export const WIRE_REASON = {
   METHOD_NOT_ALLOWED: 'METHOD_NOT_ALLOWED',
   RATE_LIMITED: 'RATE_LIMITED',
   CLIENT_IP_UNVERIFIED: 'CLIENT_IP_UNVERIFIED',
+  /**
+   * `X-Eve-Gateway-*` headers were present and did not verify (`api/gateway.ts`). Never a silent fall
+   * back to the caller's address: a misconfigured secret must be loud.
+   */
+  GATEWAY_UNVERIFIED: 'GATEWAY_UNVERIFIED',
   SEATS_FULL: 'SEATS_FULL',
   ALREADY_ENROLLED: 'ALREADY_ENROLLED',
   HANDLE_TAKEN: 'HANDLE_TAKEN',

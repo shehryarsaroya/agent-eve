@@ -58,6 +58,7 @@ import type { FrameSource } from './render.js';
  * | `syndicateLines` | `PUBLIC` | an organisation's standing legal shape, its pooled capital, and who may spend it |
  * | `map` | `PUBLIC` | the topology itself — A13 calls the map the game's only agreed representation |
  * | `swayLines` | `PUBLIC` | ★ where each bloc's force stops — integer arithmetic over the topology, holdings, claims and three published constants; the argument is below |
+ * | `signers` | `PUBLIC` | ★ SPEC §3's SIGNER on `standings` and `directoryLines` — whose key a principal's record rests on; not a world fact, the argument is below |
  *
  * **`map` needed the least argument of anything here and was missing the longest.** §11.2 gives
  * `PUBLIC` to *"movement on public lanes — a convoy is visible to anyone, because it is the map's
@@ -464,6 +465,30 @@ export const PUBLIC_FACT_KEYS: readonly (keyof FrameSource)[] = Object.freeze([
   // rung `observe` adds to each row (an agent's own situation, not a world fact); a score (§3).
   // Refused by field name in `contract.ts:contactProblems`.
   'directoryLines',
+  // ── ★ SPEC §3's SIGNER — WHOSE KEY THE RECORD RESTS ON, AND WHY IT IS PUBLIC ──────────────
+  //
+  // §6.1: *"a product whose only asset is a permanent public account of who kept their word cannot rest
+  // that account on trust our server"*. For a principal enrolled through the chat connector it DOES rest
+  // on our server — the server holds the key and signs (owner decision 1) — and the canon's answer is to
+  // say so wherever that principal's record is published: `hosted`, beside `self` and `null` (no key).
+  // §11.2 puts the record itself at `PUBLIC`, and this is a fact about how far to trust the record, so it
+  // takes the record's tier. Nothing about it is a clock tier: it declassifies on nothing.
+  //
+  // **A9 holds by construction.** `observe` carries the same field, from the same lookup
+  // (`api/hosted.ts`), on `header.standing`, on every `counterparties[]` row and on each
+  // `ventures.directory` record — every principal row an agent reads — so the frame publishes nothing an
+  // agent's own observation does not.
+  //
+  // **It is not world state, and that is why it arrives as an INPUT rather than a read.** The runtime
+  // never holds it: `Runtime.reckoningFrame(lookup)` asks the lookup for each principal the frame names
+  // and hands the answers here. So recording a key as hosted — or deploying this field — moves no
+  // `state_hash` (`test/api/signer-is-not-in-the-world.spec.ts`).
+  //
+  // Not admissible, each considered: the connector ACCOUNT behind a hosted principal (that is the
+  // connector's own private row, `eve_mcp.hosted_principal`, and naming it would tie a principal to a
+  // person's sign-in); the key itself (the public key is already the principal's `keyid`, and adds
+  // nothing a viewer reads); anything that ranks or scores (§3: not a judgement).
+  'signers',
   // ── ★ THE PARLEY THREAD (41), PUBLIC FROM ITS REVEAL TICK AND NOT ONE TICK BEFORE ──
   //
   // §11.2: a PARLEY is `PARTIES` to its two principals and `PUBLIC` at `sent_tick + AUDIT_LAG_TICKS`,

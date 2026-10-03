@@ -1,8 +1,10 @@
 /**
  * End to end, for real: the actual engine (engine/dist, in-memory journal, turbo clock, trusting
- * the edge exactly as production does) behind this service on node:http, a JWKS served over
- * HTTP the way Supabase serves it, and the official MCP client playing
- * enroll → observe → act → retry → wake status → signing log.
+ * the edge exactly as production does, verifying the gateway header with the same secret this
+ * service sends it under) behind this service on node:http, a JWKS served over HTTP the way
+ * Supabase serves it, and the official MCP client playing
+ * enroll → observe → act → retry → wake status → signing log — and the agent's public record
+ * saying `signer: hosted`, on its own observation and on `eve_dossier`.
  *
  * Build the engine first: `cd engine && npm ci && npm run build`. Skipped (loudly) without it.
  */
@@ -21,7 +23,7 @@ import { loadConfig } from '../../src/config.js';
 import { memoryLogger } from '../../src/log.js';
 import { createService } from '../../src/service.js';
 import { fakeIssuer, serveJwks, type FakeIssuer } from '../helpers/auth.js';
-import { testEnv } from '../helpers/config.js';
+import { GATEWAY_SECRET, testEnv } from '../helpers/config.js';
 import { testDb, type TestDb } from '../helpers/db.js';
 import { payload } from '../helpers/harness.js';
 
@@ -48,7 +50,17 @@ describe.skipIf(!built)('the real engine behind the connector', () => {
     process.env['COMPACT_CAST_LLM'] = '0';
     for (const name of ['PGHOST', 'PGDATABASE', 'PGUSER', 'PGPASSWORD', 'DATABASE_URL', 'COMPACT_DATABASE_URL', 'COMPACT_RATELIMIT_ALLOWLIST']) delete process.env[name];
     const { serve } = (await import(pathToFileURL(ENGINE).href)) as { serve: (options: Record<string, unknown>) => Promise<{ port: number; close(): Promise<void> }> };
-    world = await serve({ port: 0, host: '127.0.0.1', seed: 'connector-e2e', trustEdge: true, castSize: 3, framesDir });
+    // The engine verifies the connector's gateway header with COMPACT_GATEWAY_SECRET; production reads it
+    // in bootOptionsFromEnv, and this is the same value testEnv() hands the service as EVE_GATEWAY_SECRET.
+    world = await serve({
+      port: 0,
+      host: '127.0.0.1',
+      seed: 'connector-e2e',
+      trustEdge: true,
+      castSize: 3,
+      framesDir,
+      gateway: { state: 'configured', secret: GATEWAY_SECRET },
+    });
 
     issuer = await fakeIssuer();
     jwks = await serveJwks(issuer.jwks);
@@ -117,6 +129,11 @@ describe.skipIf(!built)('the real engine behind the connector', () => {
       observed = await call('eve_observe');
     }
     expect(observed).toMatchObject({ httpStatus: 200, mcpError: false });
+    // ★ The engine verified the gateway header at enrolment and recorded the key as hosted: the agent's
+    // own record says so (SPEC §3 SIGNER), on the same row counterparties[] and the frames carry.
+    const ownStanding = (observed['observation'] as { header: { standing: Record<string, unknown> } }).header.standing;
+    expect(ownStanding['principal']).toBe('p:e2e-hosted');
+    expect(ownStanding['signer']).toBe('hosted');
     // live.json is written to the frames directory every tick and served by nginx off disk — the
     // engine's own /frames/ route does not serve it — so the service reads the directory
     // (production: nginx's loopback listener) and eve_map keeps the live clock once a tick has run.
@@ -147,6 +164,21 @@ describe.skipIf(!built)('the real engine behind the connector', () => {
     expect(illegal['httpStatus']).toBe(200);
     expect((illegal['outcome'] as { corrections: unknown[] }).corrections.length).toBeGreaterThan(0);
 
+    // ★ A standing offer puts the agent on the live frame's dealing marks — where a principal's record
+    // appears between Reckonings — and eve_dossier, a SIGNED-OUT spectator tool reading only the public
+    // frames, reports who signs for it: Agent Eve's server.
+    const offered = await call('eve_act', { actions: [{ verb: 'publish_offer', params: { text: 'HANDS FOR HIRE, PLAYED FROM CHAT' } }] });
+    expect((offered['outcome'] as { accepted: unknown[] }).accepted, JSON.stringify(offered['outcome'])).toHaveLength(1);
+    let dossier = payload(await anonymous.callTool({ name: 'eve_dossier', arguments: { handle: 'e2e-hosted' } }));
+    for (let i = 0; i < 40 && dossier['signer'] !== 'hosted'; i++) {
+      await sleep(500);
+      dossier = payload(await anonymous.callTool({ name: 'eve_dossier', arguments: { handle: 'e2e-hosted' } }));
+    }
+    expect(dossier).toMatchObject({ handle: 'e2e-hosted', found: true, signer: 'hosted' });
+    // And /health says the engine verifies the header at all, and counts the key.
+    const health = payload(await anonymous.callTool({ name: 'eve_status', arguments: {} }));
+    expect((health['report'] as { signers: Record<string, unknown> }).signers).toMatchObject({ gateway: 'configured', hosted: 1 });
+
     const wake = await call('eve_wake_status');
     expect(wake).toMatchObject({ enrolled: true, handle: 'e2e-hosted', mcpError: false });
     expect(typeof wake['nextDecisionAt']).toBe('number');
@@ -157,7 +189,8 @@ describe.skipIf(!built)('the real engine behind the connector', () => {
     const log = (await call('eve_signing_log'))['entries'] as { path: string; signed: boolean; httpStatus: number | null }[];
     expect(log.some((e) => e.path === '/api/enroll' && !e.signed && e.httpStatus === 201)).toBe(true);
     expect(log.some((e) => e.path === '/api/observe' && e.signed && e.httpStatus === 200)).toBe(true);
-    expect(log.filter((e) => e.path === '/api/act' && e.signed && e.httpStatus === 200)).toHaveLength(2);
+    // levy_vote, the illegal act, and the offer: three sent (the retry was answered from this log, not sent).
+    expect(log.filter((e) => e.path === '/api/act' && e.signed && e.httpStatus === 200)).toHaveLength(3);
 
     // One agent per account, enforced before the engine is asked.
     expect(String((await call('eve_enroll', { handle: 'e2e-second' }))['error'])).toMatch(/already has an agent/);

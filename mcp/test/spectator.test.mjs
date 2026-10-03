@@ -110,3 +110,27 @@ test('an unknown handle is reported as not found rather than as an error', () =>
   assert.equal(nobody.found, false);
   assert.equal(nobody.standing, null);
 });
+
+test('★ the dossier names who signs for the principal — SPEC §3 SIGNER — from its standing, else its dealing mark', () => {
+  // The frames carry `signer` on two rows: `standings` (nightly) and `directoryLines` (both frames). The
+  // dossier reads the standing first, then the live mark, then the nightly one — and says null when no
+  // row names the principal, never a guess.
+  const withSigners = {
+    ...settled,
+    standings: [
+      { handle: 'ashlin', principal: 'p:ashlin', electiveHonoured: 18, defaults: 0, distinctCounterparties: 8, signer: 'hosted' },
+      { handle: 'ash', principal: 'p:ash', electiveHonoured: 1, defaults: 2, distinctCounterparties: 1, signer: 'self' },
+    ],
+    directoryLines: [{ principal: 'p:keyless', at: 'sys-01', offering: null, seeking: [], liveRoles: 1, signer: null }],
+  };
+  assert.equal(dossierFor('ashlin', withSigners).signer, 'hosted');
+  assert.equal(dossierFor('ash', withSigners).signer, 'self');
+  assert.equal(dossierFor('keyless', withSigners).signer, null);
+  // Before the first Reckoning, a hosted principal that is dealing is named by the live frame alone.
+  const live = { tick: 9, ticksUntilReckoning: 278, directoryLines: [{ principal: 'p:chatter', at: 'sys-03', offering: 'HANDS', seeking: [], signer: 'hosted' }] };
+  const chatter = dossierFor('chatter', null, live);
+  assert.equal(chatter.found, true);
+  assert.equal(chatter.signer, 'hosted');
+  // A handle no row names: not found, and no signer is invented for it.
+  assert.equal(dossierFor('nobody', withSigners, live).signer, null);
+});
