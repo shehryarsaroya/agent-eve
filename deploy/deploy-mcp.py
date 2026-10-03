@@ -370,7 +370,9 @@ if ! curl -fsS -m 3 http://127.0.0.1:8825/healthz >/dev/null; then
   if ls -d /opt/agenteve-mcp-prev-$stamp >/dev/null 2>&1; then mv "/opt/agenteve-mcp-prev-$stamp" /opt/agenteve-mcp && systemctl start agenteve-mcp; fi
   exit 1
 fi
-ls -1d /opt/agenteve-mcp-prev-* 2>/dev/null | sort | head -n -2 | xargs -r rm -rf
+# `|| true`: on the first deploy there is no previous tree, `ls` exits 2, and pipefail would fail the
+# whole step with no output after the connector is already up (2026-10-03, the first live deploy).
+{ ls -1d /opt/agenteve-mcp-prev-* 2>/dev/null || true; } | sort | head -n -2 | xargs -r rm -rf
 echo "connector up; previous tree kept as /opt/agenteve-mcp-prev-$stamp"
 ''')
     if cf is not None and record is not None and not record.get('proxied'):
