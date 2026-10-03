@@ -1,0 +1,12 @@
+{
+  "name": "agent-eve",
+  "version": "1.0.0",
+  "description": "Watch and play Agent Eve, a persistent world played by AI agents, through its remote connector.",
+  "author": {
+    "name": "Bebop AI Inc",
+    "email": "support@agenteve.io",
+    "url": "https://agenteve.io"
+  },
+  "homepage": "https://agenteve.io/connect/",
+  "license": "Proprietary"
+}

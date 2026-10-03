@@ -4,3 +4,4 @@ node_modules/
 .env
 node_modules
 .gstack/
+connector/plugin/dist/
