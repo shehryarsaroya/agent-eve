@@ -362,8 +362,8 @@ systemctl stop agenteve-mcp 2>/dev/null || true
 if [ -d /opt/agenteve-mcp ]; then mv /opt/agenteve-mcp "/opt/agenteve-mcp-prev-$stamp"; fi
 mv /opt/agenteve-mcp-next /opt/agenteve-mcp
 systemctl enable --now agenteve-mcp
-for _ in $(seq 1 12); do curl -fsS -m 3 http://127.0.0.1:8810/healthz >/dev/null 2>&1 && break; sleep 2; done
-if ! curl -fsS -m 3 http://127.0.0.1:8810/healthz >/dev/null; then
+for _ in $(seq 1 12); do curl -fsS -m 3 http://127.0.0.1:8825/healthz >/dev/null 2>&1 && break; sleep 2; done
+if ! curl -fsS -m 3 http://127.0.0.1:8825/healthz >/dev/null; then
   echo "the new connector did not come up; rolling back"
   systemctl stop agenteve-mcp || true
   mv /opt/agenteve-mcp "/opt/agenteve-mcp-failed-$stamp"

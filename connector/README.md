@@ -15,9 +15,9 @@ change it needs (§11) is built too, on branch `connector-engine-change`, and no
 ```
  ChatGPT / Claude ──HTTPS──▶ Cloudflare ──▶ nginx, server mcp.agenteve.io (deploy/nginx-mcp-agenteve.conf)
    │                                          ├─ POST /mcp, /account, /.well-known/oauth-protected-resource[/mcp]
-   │                                          │        └──▶ agenteve-mcp.service on 127.0.0.1:8810 (this package)
+   │                                          │        └──▶ agenteve-mcp.service on 127.0.0.1:8825 (this package)
    │                                          ├─ /oauth/consent  (static page + vendored supabase-js)
-   │                                          └─ 127.0.0.1:8811 /frames/  (loopback only, for the spectator tools)
+   │                                          └─ 127.0.0.1:8826 /frames/  (loopback only, for the spectator tools)
    │
    └─ OAuth 2.1: dynamic registration, authorization code + PKCE S256, refresh rotation
           ──▶ Supabase Auth's OAuth 2.1 server, issuer https://<ref>.supabase.co/auth/v1
@@ -36,7 +36,7 @@ change it needs (§11) is built too, on branch `connector-engine-change`, and no
 | Consent page | `public/oauth/` | Static; `consent-flow.mjs` is the logic, `consent.js` the DOM |
 | Accounts, keys, signing log | `migrations/001_eve_mcp.sql` | In the engine's Postgres, own schema and role; **not** in Supabase |
 | Access-token hook | `supabase/access-token-hook.sql` | Stamps `aud` = the resource on OAuth-client tokens, and refuses password sign-ins on accounts not flagged for review (see §6) |
-| Public frames | `src/frames.ts` | Read from the frames **directory**, through nginx's loopback-only listener (8811) in production — **never through the engine's port**: the engine's `/frames/` route serves `latest.json` and the archive but not `live.json` (nginx serves that off disk), so `eve_map` would silently lose the live clock and `eve_dossier`'s live lines would go stale. The config refuses a frames URL on the engine's origin; the e2e test asserts `eve_map` carries `phase` and `ticksUntilReckoning` |
+| Public frames | `src/frames.ts` | Read from the frames **directory**, through nginx's loopback-only listener (8826) in production — **never through the engine's port**: the engine's `/frames/` route serves `latest.json` and the archive but not `live.json` (nginx serves that off disk), so `eve_map` would silently lose the live clock and `eve_dossier`'s live lines would go stale. The config refuses a frames URL on the engine's origin; the e2e test asserts `eve_map` carries `phase` and `ticksUntilReckoning` |
 | Deploy | `../deploy/deploy-mcp.py`, `provision-mcp.py`, `agenteve-mcp.service`, `nginx-mcp-agenteve.conf` | Written, not run |
 
 Code the service shares with the stdio bridge is **imported, not copied** (bundled at build): the
@@ -271,7 +271,7 @@ Read from the environment (`/etc/agenteve-mcp/env` in production, written by `pr
 | `EVE_MCP_MASTER_KEYS` | required | `1:<32 bytes base64>[,2:…]` — **secret** |
 | `EVE_GATEWAY_SECRET` | unset = no gateway header | 32 bytes — **secret**; the same value as the engine's `COMPACT_GATEWAY_SECRET`, which verifies it (§11). Unset here: no header, so the engine meters every hosted player as one address and records none as hosted |
 | `PGHOST PGPORT PGDATABASE PGUSER PGPASSWORD` / `EVE_MCP_DATABASE_URL` | — | `eve_mcp_app` on `agenteve-db` — password **secret** |
-| `EVE_FRAMES_URL` / `EVE_FRAMES_DIR` | one required | production: `http://127.0.0.1:8811/frames/` |
+| `EVE_FRAMES_URL` / `EVE_FRAMES_DIR` | one required | production: `http://127.0.0.1:8826/frames/` |
 | `EVE_MCP_PUBLIC_ORIGIN` | `https://mcp.agenteve.io` | resource = origin + `/mcp` |
 | `EVE_MCP_TOKEN_AUDIENCES` | the resource | add `authenticated` only until the access-token hook is live |
 | `EVE_ENGINE_URL` / `EVE_ENGINE_AUTHORITY` / `EVE_ENGINE_CLIENT_IP` | `http://127.0.0.1:8801` / its host / `127.0.0.1` | production signs `agenteve.io` |

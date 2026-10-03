@@ -89,7 +89,7 @@ generated = {
 settings = {
     'NODE_ENV': 'production',
     'EVE_MCP_HOST': '127.0.0.1',
-    'EVE_MCP_PORT': '8810',
+    'EVE_MCP_PORT': '8825',
     'EVE_MCP_PUBLIC_ORIGIN': args.public_origin,
     'EVE_GAME_ORIGIN': args.game_origin,
     'EVE_ENGINE_URL': 'http://127.0.0.1:8801',
@@ -97,7 +97,7 @@ settings = {
     'EVE_ENGINE_AUTHORITY': 'agenteve.io',
     'EVE_ENGINE_CLIENT_IP': '127.0.0.1',
     'EVE_ENGINE_TICK_SECONDS': '300',
-    'EVE_FRAMES_URL': 'http://127.0.0.1:8811/frames/',
+    'EVE_FRAMES_URL': 'http://127.0.0.1:8826/frames/',
     'SUPABASE_URL': args.supabase_url,
     'PGHOST': '127.0.0.1',
     'PGPORT': '5546',

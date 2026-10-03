@@ -171,7 +171,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   // clock: eve_map falls back to the settled frame, eve_dossier's live lines go stale.
   if (framesUrl !== null && new URL(framesUrl).origin === new URL(engineUrl).origin) {
     throw new ConfigError(
-      "EVE_FRAMES_URL must not point at the engine: its /frames/ route does not serve live.json. Use nginx's frames listener (http://127.0.0.1:8811/frames/), the public site, or EVE_FRAMES_DIR.",
+      "EVE_FRAMES_URL must not point at the engine: its /frames/ route does not serve live.json. Use nginx's frames listener (http://127.0.0.1:8826/frames/), the public site, or EVE_FRAMES_DIR.",
     );
   }
   const gatewayRaw = env['EVE_GATEWAY_SECRET'];
@@ -183,7 +183,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
     throw new ConfigError('EVE_MCP_INBAND_AUTH_CLIENTS must be a valid regular expression.');
   }
   return {
-    port: int(env, 'EVE_MCP_PORT', 8810, 1, 65535),
+    port: int(env, 'EVE_MCP_PORT', 8825, 1, 65535),
     host: env['EVE_MCP_HOST']?.trim() || '127.0.0.1',
     publicOrigin,
     resource,

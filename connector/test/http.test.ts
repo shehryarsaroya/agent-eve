@@ -200,10 +200,10 @@ describe('the consent page helper and operator endpoints', () => {
   });
 
   it('/healthz answers loopback only', async () => {
-    const local = await h.service.handle(new Request('http://127.0.0.1:8810/healthz'), { address: '127.0.0.1' });
+    const local = await h.service.handle(new Request('http://127.0.0.1:8825/healthz'), { address: '127.0.0.1' });
     expect(local.status).toBe(200);
     expect(await local.json()).toEqual({ ok: true, db: true, engine: 200 });
-    const remote = await h.service.handle(new Request('http://127.0.0.1:8810/healthz'), { address: '203.0.113.9' });
+    const remote = await h.service.handle(new Request('http://127.0.0.1:8825/healthz'), { address: '203.0.113.9' });
     expect(remote.status).toBe(404);
     expect((await h.service.handle(new Request('https://mcp.test.example/nope'))).status).toBe(404);
   });
@@ -214,7 +214,7 @@ describe('the consent page helper and operator endpoints', () => {
     h.engine.call = () => new Promise(() => undefined);
     try {
       const started = Date.now();
-      const response = await h.service.handle(new Request('http://127.0.0.1:8810/healthz'), { address: '127.0.0.1' });
+      const response = await h.service.handle(new Request('http://127.0.0.1:8825/healthz'), { address: '127.0.0.1' });
       expect(Date.now() - started).toBeLessThan(2_500);
       expect(await response.json()).toEqual({ ok: true, db: true, engine: null });
     } finally {

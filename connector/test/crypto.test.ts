@@ -68,7 +68,7 @@ describe('configuration', () => {
     const config = loadConfig(testEnv());
     expect(config.resource).toBe('https://mcp.test.example/mcp');
     expect(config.tokenAudiences).toEqual(['https://mcp.test.example/mcp']);
-    expect(config.port).toBe(8810);
+    expect(config.port).toBe(8825);
     expect(config.engineAuthority).toBe('127.0.0.1:9');
     expect(config.jwksUrl).toBe('https://test-project.supabase.co/auth/v1/.well-known/jwks.json');
   });
@@ -91,7 +91,7 @@ describe('configuration', () => {
 
   it('refuses to read the public frames through the engine, which does not serve live.json', () => {
     expect(() => loadConfig(testEnv({ EVE_FRAMES_DIR: '', EVE_FRAMES_URL: 'http://127.0.0.1:9/frames/' }))).toThrow(/must not point at the engine/);
-    expect(loadConfig(testEnv({ EVE_FRAMES_DIR: '', EVE_FRAMES_URL: 'http://127.0.0.1:8811/frames/' })).framesUrl).toBe('http://127.0.0.1:8811/frames/');
+    expect(loadConfig(testEnv({ EVE_FRAMES_DIR: '', EVE_FRAMES_URL: 'http://127.0.0.1:8826/frames/' })).framesUrl).toBe('http://127.0.0.1:8826/frames/');
     expect(loadConfig(testEnv({ EVE_FRAMES_DIR: '', EVE_FRAMES_URL: 'https://agenteve.io/frames/' })).framesUrl).toBe('https://agenteve.io/frames/');
   });
 });
