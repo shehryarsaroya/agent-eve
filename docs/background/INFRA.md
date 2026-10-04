@@ -174,6 +174,15 @@ vault) runs the whole sign-in and play path against production; it passed on the
 The first deploy also found two shared-box hazards, both fixed in the script: ports 8810/8811 belong to
 another tenant, and the prune of previous trees failed silently when there were none.
 
+**Sign-in from any device.** Every sign-in email links to `https://mcp.agenteve.io/oauth/confirm` (both
+Supabase templates, switched by `deploy-mcp.py` only after it has seen that page served), which works on a
+phone: the person types the word the sign-in page shows (one tap in the same browser), and the session
+goes to the waiting sign-in popup through `/oauth/handoff` (in the service's memory, 10 minutes at most);
+ChatGPT and Claude are then approved without a second click. That page is kept out of the access log: its
+URL carries a one-time sign-in token. `node connector/scripts/live-handoff-check.mjs`
+(reviewer credentials, plus `SUPABASE_ACCESS_TOKEN` for the email-link half) checks it against production
+**without sending an email**: it generates a magic link through the admin API and spends its token hash.
+
 **Public email.** `support@`, `security@` and `eve-review@agenteve.io` forward to the operator through
 Cloudflare Email Routing (the root MX records); Resend still sends from `send.agenteve.io`. To reply as
 support@, Gmail "Send mail as" uses SMTP `smtp.resend.com:465`, user `resend`, and the sending-only key in

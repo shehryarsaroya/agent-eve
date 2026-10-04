@@ -223,3 +223,82 @@ describe('the consent page helper and operator endpoints', () => {
     }
   });
 });
+
+describe('cross-device sign-in handoffs', () => {
+  const BASE = 'https://mcp.test.example/oauth/handoff';
+  const OWN = { origin: 'https://mcp.test.example' };
+  const post = (path: string, body: unknown, headers: Record<string, string> = OWN, peer?: { address: string }) =>
+    h.service.handle(new Request(`${BASE}${path}`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) }), peer);
+  const open = (email: string, peer = { address: '203.0.113.20' }) => post('', { email }, OWN, peer);
+  const poll = (id: string, secret?: string) => h.service.handle(new Request(`${BASE}/${id}`, { headers: secret === undefined ? {} : { 'x-handoff-secret': secret } }));
+  const confirm = (id: string, token: string | null, body: Record<string, unknown>) =>
+    post(`/${id}/confirm`, { refresh_token: 'refresh-token-1', ...body }, { ...OWN, ...(token === null ? {} : { authorization: `Bearer ${token}` }) });
+  const opened = async (email: string) => (await (await open(email)).json()) as { id: string; secret: string; word: string; expires_in: number };
+
+  it('opens a handoff, checks the typed word, and hands the confirmed session to the popup once', async () => {
+    const response = await open('player@example.com');
+    expect(response.status).toBe(201);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const { id, secret, word, expires_in } = (await response.json()) as { id: string; secret: string; word: string; expires_in: number };
+    expect(expires_in).toBe(600);
+    // The confirm page learns only that it is pending: the word must come from the person.
+    expect(await (await poll(id)).json()).toEqual({ pending: true });
+    expect(await (await poll(id, secret)).json()).toEqual({ status: 'waiting' });
+    expect((await poll(id, 'wrong-secret')).status).toBe(404);
+    expect(await (await post(`/${id}/check`, { word: word.toLowerCase() })).json()).toEqual({ ok: true });
+
+    const session = await h.issuer.sessionToken({ email: 'player@example.com' });
+    expect((await confirm(id, session, { word })).status).toBe(200);
+    expect((await confirm(id, session, { word })).status).toBe(409);
+    expect((await poll(id)).status).toBe(404);
+
+    const taken = await poll(id, secret);
+    expect(await taken.json()).toEqual({ status: 'confirmed', access_token: session, refresh_token: 'refresh-token-1' });
+    expect((await poll(id, secret)).status).toBe(404);
+  });
+
+  it('cancels a handoff after two wrong words', async () => {
+    const { id, secret } = await opened('player@example.com');
+    const first = await post(`/${id}/check`, { word: 'NOTAWORD' });
+    expect(first.status).toBe(422);
+    expect(await first.json()).toEqual({ error: 'wrong_word', tries_left: 1 });
+    expect(await (await post(`/${id}/check`, { word: '' })).json()).toEqual({ error: 'wrong_word', tries_left: 0 });
+    expect((await post(`/${id}/check`, { word: 'ANYTHING' })).status).toBe(404);
+    expect((await poll(id, secret)).status).toBe(404);
+  });
+
+  it('accepts only a sign-in session for the same email, with the word and its refresh token', async () => {
+    const { id, secret, word } = await opened('player@example.com');
+    expect((await confirm(id, null, { word })).status).toBe(401);
+    expect((await confirm(id, 'not-a-jwt', { word })).status).toBe(401);
+    expect((await confirm(id, await h.issuer.mcpToken({ sub: crypto.randomUUID() }), { word })).status).toBe(401);
+    const other = await confirm(id, await h.issuer.sessionToken({ email: 'someone-else@example.com' }), { word });
+    expect(other.status).toBe(409);
+    expect(await other.json()).toEqual({ error: 'email_mismatch' });
+    expect((await confirm(id, await h.issuer.sessionToken({ email: 'player@example.com' }), { word, refresh_token: '' })).status).toBe(400);
+    expect(await (await poll(id, secret)).json()).toEqual({ status: 'waiting' });
+    const guessed = await confirm(id, await h.issuer.sessionToken({ email: 'player@example.com' }), { word: 'NOTAWORD' });
+    expect(guessed.status).toBe(422);
+    expect(await (await poll(id, secret)).json()).toEqual({ status: 'waiting' });
+    expect((await confirm('AAAAAAAAAAAAAAAAAAAAAA', await h.issuer.sessionToken(), { word })).status).toBe(404);
+  });
+
+  it('refuses other sites, a bad email and the wrong methods, and limits openings per network', async () => {
+    expect((await post('', { email: 'player@example.com' }, { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await post('/AAAAAAAAAAAAAAAAAAAAAA/check', { word: 'X' }, { origin: 'https://evil.example' })).status).toBe(403);
+    expect((await post('', { email: 'player@example.com' }, {}, { address: '203.0.113.21' })).status).toBe(201);
+    expect((await open('not-an-email')).status).toBe(400);
+    expect((await h.service.handle(new Request(BASE))).status).toBe(405);
+    expect((await h.service.handle(new Request(`${BASE}/AAAAAAAAAAAAAAAAAAAAAA`, { method: 'DELETE' }))).status).toBe(405);
+    expect((await h.service.handle(new Request(`${BASE}/AAAAAAAAAAAAAAAAAAAAAA/check`))).status).toBe(405);
+    expect((await h.service.handle(new Request(`${BASE}/short`))).status).toBe(404);
+    // One IPv6 subscriber is one network, however many of its addresses it uses.
+    const statuses: number[] = [];
+    for (let i = 0; i < 20; i++) statuses.push((await open(`limit-${i}@example.com`, { address: `2001:db8:77:1::${(i + 1).toString(16)}` })).status);
+    expect(statuses.every((s) => s === 201)).toBe(true);
+    const limited = await open('limit-20@example.com', { address: '2001:db8:77:1:ffff::1' });
+    expect(limited.status).toBe(429);
+    expect(Number(limited.headers.get('retry-after'))).toBeGreaterThan(0);
+    expect((await open('elsewhere@example.com', { address: '2001:db8:77:2::1' })).status).toBe(201);
+  });
+});

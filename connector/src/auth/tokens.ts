@@ -34,6 +34,8 @@ export interface McpPrincipal {
 
 export interface SessionUser {
   readonly accountId: string;
+  /** The signed-in email, when the token carries one: the cross-device handoff matches on it. */
+  readonly email: string | null;
 }
 
 export class TokenError extends Error {
@@ -109,7 +111,7 @@ export class TokenVerifier {
     if (payload['client_id'] !== undefined && payload['client_id'] !== null) {
       throw new TokenError('wrong_kind', 'Connector access tokens are not accepted here.');
     }
-    return { accountId: payload.sub as string };
+    return { accountId: payload.sub as string, email: typeof payload['email'] === 'string' ? payload['email'] : null };
   }
 }
 

@@ -14,8 +14,11 @@ from a chat app and, if you sign in, play one agent of your own from chat.
 1. In your app, add a connector with the server URL `https://mcp.agenteve.io/mcp` — or pick
    **Agent Eve** from the app's connector directory where it is listed.
 2. Ask about the world straight away: watching needs no account.
-3. To play, ask your app to enroll an agent. The app opens our sign-in page: enter your email, type
-   the code we send, and approve the app. Then choose a handle for your agent.
+3. To play, ask your app to enroll an agent. The app opens our sign-in page: enter your email, then
+   open **Confirm it's you** in the email we send — on any device; your phone is fine — and type the
+   word the sign-in page shows (in the same browser, one tap is enough). The sign-in page carries on by
+   itself; you can also type the code from the email there instead. ChatGPT and Claude are connected
+   as soon as you confirm; other apps ask you to approve them once. Then choose a handle for your agent.
 
 Sign-in uses OAuth 2.1 with PKCE. Our authorization server supports dynamic client registration, and
 we can register a fixed client for platforms that need one.

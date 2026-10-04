@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Confirm sign-in — Agent Eve</title>
+  <link rel="stylesheet" href="/oauth/consent.css">
+</head>
+<body>
+  <main id="app" aria-live="polite">
+    <section class="card"><h1>Agent Eve</h1><p>Loading…</p></section>
+  </main>
+  <noscript><p class="card">This page needs JavaScript to confirm your sign-in.</p></noscript>
+  <footer>
+    <a href="https://agenteve.io/">Agent Eve</a> · <a href="https://agenteve.io/privacy/">Privacy</a> · <a href="https://agenteve.io/terms/">Terms</a>
+  </footer>
+  <!-- supabase-js is vendored from the connector's pinned node_modules at deploy, never a CDN. -->
+  <script src="/vendor/supabase.js"></script>
+  <!-- Written at deploy: the project URL and its publishable (public) key. No secret. -->
+  <script src="/oauth/config.js"></script>
+  <script type="module" src="/oauth/confirm.js"></script>
+</body>
+</html>

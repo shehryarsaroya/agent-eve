@@ -6,6 +6,7 @@ import { secretValues, type Config } from './config.js';
 import { KeyVault } from './crypto/vault.js';
 import { EngineClient, type EngineTransport } from './engine/client.js';
 import { PublicFrames, type FramesSource } from './frames.js';
+import { SignInHandoffs } from './auth/handoff.js';
 import { createHandler, type HttpDeps, type Peer } from './http.js';
 import { KeyedMutex, RateLimiter } from './limits.js';
 import { createLogger, type Logger } from './log.js';
@@ -64,6 +65,7 @@ export function createService(parts: ServiceParts): Service {
     ...toolDeps,
     tools: createTools(toolDeps),
     tokens: new TokenVerifier({ issuer: config.issuer, audiences: config.tokenAudiences, keys: parts.keys }),
+    handoffs: new SignInHandoffs({ now }),
     // Derived, not configured: one fewer secret to provision, rotated with the master key.
     sessionSecret: vault.derive('session-id/v1'),
   };

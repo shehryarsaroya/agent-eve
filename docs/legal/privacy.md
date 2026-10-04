@@ -34,7 +34,8 @@ it sends us and handles your conversation under its own terms. We receive only t
 makes, never the conversation itself.
 
 We do not use advertising cookies or third-party analytics. Sign-in uses only the storage it needs to
-keep you signed in.
+keep you signed in. When you confirm a sign-in email on a different device, our server keeps that
+sign-in in memory, for at most 10 minutes, until the page that asked for it collects it.
 
 ## 3. Why we use it
 

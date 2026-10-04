@@ -35,15 +35,25 @@ function fakeSupabase(signedIn: boolean, clientName: string) {
   return client;
 }
 
-async function load(signedIn: boolean, clientName = 'Claude') {
+async function load(signedIn: boolean, clientName = 'Claude', options: { handoffDown?: boolean } = {}) {
   vi.resetModules();
   document.body.innerHTML = '<main id="app"></main>';
+  window.sessionStorage.clear();
+  window.localStorage.clear();
   const client = fakeSupabase(signedIn, clientName);
   Object.assign(window, {
     EVE_CONSENT: { supabaseUrl: 'https://x.supabase.co', supabaseKey: 'sb_publishable_test', providers: ['github'], passwordSignIn: true, knownRedirectHosts: ['claude.ai'], gameOrigin: 'https://agenteve.io' },
     supabase: { createClient: () => client },
   });
-  globalThis.fetch = vi.fn(async () => new Response(JSON.stringify({ handle: 'brannock' }), { status: 200 })) as typeof fetch;
+  const reply = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+  globalThis.fetch = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path === '/oauth/handoff' && init?.method === 'POST') {
+      return options.handoffDown ? reply(503, { error: 'unavailable' }) : reply(201, { id: 'h1', secret: 's1', word: 'TIGER-42', expires_in: 600 });
+    }
+    if (path.startsWith('/oauth/handoff/')) return reply(200, { status: 'waiting' });
+    return reply(200, { handle: 'brannock' });
+  }) as typeof fetch;
   await import('../public/oauth/consent.js');
   await settle();
   return client;
@@ -54,8 +64,28 @@ describe('the consent page in a browser', () => {
     vi.restoreAllMocks();
   });
 
-  it('asks a signed-out person for an email and sends the link back to this request', async () => {
+  it('asks a signed-out person for an email and sends a link that works on any device', async () => {
     const client = await load(false);
+    expect(document.querySelector('h1')?.textContent).toBe('Sign in to Agent Eve');
+    const email = document.querySelector<HTMLInputElement>('#email') as HTMLInputElement;
+    email.value = 'p@example.com';
+    document.querySelector('form')?.dispatchEvent(new Event('submit', { cancelable: true }));
+    await settle();
+    expect(client.calls).toContainEqual(['otp', { email: 'p@example.com', options: { emailRedirectTo: 'https://mcp.test.example/oauth/confirm?handoff=h1', shouldCreateUser: true } }]);
+    expect(document.body.textContent).toContain('Open it on any device');
+    expect(document.body.textContent).toContain('If it asks for a word, type:');
+    expect(document.querySelector('.word')?.textContent).toBe('TIGER-42');
+    expect(document.querySelector<HTMLElement>('#code-row')?.hidden).toBe(false);
+    // Usable again while the page waits, so a second email needs no reload.
+    const send = document.querySelector<HTMLButtonElement>('form button[type=submit]');
+    expect(send?.disabled).toBe(false);
+    expect(send?.textContent).toBe('Send a new link');
+    // Left for the confirm page, should the email be opened in this same browser.
+    expect(JSON.parse(window.localStorage.getItem('eve-handoff-word') ?? 'null')).toMatchObject({ id: 'h1', word: 'TIGER-42' });
+  });
+
+  it('falls back to a link back to this request when no handoff can be opened', async () => {
+    const client = await load(false, 'Claude', { handoffDown: true });
     expect(document.querySelector('h1')?.textContent).toBe('Sign in to Agent Eve');
     const email = document.querySelector<HTMLInputElement>('#email');
     expect(email).not.toBeNull();

@@ -27,12 +27,15 @@ import { isLoopback } from './engine/gateway.js';
 import { describeError } from './log.js';
 import { buildServer, toolDescriptor } from './mcp/server.js';
 import { mintSessionId, readSessionId, type SessionFacts } from './mcp/session.js';
+import { SignInHandoffs } from './auth/handoff.js';
 import { healthFrom, type ToolDefinition, type ToolDeps } from './mcp/tools.js';
 
 export const MAX_MCP_BODY_BYTES = 256 * 1024;
 
 export interface HttpDeps extends ToolDeps {
   readonly tokens: TokenVerifier;
+  /** Cross-device sign-in handoffs (src/auth/handoff.ts). */
+  readonly handoffs: SignInHandoffs;
   readonly tools: readonly ToolDefinition[];
   /** HMAC key for the self-contained session id. */
   readonly sessionSecret: Buffer;
@@ -101,6 +104,21 @@ function toolNames(body: unknown): string {
     .map((m) => (m.method === 'tools/call' && typeof m.params === 'object' && m.params !== null ? `tools/call:${String((m.params as { name?: unknown }).name)}` : String(m.method)))
     .join(',')
     .slice(0, 200);
+}
+
+/**
+ * The key a per-address limit should use: an IPv4 address as is, an IPv6 address as its /64 (one
+ * subscriber's network; a single host can rotate through its 2^64 addresses at will).
+ */
+export function networkOf(address: string): string {
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(address);
+  if (mapped) return mapped[1] as string;
+  if (!address.includes(':')) return address;
+  const [head = '', tail] = address.split('::', 2);
+  const front = head === '' ? [] : head.split(':');
+  const back = tail === undefined || tail === '' ? [] : tail.split(':');
+  const groups = tail === undefined ? front : [...front, ...Array<string>(Math.max(0, 8 - front.length - back.length)).fill('0'), ...back];
+  return `${groups.slice(0, 4).map((g) => (g.replace(/^0+(?=.)/, '') || '0').toLowerCase()).join(':')}::/64`;
 }
 
 async function readCapped(request: Request, cap: number): Promise<string | null> {
@@ -236,6 +254,88 @@ export function createHandler(deps: HttpDeps): (request: Request, peer?: Peer) =
     }
   }
 
+  /**
+   * Cross-device sign-in (src/auth/handoff.ts). Only this site's own pages call these, so a browser
+   * request from any other origin is refused (it could otherwise open handoffs from visitors' addresses).
+   *   POST /oauth/handoff {email}                    the popup opens one → {id, secret, word, expires_in}
+   *   GET  /oauth/handoff/<id>                       the confirm page: still pending? (never the word)
+   *   GET  /oauth/handoff/<id> + x-handoff-secret    the popup's poll; the session is handed over once
+   *   POST /oauth/handoff/<id>/check {word}          the typed word, before the email's token is spent
+   *   POST /oauth/handoff/<id>/confirm {word, refresh_token} + the fresh session as a bearer token
+   */
+  async function handoff(request: Request, peer: Peer, path: string): Promise<Response> {
+    const noStore = { 'cache-control': 'no-store' };
+    const origin = request.headers.get('origin');
+    if (origin !== null && origin !== config.publicOrigin) return json(403, { error: 'forbidden_origin' }, noStore);
+    const body = async <T>(cap: number): Promise<Partial<T>> => {
+      const raw = await readCapped(request, cap);
+      try {
+        const parsed: unknown = JSON.parse(raw ?? '');
+        return parsed !== null && typeof parsed === 'object' ? (parsed as Partial<T>) : {};
+      } catch {
+        return {};
+      }
+    };
+    const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+
+    if (path === '/oauth/handoff') {
+      if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' }, { allow: 'POST' });
+      const verdict = deps.limiter.check('signin', networkOf(callerKey(request, peer)), deps.now() / 1000);
+      if (!verdict.allowed) {
+        return json(429, { error: 'rate_limited', retry_after_seconds: verdict.retryAfterSeconds }, { 'retry-after': String(verdict.retryAfterSeconds) });
+      }
+      const email = text((await body<{ email: unknown }>(2_048)).email).trim();
+      if (email.length < 3 || email.length > 254 || !/^[^\s@]+@[^\s@]+$/.test(email)) return json(400, { error: 'invalid_email' });
+      const opened = deps.handoffs.open(email);
+      if (opened === null) return json(503, { error: 'busy' }, { 'retry-after': '60' });
+      return json(201, { id: opened.id, secret: opened.secret, word: opened.word, expires_in: deps.handoffs.ttlSeconds }, noStore);
+    }
+    const match = /^\/oauth\/handoff\/([A-Za-z0-9_-]{16,64})(?:\/(check|confirm))?$/.exec(path);
+    if (match === null) return json(404, { error: 'not_found' });
+    const id = match[1] as string;
+    const action = match[2];
+
+    if (action === undefined) {
+      if (request.method !== 'GET') return json(405, { error: 'method_not_allowed' }, { allow: 'GET' });
+      const secret = request.headers.get('x-handoff-secret');
+      if (secret === null) return deps.handoffs.pending(id) ? json(200, { pending: true }, noStore) : json(404, { error: 'expired_or_unknown' }, noStore);
+      const taken = deps.handoffs.take(id, secret);
+      if (taken.status === 'unknown') return json(404, { error: 'expired_or_unknown' }, noStore);
+      if (taken.status === 'waiting') return json(200, { status: 'waiting' }, noStore);
+      return json(200, { status: 'confirmed', access_token: taken.session.accessToken, refresh_token: taken.session.refreshToken }, noStore);
+    }
+    if (request.method !== 'POST') return json(405, { error: 'method_not_allowed' }, { allow: 'POST' });
+
+    if (action === 'check') {
+      const checked = deps.handoffs.check(id, text((await body<{ word: unknown }>(1_024)).word));
+      if (checked.status === 'ok') return json(200, { ok: true }, noStore);
+      if (checked.status === 'wrong') return json(422, { error: 'wrong_word', tries_left: checked.triesLeft }, noStore);
+      return json(404, { error: 'expired_or_unknown' }, noStore);
+    }
+
+    let user: { readonly email: string | null };
+    let accessToken: string;
+    try {
+      const token = bearerToken(request.headers.get('authorization'));
+      if (token === null) return json(401, { error: 'sign_in_required' });
+      user = await deps.tokens.verifySessionToken(token);
+      accessToken = token;
+    } catch (error) {
+      if (error instanceof TokenError) return json(401, { error: 'invalid_token' });
+      throw error;
+    }
+    const fields = await body<{ refresh_token: unknown; word: unknown }>(8_192);
+    const refreshToken = text(fields.refresh_token);
+    if (refreshToken.length < 8 || refreshToken.length > 4_096) return json(400, { error: 'refresh_token_required' });
+    if (user.email === null) return json(400, { error: 'no_email_on_session' });
+    const verdict = deps.handoffs.confirm(id, user.email, text(fields.word), { accessToken, refreshToken });
+    if (verdict === 'confirmed') return json(200, { ok: true }, noStore);
+    if (verdict === 'wrong_word') return json(422, { error: 'wrong_word' }, noStore);
+    if (verdict === 'email_mismatch') return json(409, { error: 'email_mismatch' }, noStore);
+    if (verdict === 'already_confirmed') return json(409, { error: 'already_confirmed' }, noStore);
+    return json(404, { error: 'expired_or_unknown' }, noStore);
+  }
+
   async function healthz(peer: Peer): Promise<Response> {
     if (!isLoopback(peer.address)) return json(404, { error: 'not_found' });
     let db = false;
@@ -277,6 +377,8 @@ export function createHandler(deps: HttpDeps): (request: Request, peer?: Peer) =
         response = request.method === 'GET' || request.method === 'HEAD'
           ? json(200, protectedResourceMetadata(config), { ...CORS_HEADERS, 'cache-control': 'public, max-age=300' })
           : json(405, { error: 'method_not_allowed' }, { allow: 'GET' });
+      } else if (url.pathname === '/oauth/handoff' || url.pathname.startsWith('/oauth/handoff/')) {
+        response = await handoff(request, peer, url.pathname);
       } else if (url.pathname === '/account' && request.method === 'GET') {
         response = await account(request);
       } else if (url.pathname === '/healthz' && request.method === 'GET') {

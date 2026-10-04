@@ -43,3 +43,6 @@ details { margin-top: 16px; }
 summary { cursor: pointer; color: var(--muted); }
 footer { margin-top: 24px; color: var(--muted); font-size: 0.85rem; }
 footer a { color: var(--muted); }
+
+/* The matching word, on the consent page and the confirm page. */
+.word { font: 600 1.6rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .08em; color: var(--accent); margin: .4em 0; }

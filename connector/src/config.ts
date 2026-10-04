@@ -68,7 +68,7 @@ export interface Config {
   readonly docsUrl: string | null;
 }
 
-export type LimitName = 'spectator' | 'account' | 'observe' | 'act' | 'enroll' | 'report';
+export type LimitName = 'spectator' | 'account' | 'observe' | 'act' | 'enroll' | 'report' | 'signin';
 
 export const DEFAULT_LIMITS: Readonly<Record<LimitName, RateAllowance>> = {
   /** Anonymous reads, per caller address. Chat hosts share egress addresses, so this is loose. */
@@ -80,6 +80,8 @@ export const DEFAULT_LIMITS: Readonly<Record<LimitName, RateAllowance>> = {
   act: { burst: 30, windowSeconds: 60 },
   enroll: { burst: 5, windowSeconds: 3600 },
   report: { burst: 6, windowSeconds: 60 },
+  /** Sign-in links opened from the consent page, per browser address (each one sends an email). */
+  signin: { burst: 20, windowSeconds: 3600 },
 };
 
 export class ConfigError extends Error {}

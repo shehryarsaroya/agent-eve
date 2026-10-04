@@ -12,5 +12,9 @@ window.EVE_CONSENT = {
   passwordSignIn: true,
   // Redirect hosts shown as recognised on the consent screen; others get a warning.
   knownRedirectHosts: ['claude.ai', 'claude.com', 'chatgpt.com', 'chat.openai.com'],
+  // Platform callbacks approved without a second click (origin + path exactly; `/*` is one more path
+  // segment), and only right after the person signed in for that same request in that tab; everything
+  // else gets the consent screen (consent-flow.mjs isListedCallback).
+  autoApproveRedirects: ['https://claude.ai/api/mcp/auth_callback', 'https://chatgpt.com/connector/oauth/*'],
   gameOrigin: 'https://agenteve.io',
 };

@@ -187,9 +187,15 @@ if not args.skip_supabase:
     hook_sql = (ROOT / 'connector' / 'supabase' / 'access-token-hook.sql').read_text().replace('@RESOURCE@', RESOURCE)
     http('POST', f'{api}/projects/{ref}/database/query', auth, {'query': hook_sql})
 
+    # Every link goes to our confirm page with a one-time token hash (connector/public/oauth/confirm-flow.mjs):
+    # it opens on any device, and only its "Yes, it's me" button spends the token, so an email scanner
+    # that opens links cannot use it up. `next` carries the URL the consent page asked for (the confirm
+    # page with a handoff id, or the consent page itself); Supabase renders with html/template, which
+    # percent-encodes it inside the query. A fixed path keeps the link whole even when RedirectTo is only
+    # the Site URL (an email sent from the dashboard), where the page then says the link is incomplete.
     template = (
         '<h2>Sign in to Agent Eve</h2>'
-        '<p><a href="{{ .ConfirmationURL }}">Sign in on this device</a></p>'
+        '<p><a href="{{ .SiteURL }}/oauth/confirm?token_hash={{ .TokenHash }}&type=email&next={{ .RedirectTo }}">Confirm it\'s you</a> &mdash; open it on any device; your phone is fine.</p>'
         '<p>Or type this code where you started signing in: <strong>{{ .Token }}</strong></p>'
         '<p>If you did not ask to sign in, you can ignore this email.</p>'
     )
@@ -207,7 +213,11 @@ if not args.skip_supabase:
         'security_update_password_require_reauthentication': True,
         'mailer_secure_email_change_enabled': True,
         'external_email_enabled': True,
-        'mailer_otp_exp': 900,
+        # The email's link and code live as long as the OAuth request they finish (Supabase: 10 minutes).
+        'mailer_otp_exp': 600,
+    }
+    # Applied last, in step 4, once /oauth/confirm is served (see there).
+    mail = {
         'mailer_subjects_magic_link': 'Your Agent Eve sign-in link',
         'mailer_templates_magic_link_content': template,
         'mailer_subjects_confirmation': 'Your Agent Eve sign-in link',
@@ -402,6 +412,20 @@ try:
 except urllib.error.HTTPError as error:
     assert error.code == 401 and 'resource_metadata=' in (error.headers.get('WWW-Authenticate') or ''), 'expected a 401 sign-in challenge'
     print('signed-out account tool -> 401 with resource_metadata (lazy authentication works)')
+
+# The sign-in email, last. Its link lands on /oauth/confirm, which ships in step 3: switching the
+# template earlier would send every link to a 404 for the length of the deploy — and for good if the host
+# step failed and rolled back to a tree without the page.
+if not args.skip_supabase:
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f'{ORIGIN}/oauth/confirm', headers={'User-Agent': 'agenteve-deploy/1'}), timeout=30) as page:
+            served = page.status == 200 and '/oauth/confirm.js' in page.read().decode()
+    except urllib.error.URLError:
+        served = False
+    if not served:
+        raise SystemExit('/oauth/confirm is not served, so the sign-in email keeps its previous template; fix the host and redeploy')
+    http('PATCH', f'{api}/projects/{ref}/config/auth', auth, mail)
+    print('sign-in email: its link opens /oauth/confirm, on any device')
 
 say('5/5 done')
 print(f'''Connector live at {RESOURCE}.

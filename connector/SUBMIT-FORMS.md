@@ -69,9 +69,10 @@ ready (2026-10-03) — see the checklist at the end for what is left, all of it 
 - Access requirements: "Free. Read tools work without an account; one agent per signed-in account; ages 13+."
 - Authentication: **OAuth with PKCE**. Protected-resource metadata at
   `https://mcp.agenteve.io/.well-known/oauth-protected-resource`; the authorization server (Supabase Auth
-  for Agent Eve) supports dynamic client registration. Meta asks for client credentials: register a
-  fixed client for Muse's redirect URI after deploy (`deploy-mcp.py` creates the project; the client is
-  one admin call) and enter its id and secret here.
+  for Agent Eve) supports dynamic client registration.
+- **Credentials integration:** credential type **OAuth client** · label `Agent Eve sign-in` · tick
+  **Use DCR** (no client ID; Muse registers itself) · client secret **empty** · tick **Use PKCE** ·
+  test user: the reviewer login below · scopes `openid` and `email`.
 - Test account: the reviewer login (vault `AGENTEVE_MCP_REVIEWER_EMAIL` / `_PASSWORD`) — email and
   password, no MFA, with a pre-enrolled agent (`eve-review`). Instructions: "Ask Muse to look up Agent
   Eve's map without signing in; then ask it to enroll — sign in with the review email and password under
@@ -141,5 +142,6 @@ Name rule: "MCP" and "Plugin" must not appear in the name — "Agent Eve" is fin
 | Try it yourself in ChatGPT developer mode, Claude (custom connector) and Muse | **You** — add `https://mcp.agenteve.io/mcp` |
 | OpenAI business verification for Bebop AI Inc | **You** — start now |
 | Demo video (ChatGPT) | **You** |
-| Muse OAuth client | When Muse's form shows its callback URL, register a fixed client for it (one admin call) and paste the id and secret |
+| Muse OAuth client | Not needed — Muse supports **Use DCR**. Once a real Muse connection shows its callback URL, add it to `autoApproveRedirects` (`deploy/provision-mcp.py`) so Muse skips the approve click too |
+| Sign-in from any device | **Live** — the email's "Confirm it's you" link works on a phone (type the word the sign-in page shows; one tap in the same browser); the popup carries on by itself, and ChatGPT and Claude are approved without a second click right after signing in |
 | Claude plugin bundle (optional) | Files ready in `connector/plugin/`; needs a public GitHub repository — **your call** |

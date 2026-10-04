@@ -144,6 +144,18 @@ config = {
     'providers': providers,
     'passwordSignIn': True,
     'knownRedirectHosts': ['claude.ai', 'claude.com', 'chatgpt.com', 'chat.openai.com'],
+    # The platform callbacks approved without a second click, and only right after the person signed
+    # in for that very request in that tab (consent-flow.mjs isListedCallback): origin + path exactly;
+    # `/*` is one more path segment. ChatGPT uses its per-connection callback because Supabase does not
+    # advertise RFC 9207 issuer identification; the stable one and the app-review one are listed too.
+    # Add Muse's callback once a real connection shows it; until then Muse gets the consent screen.
+    'autoApproveRedirects': [
+        'https://claude.ai/api/mcp/auth_callback',
+        'https://claude.com/api/mcp/auth_callback',
+        'https://chatgpt.com/connector/oauth/*',
+        'https://chatgpt.com/connector_platform_oauth_redirect',
+        'https://platform.openai.com/apps-manage/oauth',
+    ],
     'gameOrigin': args.game_origin,
 }
 (staged / 'oauth' / 'config.js').write_text('window.EVE_CONSENT = ' + json.dumps(config, indent=2) + ';\n')

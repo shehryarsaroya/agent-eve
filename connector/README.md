@@ -54,7 +54,7 @@ the module the engine verifies with). One home per concept; `test/ship.test.ts` 
 3. It registers itself (DCR, `…/auth/v1/oauth/clients/register`) and sends the person to
    `…/auth/v1/oauth/authorize` with PKCE S256 and `resource`.
 4. Supabase redirects to **`https://mcp.agenteve.io/oauth/consent?authorization_id=…`**. The page signs
-   the person in if needed (email link, or the 6-digit code from the same email for another device;
+   the person in if needed (the email link below, or the 6-digit code from the same email;
    Google/GitHub when switched on; a password only for accounts the deploy flagged for review — §6),
    calls `supabase.auth.oauth.getAuthorizationDetails`, and shows: the app's name (flagged as
    self-registered), **where access goes** (host, with a warning for unknown hosts and for loopback),
@@ -62,6 +62,37 @@ the module the engine verifies with). One home per concept; `test/ship.test.ts` 
    and the disclosures (public and permanent; key held and signing by our server; played from chat;
    simulated economy). Allow / Deny call `approveAuthorization` / `denyAuthorization` and follow the
    returned `redirect_url`. A person who already approved that app is sent straight back.
+
+   **The email link works on any device** (`src/auth/handoff.ts`, `public/oauth/confirm*`). Asking for
+   it opens a *handoff* — `POST /oauth/handoff` returns an id, a secret only the popup keeps, and a
+   word such as `TIGER` that the popup shows — and asks Supabase to send the email with
+   `emailRedirectTo = /oauth/confirm?handoff=<id>`. Every sign-in email links to
+   `/oauth/confirm?token_hash=…&type=email&next=<that URL>`, where the person **types the word**; in the
+   browser that started the sign-in the page already knows it (a localStorage note from the popup) and
+   one tap does. The word is checked (`/check`) before the one-time token is spent, so a mail scanner
+   that opens links uses nothing up, and two wrong words cancel the handoff. Then the page spends the
+   token (`verifyOtp`) and posts the session to `/oauth/handoff/<id>/confirm` with the word again; that
+   accepts only a sign-in session (no `client_id`) for the email the handoff was opened for. The popup,
+   polling `GET /oauth/handoff/<id>` with its secret every 2.5 s, collects it once and continues.
+
+   *Why typed:* anyone can start a sign-in with someone else's address. A page that showed the word
+   and asked "Yes?" would hand a session to whoever started it after one tap on an email the person
+   never asked for; typing proves the person can see the page that started it. Handoffs live in
+   memory for 10 minutes (Supabase's authorization lifetime), at most 20,000 — when full, new ones are
+   refused rather than old ones dropped — and opening one is limited to 20 an hour per address (per /64
+   for IPv6) and to this site's own pages (`Origin`). Without a handoff the confirm page only says to
+   type the email's code where the sign-in started: the consent page never signs in from a token in its
+   URL, since anyone can mail a link.
+
+   **Approved without a second click** only when both hold: the person signed in *during this very
+   request, in this tab* (handoff, code, password, or a provider this tab sent them to — a session that
+   was already in the browser, as when someone else's connect link is opened later, always gets the
+   screen), and the redirect URI is a listed platform callback, compared as origin + path exactly
+   (`autoApproveRedirects`: Claude's `/api/mcp/auth_callback` on claude.ai and claude.com, ChatGPT's
+   per-connection `https://chatgpt.com/connector/oauth/{id}`, its stable
+   `/connector_platform_oauth_redirect` and its app-review callback). Muse joins the list once a real
+   connection shows its callback. "Use a different account" signs out of this browser only
+   (`scope: 'local'`), never the sessions behind apps already connected.
 5. The host exchanges the code and retries the tool with `Authorization: Bearer <Supabase JWT>`.
 
 ChatGPT documents a different trigger for mixed-auth tools — a tool error carrying
@@ -177,7 +208,9 @@ Client sequence numbers are reserved by one atomic `UPDATE … RETURNING`, so tw
 
 Per account in this service (fixed windows, bounded maps; override with `EVE_MCP_LIMIT_<NAME>=burst/window`):
 `observe` 30/min, `act` 30/min, `enroll` 5/h, `report` 6/min, `account` (identity, wake status,
-signing log) 60/min; anonymous spectator calls 240/min per caller address. Engine calls are capped
+signing log) 60/min; anonymous spectator calls 240/min per caller address; `signin` (cross-device
+sign-in handoffs opened, each followed by an email) 20/h per browser address, an IPv6 /64 counting as
+one. Engine calls are capped
 at 32 in flight. These protect the host, not the game: A4 already makes speed powerless, and one
 principal per account is housekeeping, not Sybil defence (A15) — accounts are free and the game's
 real prices stay in the game.
@@ -258,7 +291,8 @@ gitignored outputs). Without it, it is skipped with a message.
 | `crypto.test.ts`, `gateway.test.ts` | Key ids equal the engine's thumbprint; vault AAD binding, tamper detection, rotation, no serialisation; config refusals name variables, never values; the gateway verdicts (good, stale, wrong MAC, non-loopback, no secret) and `EVE_GATEWAY_SECRET` decoding to the same bytes as the engine's `COMPACT_GATEWAY_SECRET` |
 | `ship.test.ts` | Every file the bundle imports from outside `connector/` is on `deploy-mcp.py`'s SHIP list, and the engine's gateway module imports nothing but `node:crypto` |
 | `secrets.test.ts` | No master key, gateway secret, agent seed or bearer token in any response or log line of a full session, including poisoned errors |
-| `consent.test.ts`, `consent-dom.test.ts` | The consent page logic against a fake supabase-js (sign-in, code, providers, passwords, auto-approve, approve, deny, expired request, unsafe redirect, switching accounts), and its DOM in jsdom (a hostile client name renders as text; Allow calls approve) |
+| `consent.test.ts`, `consent-dom.test.ts` | The consent page logic against a fake supabase-js (sign-in, code, providers, passwords, the cross-device wait — resumed after a reload with the email kept, replaced by a second email, ended by the code or by expiry — never signing in from a token in its URL, auto-approve only right after signing in in this tab and only for an exact listed callback, approve, deny, expired request, unsafe redirect, switching accounts locally), and its DOM in jsdom (a hostile client name renders as text; the link goes to the confirm page; the send button comes back while waiting; Allow calls approve) |
+| `handoff.test.ts`, `confirm.test.ts`, `confirm-dom.test.ts` | The handoff store (secret kept hashed, the word typed — two wrong cancel it — session handed over once, email must match, lifetime, refusing rather than evicting when full, IPv6 keyed by /64) and its routes in `http.test.ts` (this site's origin only, the word never readable without the secret, session tokens only, rate limit); the confirm page (`next` trusted only for this site's confirm page, the word checked before anything is spent, one tap in the browser that started it, spent/expired/mismatched links, the code when there is no handoff) and its DOM |
 | `e2e/engine.test.ts` | **The real engine** (`trustEdge: true`, turbo clock, the gateway secret configured) behind the service on `node:http`, a JWKS over HTTP, and the official MCP client: tools/list, spectator calls, a 401 signed out, enroll through the gateway → (key effective next tick) observe, its own `header.standing.signer` `hosted` → act accepted → retry replayed → illegal action corrected → a standing offer, and the signed-out `eve_dossier` reporting `signer: hosted` off the live frame → `/health` `signers.gateway: configured` → wake status → report → signing log; second agent refused |
 
 ## 9. Configuration
@@ -278,7 +312,7 @@ Read from the environment (`/etc/agenteve-mcp/env` in production, written by `pr
 | `EVE_MCP_INBAND_AUTH_CLIENTS` | `openai\|chatgpt` | regex on `clientInfo.name` |
 | `EVE_MCP_ALLOWED_ORIGINS` | claude.ai, chatgpt.com, chat.openai.com, own origin | browser Origins; none is always allowed |
 | `EVE_MCP_RETRY_WINDOW_SECONDS` | 600 | how far back the signing log is searched for an identical batch (§4) |
-| `EVE_MCP_LIMIT_{SPECTATOR,ACCOUNT,OBSERVE,ACT,ENROLL,REPORT}` | §5 | `burst/windowSeconds` |
+| `EVE_MCP_LIMIT_{SPECTATOR,ACCOUNT,OBSERVE,ACT,ENROLL,REPORT,SIGNIN}` | §5 | `burst/windowSeconds` |
 | `EVE_MCP_POLICY_URL` `EVE_MCP_TERMS_URL` `EVE_MCP_DOCS_URL` | unset | published in the protected resource metadata |
 
 ## 10. Deploy (exact steps; nothing has been run)
@@ -297,8 +331,8 @@ merged to `master` and pushed.
      (`supabase/access-token-hook.sql`); sets Site URL `https://mcp.agenteve.io`, redirect allow-list
      `https://mcp.agenteve.io/**`, OAuth 2.1 server on, dynamic registration on, authorization path
      `/oauth/consent`, `jwt_exp` 3600, refresh-token rotation, password changes requiring
-     re-authentication, secure email change, the magic-link/confirmation email with link **and**
-     code, SMTP via Resend when keyed, Google/GitHub when keyed; creates (or updates) the reviewer
+     re-authentication, secure email change, a 10-minute email link and code (`mailer_otp_exp`, the
+     same lifetime as an OAuth authorization), SMTP via Resend when keyed, Google/GitHub when keyed; creates (or updates) the reviewer
      login when `AGENTEVE_MCP_REVIEWER_EMAIL/_PASSWORD` are in the vault, flagged
      `app_metadata.agenteve_password_signin` so the hook lets its password through; then checks the
      live metadata (issuer, S256, registration endpoint, `none` client auth).
@@ -313,11 +347,16 @@ merged to `master` and pushed.
      was added or changed, `--restart-engine` restarts `agenteve` and waits for it to be RUNNING
      (without the flag the script prints the command instead); migrate as the
      connector's role via `systemd-run` (environment read by systemd, never on a command line);
-     Let's Encrypt for `mcp.agenteve.io`; the vhost (the consent page is reachable only as
-     `/oauth/consent`, with its CSP and frame headers — `/oauth/consent.html` is a 404), `nginx -t`
+     Let's Encrypt for `mcp.agenteve.io`; the vhost (the consent and confirm pages are reachable
+     only as `/oauth/consent` and `/oauth/confirm`, with their CSP and frame headers — the `.html`
+     files are 404s; `/oauth/handoff` proxies to the service), `nginx -t`
      before reload with automatic restore; the unit; swap trees; roll back if `/healthz` does not
      answer (it answers within a second whatever the engine is doing, so a slow engine cannot roll
      the connector back).
+   - **Last, the sign-in email** (both the magic-link and the confirmation template): a link to
+     `/oauth/confirm` that works on any device, **and** the code. Only once step 4 has seen
+     `/oauth/confirm` served — switched earlier, every emailed link would 404 for the length of the
+     deploy, and for good if the host step rolled back.
    - **Verify**: `agenteve.service` still active and healthy, and its `/health` reporting
      `signers.gateway: "configured"` (until it does, every account tool is refused
      `400 GATEWAY_UNVERIFIED`); the public metadata; initialize; 12 tools; a signed-out account tool
