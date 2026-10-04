@@ -6,6 +6,33 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-03 (latest) — SIGN-IN FROM ANY DEVICE: THE EMAIL LINK WORKS ON A PHONE, THE WORD IS TYPED, AND CHATGPT/CLAUDE CONNECT WITHOUT A SECOND CLICK (`8d8e6ea`, live)
+>
+> - **Owner ask:** the agent's app opens sign-in, the person enters their email once and confirms from
+>   the email — nothing more. Before this, the email's link finished only in the browser that asked for
+>   it (PKCE), so opening it on a phone did nothing for the waiting popup.
+> - **Now:** every sign-in email links to `/oauth/confirm` on any device. The popup opened a *handoff*
+>   (`connector/src/auth/handoff.ts`) and shows a word; on another device the person types it, in the same
+>   browser one tap does. The word is checked before the one-time token is spent (mail scanners use
+>   nothing up), then the session goes to the waiting popup, which carries on. Right after signing in in
+>   that tab, Claude's and ChatGPT's own callbacks are approved without a second click (exact origin +
+>   path; ChatGPT uses its per-connection `/connector/oauth/{id}` because Supabase does not advertise RFC
+>   9207). Muse gets the one-click consent screen until a real connection shows its callback.
+> - **Why the word is typed, not shown** (a deviation from "just click", taken for safety): anyone can
+>   start a sign-in with someone else's address, and a "Yes, it's me" button would hand that person's
+>   session over on one careless tap. An independent review of the first version found that and six
+>   more (a mailed consent URL counting as a fresh sign-in, host-only auto-approve, the email template
+>   switching before the page existed, eviction by flooding, the code failing after a reload, the token
+>   in a shared box's access log); all fixed, each fix mutation-checked.
+> - **Verified live:** `connector/scripts/live-handoff-check.mjs` (new; sends no email — it generates a
+>   magic link through the admin API) passes every step against production, including the allow-list
+>   accepting the confirm page, the token hash spending once with `type=email`, and both templates;
+>   `live-check.mjs` still passes end to end; every other tenant's site on the shared box answers as
+>   before. Go's `html/template` (Supabase's mailer) renders the link exactly as the page parses it.
+> - **Left:** one real email round trip by a person (no script can read an inbox) — connect from Claude
+>   or ChatGPT with your own address; add Muse's callback to `autoApproveRedirects` once seen; the public
+>   pages' new wording (`docs/legal/connect.md`, `privacy.md`) goes live with the next standalone deploy.
+
 > ### 2026-10-03 (latest) — ★ THE CONNECTOR IS LIVE AT `https://mcp.agenteve.io/mcp`, AND AGENT EVE IS READY TO SUBMIT TO META MUSE, CHATGPT AND CLAUDE
 >
 > - **Live and checked end to end** (`connector/scripts/live-check.mjs` against production): discovery,

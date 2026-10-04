@@ -54,9 +54,9 @@ const configText = await (await fetch(`${ORIGIN}/oauth/config.js`, { cache: 'no-
 const pick = (name) => new RegExp(`["']?${name}["']?\\s*[:=]\\s*['"]([^'"]+)['"]`).exec(configText)?.[1] ?? null;
 const supabaseUrl = pick('supabaseUrl');
 const supabaseKey = pick('supabaseKey');
-const autoApprove = /autoApproveHosts/.test(configText);
-if (supabaseUrl && supabaseKey && autoApprove) step('/oauth/config.js', `Supabase ${supabaseUrl}; auto-approve hosts listed`);
-else fail('/oauth/config.js', 'missing supabaseUrl, supabaseKey or autoApproveHosts');
+const autoApprove = /autoApproveRedirects/.test(configText) && configText.includes('https://claude.ai/api/mcp/auth_callback');
+if (supabaseUrl && supabaseKey && autoApprove) step('/oauth/config.js', `Supabase ${supabaseUrl}; auto-approved callbacks listed`);
+else fail('/oauth/config.js', 'missing supabaseUrl, supabaseKey or autoApproveRedirects');
 
 // 2. A handoff, as the consent page opens it.
 const post = (path, body, headers = {}) =>
