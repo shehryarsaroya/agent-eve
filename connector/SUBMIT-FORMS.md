@@ -3,8 +3,8 @@
 *Prepared 2026-10-03. Copy these into each portal. Requirements are from each platform's own docs as
 of this date (`SUBMISSION.md` §1 has the older detail). Nothing here is submitted yet.*
 
-**Before any of these can be filed, the connector must be live** at `https://mcp.agenteve.io/mcp` with
-sign-in working, and the reviewer account must exist — see the checklist at the end.
+**The connector is live** at `https://mcp.agenteve.io/mcp` with sign-in working and the reviewer account
+ready (2026-10-03) — see the checklist at the end for what is left, all of it yours.
 
 ## Shared facts
 
@@ -128,16 +128,18 @@ Name rule: "MCP" and "Plugin" must not appear in the name — "Agent Eve" is fin
 
 | Item | Status |
 |---|---|
-| Privacy policy, terms, docs pages | Written (`docs/legal/*.md` → `client/{privacy,terms,connect}/`) — live after the next deploy |
-| Icon (512 PNG, SVG, 64 PNG) | Done — `client/brand/` |
-| support@ / security@agenteve.io → shehryar@rundemon.ai | Cloudflare Email Routing on; **forwards activate once you click Cloudflare's verification email** |
-| Reply as support@agenteve.io | Resend sending-only key in the vault (`AGENTEVE_RESEND_SUPPORT_SMTP_KEY`) for Gmail "Send mail as" |
-| ChatGPT plugin ZIP | Built — `connector/plugin/dist/` |
-| Engine change: per-account limits + public "signed by Agent Eve · played from chat" | In progress |
-| Connector deployed at mcp.agenteve.io (Supabase project in Frankfurt, DNS, nginx, service) | After the engine change |
-| Reviewer account + pre-enrolled `eve-review` | At deploy |
-| Master key backup | At deploy — copied into the kit vault |
-| Tested in ChatGPT developer mode, Claude custom connector and Muse | After deploy — needs your accounts |
+| Connector live at `https://mcp.agenteve.io/mcp` (Supabase sign-in in Frankfurt, DNS proxied, nginx, service) | **Done** 2026-10-03 |
+| Live end-to-end check: discovery, read tools signed out, 401 challenge, dynamic registration, PKCE, reviewer password sign-in, token, enroll, observe, wake status | **Passed** — `connector/scripts/live-check.mjs` |
+| Engine change: per-account limits + public `signer: hosted` ("SIGNED BY AGENT EVE · played from chat") | **Live** |
+| Reviewer account + its agent `eve-review` | **Done** (vault `AGENTEVE_MCP_REVIEWER_EMAIL` / `_PASSWORD`) |
+| Master key backup | **Done** — vault `AGENTEVE_MCP_MASTER_KEYS` |
+| Privacy policy, terms, docs pages | **Live** — agenteve.io/privacy/, /terms/, /connect/ |
+| Icon (512 PNG, SVG, 64 PNG) | **Done** — `client/brand/` |
+| support@ / security@agenteve.io → shehryar@rundemon.ai | **Live** (Cloudflare Email Routing) |
+| Reply as support@agenteve.io | Gmail "Send mail as" with the Resend key in the vault — **you** |
+| ChatGPT plugin ZIP | **Built** — `connector/plugin/dist/agent-eve-chatgpt.zip` |
+| Try it yourself in ChatGPT developer mode, Claude (custom connector) and Muse | **You** — add `https://mcp.agenteve.io/mcp` |
 | OpenAI business verification for Bebop AI Inc | **You** — start now |
-| Demo video (ChatGPT) | **You**, after deploy |
-| Muse OAuth client for its redirect URI | After deploy |
+| Demo video (ChatGPT) | **You** |
+| Muse OAuth client | When Muse's form shows its callback URL, register a fixed client for it (one admin call) and paste the id and secret |
+| Claude plugin bundle (optional) | Files ready in `connector/plugin/`; needs a public GitHub repository — **your call** |

@@ -162,8 +162,24 @@ vault `AGENTEVE_RESEND_ALERTS_KEY`) and the address. The first version was a Git
 Actions schedule; GitHub ran it twice in about seven hours, so
 `.github/workflows/uptime.yml` is now a manual check and test button with no schedule.
 
-**MCP connector for ChatGPT and Claude (PLANNED — written on branch `connector-phase1`, not
-deployed; `connector/README.md`).** Fresh names throughout, none shared with the game's:
+**MCP connector for ChatGPT, Claude and Meta Muse — LIVE since October 3, 2026 at
+`https://mcp.agenteve.io/mcp`** (`connector/README.md`; directory answers in `connector/SUBMIT-FORMS.md`).
+Supabase project `hhcmyapgnmouzcezseeu` (Frankfurt, auth only; vault `AGENTEVE_SUPABASE_PROJECT_REF`).
+The master key is escrowed in the vault as `AGENTEVE_MCP_MASTER_KEYS` — re-copy it after any rotation:
+hosted keys are kept after account deletion so an agent can be reclaimed, and without the master key no
+hosted agent can ever act again. The directory reviewer login is vault `AGENTEVE_MCP_REVIEWER_EMAIL` /
+`_PASSWORD` (password sign-in, no MFA) and plays the labelled QA principal `eve-review`.
+`node connector/scripts/live-check.mjs` (with `EVE_REVIEWER_EMAIL`/`EVE_REVIEWER_PASSWORD` set from the
+vault) runs the whole sign-in and play path against production; it passed on the first live deploy.
+The first deploy also found two shared-box hazards, both fixed in the script: ports 8810/8811 belong to
+another tenant, and the prune of previous trees failed silently when there were none.
+
+**Public email.** `support@`, `security@` and `eve-review@agenteve.io` forward to the operator through
+Cloudflare Email Routing (the root MX records); Resend still sends from `send.agenteve.io`. To reply as
+support@, Gmail "Send mail as" uses SMTP `smtp.resend.com:465`, user `resend`, and the sending-only key in
+vault `AGENTEVE_RESEND_SUPPORT_SMTP_KEY`.
+
+Fresh names throughout, none shared with the game's:
 
 | Resource | Location |
 |---|---|

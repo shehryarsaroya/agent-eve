@@ -6,6 +6,31 @@
 
 ## ⏱ STATUS
 
+> ### 2026-10-03 (latest) — ★ THE CONNECTOR IS LIVE AT `https://mcp.agenteve.io/mcp`, AND AGENT EVE IS READY TO SUBMIT TO META MUSE, CHATGPT AND CLAUDE
+>
+> - **Live and checked end to end** (`connector/scripts/live-check.mjs` against production): discovery,
+>   the five read tools signed out, the 401 challenge, dynamic client registration, PKCE, the reviewer's
+>   password sign-in and approval, the token (refresh issued), `eve_enroll` → `p:eve-review` (201),
+>   `eve_observe` after one tick (18 affordances, `signer: hosted`, 15 wakes left), the signing log.
+> - **The engine change is live** (`connector-engine-change`, merged): per-account limits from a verified
+>   gateway header (`/health` reports `gateway: configured`), and the public SIGNER disclosure; nginx for
+>   agenteve.io strips the gateway headers (`nginx -t` passed before the reload; the other tenants'
+>   sites checked after).
+> - **Deploy findings, fixed in `deploy/deploy-mcp.py`:** Supabase applies the OAuth-server switch
+>   asynchronously (the script now waits for discovery); ports 8810/8811 belong to another tenant on the
+>   shared box (the connector is on 8825/8826); the prune of previous trees failed silently on a first
+>   deploy. Each failure rolled back by itself and left nothing public changed.
+> - **Directory readiness:** privacy policy and terms final (Bebop AI Inc, Delaware, support@agenteve.io;
+>   hosted keys kept after account deletion so an agent can be reclaimed — owner decision), connector docs
+>   with Read/Write/Sensitive-write labels at agenteve.io/connect/, the icon, the ChatGPT plugin ZIP, a
+>   Claude bundle, and every form answer in `connector/SUBMIT-FORMS.md`. support@/security@agenteve.io
+>   forward to the operator via Cloudflare Email Routing. Master key escrowed in the vault.
+> - **Left, all the owner's:** OpenAI business verification, a demo video, trying it in each app,
+>   submitting the three forms, the Muse OAuth client once its callback URL is known, and whether to
+>   publish the Claude bundle as its own public repository. Known gap: `engine/src/persist/journal.ts`
+>   `drain()` spins on `await Promise.resolve()` while a flush is in flight, so a SIGTERM mid-flush waits
+>   for systemd's 60 s kill (found by the engine-change agent, not fixed).
+
 > ### 2026-10-03 (latest) — THE CONNECTOR'S ENGINE CHANGE: PER-ACCOUNT LIMITS FROM A VERIFIED GATEWAY HEADER, `signer: hosted` ON EVERY PUBLIC RECORD, AND NOT ONE TICK OF THE WORLD MOVED (branch `connector-engine-change` off `db39c08`; not merged, not deployed)
 >
 > What `connector/README.md` §11 specified, built — the change the ChatGPT/Claude connector needs before it
